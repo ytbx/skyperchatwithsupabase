@@ -18,6 +18,7 @@ import { NotificationSystem } from '@/components/notifications/NotificationSyste
 import { GlobalSearchModal } from '@/components/modals/GlobalSearchModal';
 import { JoinServerPage } from '@/pages/JoinServerPage';
 import { CallNotification } from '@/components/call/CallNotification';
+import { VoiceChannelView } from '@/components/voice/VoiceChannelView';
 import { Users, Hash } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Channel } from '@/lib/types';
@@ -50,6 +51,7 @@ function AppContent() {
   const [showServerRolesModal, setShowServerRolesModal] = useState(false);
   const [showMemberList, setShowMemberList] = useState(true);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const [activeVoiceChannel, setActiveVoiceChannel] = useState<{ id: number; name: string; participants: any[] } | null>(null);
 
   // Handle ESC key and keyboard shortcuts
   useEffect(() => {
@@ -196,6 +198,7 @@ function AppContent() {
           onCreateChannel={handleCreateChannel}
           onInvite={() => setShowServerInviteModal(true)}
           onManageRoles={() => setShowServerRolesModal(true)}
+          onVoiceChannelChange={setActiveVoiceChannel}
         />
       )}
 
@@ -206,7 +209,19 @@ function AppContent() {
       )}
 
       {/* Main Content Area */}
-      {currentView === 'servers' && !selectedChannel && (
+      {currentView === 'servers' && activeVoiceChannel && (
+        <VoiceChannelView
+          channelId={activeVoiceChannel.id}
+          channelName={activeVoiceChannel.name}
+          participants={activeVoiceChannel.participants}
+          onStartScreenShare={() => {
+            // Screen share is handled by the button in ChannelList
+            console.log('Start screen share clicked');
+          }}
+        />
+      )}
+
+      {currentView === 'servers' && !activeVoiceChannel && !selectedChannel && (
         <div className="flex-1 flex items-center justify-center bg-gray-900">
           <div className="text-center px-4">
             <div className="w-20 h-20 bg-gray-800 rounded-full mx-auto mb-6 flex items-center justify-center">
@@ -222,7 +237,7 @@ function AppContent() {
         </div>
       )}
 
-      {currentView === 'servers' && selectedChannel && (
+      {currentView === 'servers' && !activeVoiceChannel && selectedChannel && (
         <MessageArea channelId={selectedChannelId} />
       )}
 
@@ -250,7 +265,7 @@ function AppContent() {
       )}
 
       {/* Right Sidebar - Member List (only for servers) */}
-      {showMemberList && currentView === 'servers' && selectedServerId && (
+      {showMemberList && currentView === 'servers' && selectedServerId && (activeVoiceChannel || selectedChannel) && (
         <MemberList serverId={selectedServerId} />
       )}
 

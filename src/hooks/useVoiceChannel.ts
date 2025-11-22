@@ -13,6 +13,7 @@ interface VoiceParticipant {
     is_screen_sharing: boolean;
     peerConnection?: RTCPeerConnection;
     stream?: MediaStream;
+    screenStream?: MediaStream;
 }
 
 export function useVoiceChannel(channelId: number | null) {
@@ -21,11 +22,13 @@ export function useVoiceChannel(channelId: number | null) {
     const [isConnected, setIsConnected] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [isDeafened, setIsDeafened] = useState(false);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
+    const screenStreamRef = useRef<MediaStream | null>(null);
 
     const sendSignal = async (toUserId: string, type: string, payload: any) => {
         if (!user || !channelId) return;
@@ -126,6 +129,14 @@ export function useVoiceChannel(channelId: number | null) {
             },
             (candidate) => {
                 sendSignal(peerId, 'ice-candidate', candidate);
+            },
+            undefined,
+            undefined,
+            (screenStream) => {
+                console.log('[useVoiceChannel] Received screen share from', peerId);
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === peerId ? { ...p, screenStream: screenStream } : p
+                ));
             }
         );
 
@@ -156,6 +167,14 @@ export function useVoiceChannel(channelId: number | null) {
                 },
                 (candidate) => {
                     sendSignal(from_user_id, 'ice-candidate', candidate);
+                },
+                undefined,
+                undefined,
+                (screenStream) => {
+                    console.log('[useVoiceChannel] Received screen share from', from_user_id);
+                    setParticipants(prev => prev.map(p =>
+                        p.user_id === from_user_id ? { ...p, screenStream: screenStream } : p
+                    ));
                 }
             );
 
@@ -264,21 +283,98 @@ export function useVoiceChannel(channelId: number | null) {
                     const existing = prev.find(prevP => prevP.user_id === p.user_id);
                     return {
                         ...p,
-                        stream: existing?.stream
+                        stream: existing?.stream,
+                        screenStream: existing?.screenStream
                     };
                 });
             });
         }
     };
 
+    // Toggle screen share
+    const toggleScreenShare = useCallback(async () => {
+        if (!user || !channelId || !isConnected) return;
+
+        try {
+            if (isScreenSharing) {
+                // Stop screen sharing
+                if (screenStreamRef.current) {
+                    screenStreamRef.current.getTracks().forEach(track => track.stop());
+                    screenStreamRef.current = null;
+                }
+
+                // Stop screen share for all peers and trigger renegotiation
+                for (const [peerId, manager] of peerManagers.current.entries()) {
+                    await manager.stopScreenShare();
+                    // Trigger renegotiation to remove screen share track
+                    const offer = await manager.createOffer();
+                    await sendSignal(peerId, 'offer', offer);
+                }
+
+                // Update database
+                await supabase
+                    .from('voice_channel_users')
+                    .update({ is_screen_sharing: false })
+                    .eq('channel_id', channelId)
+                    .eq('user_id', user.id);
+
+                // Remove local screen share from participants
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === user.id ? { ...p, screenStream: undefined } : p
+                ));
+
+                setIsScreenSharing(false);
+            } else {
+                // Start screen sharing
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: false
+                });
+
+                screenStreamRef.current = screenStream;
+
+                // Handle screen share stop (when user clicks browser's stop button)
+                screenStream.getVideoTracks()[0].onended = () => {
+                    toggleScreenShare();
+                };
+
+                // Start screen share for all peers
+                for (const [peerId, manager] of peerManagers.current.entries()) {
+                    await manager.startScreenShare(screenStream);
+                    // Trigger renegotiation
+                    const offer = await manager.createOffer();
+                    await sendSignal(peerId, 'offer', offer);
+                }
+
+                // Update database
+                await supabase
+                    .from('voice_channel_users')
+                    .update({ is_screen_sharing: true })
+                    .eq('channel_id', channelId)
+                    .eq('user_id', user.id);
+
+                // Add local screen share to participants for display
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === user.id ? { ...p, screenStream: screenStream } : p
+                ));
+
+                setIsScreenSharing(true);
+            }
+        } catch (error) {
+            console.error('Error toggling screen share:', error);
+        }
+    }, [isScreenSharing, user, channelId, isConnected]);
+
     return {
         participants,
         isConnected,
         isMuted,
         isDeafened,
+        isScreenSharing,
         joinChannel,
         leaveChannel,
         toggleMute: () => setIsMuted(!isMuted),
-        toggleDeafen: () => setIsDeafened(!isDeafened)
+        toggleDeafen: () => setIsDeafened(!isDeafened),
+        toggleScreenShare
     };
 }

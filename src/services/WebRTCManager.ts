@@ -19,6 +19,7 @@ export class WebRTCManager {
 
     // Callbacks
     private onRemoteStreamCallback?: (stream: MediaStream) => void;
+    private onRemoteScreenCallback?: (stream: MediaStream) => void;
     private onICECandidateCallback?: (candidate: RTCIceCandidateInit) => void;
     private onConnectionStateChangeCallback?: (state: RTCPeerConnectionState) => void;
     private onNegotiationNeededCallback?: () => void;
@@ -30,11 +31,13 @@ export class WebRTCManager {
         onRemoteStream: (stream: MediaStream) => void,
         onICECandidate: (candidate: RTCIceCandidateInit) => void,
         onConnectionStateChange?: (state: RTCPeerConnectionState) => void,
-        onNegotiationNeeded?: () => void
+        onNegotiationNeeded?: () => void,
+        onRemoteScreen?: (stream: MediaStream) => void
     ) {
         console.log('[WebRTCManager] Creating peer connection');
 
         this.onRemoteStreamCallback = onRemoteStream;
+        this.onRemoteScreenCallback = onRemoteScreen;
         this.onICECandidateCallback = onICECandidate;
         this.onConnectionStateChangeCallback = onConnectionStateChange;
         this.onNegotiationNeededCallback = onNegotiationNeeded;
@@ -51,14 +54,20 @@ export class WebRTCManager {
 
         // Handle remote stream
         this.peerConnection.ontrack = (event) => {
-            console.log('[WebRTCManager] Received remote track');
+            console.log('[WebRTCManager] Received remote track', event.track.kind);
 
-            if (!this.remoteStream) {
-                this.remoteStream = new MediaStream();
+            if (event.track.kind === 'audio') {
+                // Audio track - for voice
+                if (!this.remoteStream) {
+                    this.remoteStream = new MediaStream();
+                }
+                this.remoteStream.addTrack(event.track);
+                this.onRemoteStreamCallback?.(this.remoteStream);
+            } else if (event.track.kind === 'video') {
+                // Video track - for screen share
+                const screenStream = new MediaStream([event.track]);
+                this.onRemoteScreenCallback?.(screenStream);
             }
-
-            this.remoteStream.addTrack(event.track);
-            this.onRemoteStreamCallback?.(this.remoteStream);
         };
 
         // Handle connection state changes
@@ -236,15 +245,10 @@ export class WebRTCManager {
     /**
      * Start screen sharing
      */
-    async startScreenShare(): Promise<MediaStream> {
+    async startScreenShare(screenStream: MediaStream): Promise<MediaStream> {
         console.log('[WebRTCManager] Starting screen share');
 
         try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: false
-            });
-
             this.screenStream = screenStream;
 
             // Replace video track with screen share track

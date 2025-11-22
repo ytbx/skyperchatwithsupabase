@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff } from 'lucide-react';
+import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember } from '@/lib/types';
@@ -12,9 +12,10 @@ interface ChannelListProps {
   onCreateChannel?: () => void;
   onInvite?: () => void;
   onManageRoles?: () => void;
+  onVoiceChannelChange?: (channel: { id: number; name: string; participants: any[] } | null) => void;
 }
 
-export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onManageRoles }: ChannelListProps) {
+export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onManageRoles, onVoiceChannelChange }: ChannelListProps) {
   const [server, setServer] = useState<Server | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
@@ -27,7 +28,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<number | null>(null);
 
   const { user, profile } = useAuth();
-  const { participants, joinChannel, leaveChannel, isConnected, isMuted, isDeafened, toggleMute, toggleDeafen } = useVoiceChannel(activeVoiceChannelId);
+  const { participants, joinChannel, leaveChannel, isConnected, isMuted, isDeafened, isScreenSharing, toggleMute, toggleDeafen, toggleScreenShare } = useVoiceChannel(activeVoiceChannelId);
 
   // Use ref to avoid stale closure in realtime subscription
   const voiceChannelsRef = useRef<Channel[]>([]);
@@ -104,6 +105,22 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       joinChannel();
     }
   }, [activeVoiceChannelId]);
+
+  // Notify parent when voice channel state changes
+  useEffect(() => {
+    if (activeVoiceChannelId && isConnected && onVoiceChannelChange) {
+      const channel = voiceChannels.find(c => c.id === activeVoiceChannelId);
+      if (channel) {
+        onVoiceChannelChange({
+          id: channel.id,
+          name: channel.name,
+          participants: participants
+        });
+      }
+    } else if (!activeVoiceChannelId && onVoiceChannelChange) {
+      onVoiceChannelChange(null);
+    }
+  }, [activeVoiceChannelId, isConnected, voiceChannels, participants, onVoiceChannelChange]);
 
   async function performSearch(query: string) {
     if (!serverId) return;
@@ -448,6 +465,13 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               title={isDeafened ? "Sağırlaştır" : "Sağırlaştır"}
             >
               <Headphones size={18} />
+            </button>
+            <button
+              onClick={toggleScreenShare}
+              className={`p-2 rounded-full transition-colors ${isScreenSharing ? 'bg-green-500/20 text-green-500' : 'hover:bg-gray-700 text-gray-300'}`}
+              title={isScreenSharing ? "Ekran Paylaşımını Durdur" : "Ekran Paylaş"}
+            >
+              <MonitorUp size={18} />
             </button>
             <button
               className="p-2 rounded-full hover:bg-gray-700 text-gray-300"
