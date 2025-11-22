@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Hash } from 'lucide-react';
+import { X, Hash, Volume2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -19,6 +19,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
   const { user } = useAuth();
   const [channelName, setChannelName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isVoice, setIsVoice] = useState(false);
   const [creating, setCreating] = useState(false);
 
   if (!isOpen) return null;
@@ -30,13 +31,13 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
     setCreating(true);
 
     try {
-      // Create the channel (always text channel)
+      // Create the channel
       const { error: channelError } = await supabase
         .from('channels')
         .insert({
           name: channelName.trim(),
           server_id: serverId,
-          is_voice: false,
+          is_voice: isVoice,
           is_owner_only: isPrivate
         });
 
@@ -73,18 +74,44 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleCreateChannel} className="space-y-4">
+          {/* Channel Type Selection */}
+          <div className="flex bg-gray-800 p-1 rounded-lg mb-4">
+            <button
+              type="button"
+              onClick={() => setIsVoice(false)}
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm font-medium transition-all ${!isVoice ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'
+                }`}
+            >
+              <Hash size={16} />
+              Metin
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsVoice(true)}
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm font-medium transition-all ${isVoice ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'
+                }`}
+            >
+              <Volume2 size={16} />
+              Ses
+            </button>
+          </div>
+
           {/* Channel Name */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Kanal Adı
             </label>
             <div className="relative">
-              <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              {isVoice ? (
+                <Volume2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              ) : (
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              )}
               <input
                 type="text"
                 value={channelName}
                 onChange={(e) => setChannelName(e.target.value)}
-                placeholder="yeni-kanal"
+                placeholder={isVoice ? "Genel Sohbet" : "yeni-kanal"}
                 className="w-full bg-gray-800 border border-gray-600 rounded pl-10 pr-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                 maxLength={100}
                 required
@@ -131,8 +158,8 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
               type="submit"
               disabled={!channelName.trim() || creating}
               className={`flex-1 py-2 px-4 rounded transition-colors ${channelName.trim() && !creating
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                  : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                 }`}
             >
               {creating ? 'Oluşturuluyor...' : 'Kanal Oluştur'}

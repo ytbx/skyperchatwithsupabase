@@ -162,6 +162,8 @@ export class WebRTCManager {
         return answer;
     }
 
+    private pendingCandidates: RTCIceCandidateInit[] = [];
+
     /**
      * Set remote description (offer or answer)
      */
@@ -175,6 +177,15 @@ export class WebRTCManager {
         await this.peerConnection.setRemoteDescription(
             new RTCSessionDescription(description)
         );
+
+        // Process pending candidates
+        if (this.pendingCandidates.length > 0) {
+            console.log(`[WebRTCManager] Processing ${this.pendingCandidates.length} pending ICE candidates`);
+            for (const candidate of this.pendingCandidates) {
+                await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+            this.pendingCandidates = [];
+        }
     }
 
     /**
@@ -183,6 +194,12 @@ export class WebRTCManager {
     async addICECandidate(candidate: RTCIceCandidateInit) {
         if (!this.peerConnection) {
             throw new Error('Peer connection not initialized');
+        }
+
+        if (!this.peerConnection.remoteDescription) {
+            console.log('[WebRTCManager] Buffering ICE candidate (remote description not set)');
+            this.pendingCandidates.push(candidate);
+            return;
         }
 
         console.log('[WebRTCManager] Adding ICE candidate');

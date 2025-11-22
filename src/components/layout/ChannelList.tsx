@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Channel, Server, Profile } from '@/lib/types';
+import { Channel, Server, Profile, VoiceChannelMember } from '@/lib/types';
+import { useVoiceChannel } from '@/hooks/useVoiceChannel';
 
 interface ChannelListProps {
   serverId: string | null;
@@ -16,11 +17,38 @@ interface ChannelListProps {
 export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onManageRoles }: ChannelListProps) {
   const [server, setServer] = useState<Server | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
+  const [voiceParticipants, setVoiceParticipants] = useState<Record<number, VoiceChannelMember[]>>({});
   const [textChannelsExpanded, setTextChannelsExpanded] = useState(true);
+  const [voiceChannelsExpanded, setVoiceChannelsExpanded] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ channels: Channel[], members: Profile[] }>({ channels: [], members: [] });
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<number | null>(null);
+
   const { user, profile } = useAuth();
+  const { participants, joinChannel, leaveChannel, isConnected, isMuted, isDeafened, toggleMute, toggleDeafen } = useVoiceChannel(activeVoiceChannelId);
+
+  // Use ref to avoid stale closure in realtime subscription
+  const voiceChannelsRef = useRef<Channel[]>([]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    voiceChannelsRef.current = voiceChannels;
+  }, [voiceChannels]);
+
+  // Render audio elements for remote participants
+  useEffect(() => {
+    participants.forEach(participant => {
+      if (participant.stream && participant.user_id !== user?.id) {
+        const audio = document.getElementById(`audio-${participant.user_id}`) as HTMLAudioElement;
+        if (audio && audio.srcObject !== participant.stream) {
+          audio.srcObject = participant.stream;
+          audio.play().catch(e => console.error('Error playing audio:', e));
+        }
+      }
+    });
+  }, [participants, user]);
 
   useEffect(() => {
     if (!serverId) {
@@ -43,8 +71,21 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       )
       .subscribe();
 
+    // Subscribe to voice participant changes
+    const voiceSub = supabase
+      .channel(`voice_users_${serverId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'voice_channel_users' },
+        () => {
+          loadVoiceParticipants();
+        }
+      )
+      .subscribe();
+
     return () => {
       channelSub.unsubscribe();
+      voiceSub.unsubscribe();
     };
   }, [serverId]);
 
@@ -56,6 +97,13 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       setSearchResults({ channels: [], members: [] });
     }
   }, [searchQuery, serverId]);
+
+  // Handle joining voice channel
+  useEffect(() => {
+    if (activeVoiceChannelId) {
+      joinChannel();
+    }
+  }, [activeVoiceChannelId]);
 
   async function performSearch(query: string) {
     if (!serverId) return;
@@ -88,6 +136,39 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
     }
   }
 
+  async function loadVoiceParticipants() {
+    // Use ref to get current voice channels even inside stale closure
+    const currentVoiceChannels = voiceChannelsRef.current;
+
+    if (!currentVoiceChannels.length) return;
+
+    const channelIds = currentVoiceChannels.map(c => c.id);
+    if (channelIds.length === 0) return;
+
+    const { data } = await supabase
+      .from('voice_channel_users')
+      .select('*, profile:profiles(*)')
+      .in('channel_id', channelIds);
+
+    if (data) {
+      const participantsByChannel: Record<number, VoiceChannelMember[]> = {};
+      data.forEach((p: any) => {
+        if (!participantsByChannel[p.channel_id]) {
+          participantsByChannel[p.channel_id] = [];
+        }
+        participantsByChannel[p.channel_id].push(p);
+      });
+      setVoiceParticipants(participantsByChannel);
+    } else {
+      setVoiceParticipants({});
+    }
+  }
+
+  // Reload participants when voice channels change
+  useEffect(() => {
+    loadVoiceParticipants();
+  }, [voiceChannels]);
+
   async function loadServerAndChannels() {
     if (!serverId) return;
 
@@ -105,11 +186,11 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       .from('channels')
       .select('*')
       .eq('server_id', serverId)
-      .eq('is_voice', false)
       .order('name', { ascending: true });
 
     if (channelsData) {
-      setChannels(channelsData);
+      setChannels(channelsData.filter(c => !c.is_voice));
+      setVoiceChannels(channelsData.filter(c => c.is_voice));
     }
   }
 
@@ -238,7 +319,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
             className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
           >
             <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${textChannelsExpanded ? '' : '-rotate-90'}`} />
-            <span>Kanallar</span>
+            <span>Metin Kanalları</span>
           </button>
           {textChannelsExpanded && (
             <div className="mt-0.5 space-y-0.5">
@@ -247,27 +328,136 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                   key={channel.id}
                   onClick={() => onSelectChannel(channel.id)}
                   className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${selectedChannelId === channel.id
-                      ? 'bg-gray-700 text-white'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
+                    ? 'bg-gray-700 text-white'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
                     }`}
                 >
                   <Hash className={`w-4 h-4 flex-shrink-0 ${selectedChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
                   <span className="text-sm truncate font-medium">{channel.name}</span>
                 </button>
               ))}
-              {onCreateChannel && server?.owner_id === user?.id && (
-                <button
-                  onClick={onCreateChannel}
-                  className="w-full px-2 py-1.5 mx-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span className="text-sm font-medium">Kanal Ekle</span>
-                </button>
-              )}
             </div>
           )}
         </div>
+
+        {/* Voice Channels */}
+        <div className="mb-1 mt-4">
+          <button
+            onClick={() => setVoiceChannelsExpanded(!voiceChannelsExpanded)}
+            className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
+          >
+            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${voiceChannelsExpanded ? '' : '-rotate-90'}`} />
+            <span>Ses Kanalları</span>
+          </button>
+          {voiceChannelsExpanded && (
+            <div className="mt-0.5 space-y-0.5">
+              {voiceChannels.map((channel) => (
+                <div key={channel.id}>
+                  <button
+                    onClick={() => setActiveVoiceChannelId(channel.id)}
+                    className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeVoiceChannelId === channel.id
+                      ? 'bg-gray-700 text-white'
+                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
+                      }`}
+                  >
+                    <Volume2 className={`w-4 h-4 flex-shrink-0 ${activeVoiceChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
+                    <span className="text-sm truncate font-medium">{channel.name}</span>
+                  </button>
+
+                  {/* Voice Participants */}
+                  {voiceParticipants[channel.id]?.map((participant) => (
+                    <div key={participant.id} className="ml-8 mr-2 py-1 flex items-center gap-2 group cursor-pointer hover:bg-gray-800/50 rounded px-1">
+                      <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
+                        {participant.profile?.profile_image_url ? (
+                          <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs text-white">
+                            {participant.profile?.username?.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-sm truncate ${activeVoiceChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
+                        {participant.profile?.username}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {onCreateChannel && server?.owner_id === user?.id && (
+          <button
+            onClick={onCreateChannel}
+            className="w-full px-2 py-1.5 mx-2 mt-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="text-sm font-medium">Kanal Ekle</span>
+          </button>
+        )}
       </div>
+
+      {/* Hidden Audio Elements */}
+      {participants.map((participant) => (
+        <audio
+          key={participant.user_id}
+          id={`audio-${participant.user_id}`}
+          autoPlay
+          playsInline
+          className="hidden"
+        />
+      ))}
+
+      {/* Voice Controls (if connected) */}
+      {activeVoiceChannelId && (
+        <div className="bg-gray-850 border-t border-gray-800 p-2 pb-0">
+          <div className="flex items-center justify-between px-2 py-1 bg-green-900/20 rounded border border-green-900/50 mb-2">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <Volume2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-green-500 truncate">Ses Bağlantısı</span>
+                <span className="text-xs text-gray-400 truncate">
+                  {voiceChannels.find(c => c.id === activeVoiceChannelId)?.name}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                leaveChannel();
+                setActiveVoiceChannelId(null);
+              }}
+              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+              title="Bağlantıyı Kes"
+            >
+              <PhoneOff size={16} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-center gap-4 pb-2">
+            <button
+              onClick={toggleMute}
+              className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
+              title={isMuted ? "Sesi Aç" : "Sessize Al"}
+            >
+              {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
+            <button
+              onClick={toggleDeafen}
+              className={`p-2 rounded-full transition-colors ${isDeafened ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
+              title={isDeafened ? "Sağırlaştır" : "Sağırlaştır"}
+            >
+              <Headphones size={18} />
+            </button>
+            <button
+              className="p-2 rounded-full hover:bg-gray-700 text-gray-300"
+              title="Ayarlar"
+            >
+              <Settings size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* User Profile Bar */}
       <div className="h-14 px-2 flex items-center gap-2 bg-gray-900 border-t border-gray-800">
