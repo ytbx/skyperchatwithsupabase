@@ -140,6 +140,78 @@ export class SignalingService {
     }
 
     /**
+     * Send call ended signal to peer
+     */
+    async sendCallEnded() {
+        console.log('[SignalingService] ========== SENDING CALL-ENDED SIGNAL ==========');
+        console.log('[SignalingService] Call ID:', this.callId);
+        console.log('[SignalingService] From:', this.userId);
+        console.log('[SignalingService] To:', this.peerId);
+
+        const { data, error } = await supabase
+            .from('webrtc_signals')
+            .insert({
+                call_id: this.callId,
+                from_user_id: this.userId,
+                to_user_id: this.peerId,
+                signal_type: 'call-ended',
+                payload: {}
+            })
+            .select();
+
+        if (error) {
+            console.error('[SignalingService] ✗ Error sending call ended signal:', error);
+            throw error;
+        }
+
+        console.log('[SignalingService] ✓ Call-ended signal inserted into database:', data);
+    }
+
+    /**
+     * Send call rejected signal to peer
+     */
+    async sendCallRejected() {
+        console.log('[SignalingService] Sending call rejected signal');
+
+        const { error } = await supabase
+            .from('webrtc_signals')
+            .insert({
+                call_id: this.callId,
+                from_user_id: this.userId,
+                to_user_id: this.peerId,
+                signal_type: 'call-rejected',
+                payload: {}
+            });
+
+        if (error) {
+            console.error('[SignalingService] Error sending call rejected signal:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Send call cancelled signal to peer
+     */
+    async sendCallCancelled() {
+        console.log('[SignalingService] Sending call cancelled signal');
+
+        const { error } = await supabase
+            .from('webrtc_signals')
+            .insert({
+                call_id: this.callId,
+                from_user_id: this.userId,
+                to_user_id: this.peerId,
+                signal_type: 'call-cancelled',
+                payload: {}
+            });
+
+        if (error) {
+            console.error('[SignalingService] Error sending call cancelled signal:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Clean up and close the signaling channel
      */
     async cleanup() {

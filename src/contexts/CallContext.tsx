@@ -127,6 +127,38 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         console.log('[CallContext] Queueing ICE candidate until answer arrives');
                         pendingIceCandidates.push(signal.payload as RTCIceCandidateInit);
                     }
+                } else if (signal.signal_type === 'call-rejected') {
+                    console.log('[CallContext] ========== RECEIVED CALL-REJECTED SIGNAL (CALLER) ==========');
+                    console.log('[CallContext] Callee rejected the call, cleaning up...');
+                    // Cleanup and reset state
+                    webrtcManager.cleanup();
+                    await signaling.cleanup();
+                    setActiveCall(null);
+                    setCallStatus('idle');
+                    setLocalStream(null);
+                    setRemoteStream(null);
+                    setIsMicMuted(false);
+                    setIsCameraOff(true);
+                    setIsScreenSharing(false);
+                    setConnectionState(null);
+                    setSignalingService(null);
+                    console.log('[CallContext] ✓ Cleanup complete after receiving call-rejected');
+                } else if (signal.signal_type === 'call-ended') {
+                    console.log('[CallContext] ========== RECEIVED CALL-ENDED SIGNAL (CALLER) ==========');
+                    console.log('[CallContext] Peer ended the call, cleaning up...');
+                    // Cleanup and reset state
+                    webrtcManager.cleanup();
+                    await signaling.cleanup();
+                    setActiveCall(null);
+                    setCallStatus('idle');
+                    setLocalStream(null);
+                    setRemoteStream(null);
+                    setIsMicMuted(false);
+                    setIsCameraOff(true);
+                    setIsScreenSharing(false);
+                    setConnectionState(null);
+                    setSignalingService(null);
+                    console.log('[CallContext] ✓ Cleanup complete after receiving call-ended');
                 }
             });
 
@@ -166,9 +198,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setLocalStream(stream);
             setIsCameraOff(call.call_type === 'voice');
 
-            // Initialize signaling FIRST
-            const signaling = new SignalingService(call.id, user.id, call.caller_id);
-            setSignalingService(signaling);
+            // Use existing signaling service or create new one
+            let signaling = signalingService;
+            if (!signaling) {
+                console.log('[CallContext] Creating new signaling service for accept');
+                signaling = new SignalingService(call.id, user.id, call.caller_id);
+                setSignalingService(signaling);
+            } else {
+                console.log('[CallContext] Reusing existing signaling service from incoming call');
+            }
 
             // Wait for offer before creating peer connection
             let peerConnectionCreated = false;
@@ -213,6 +251,38 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         await signaling.sendAnswer(answer);
                     } else if (signal.signal_type === 'ice-candidate') {
                         await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
+                    } else if (signal.signal_type === 'call-cancelled') {
+                        console.log('[CallContext] ========== RECEIVED CALL-CANCELLED SIGNAL (CALLEE) ==========');
+                        console.log('[CallContext] Caller cancelled the call, cleaning up...');
+                        // Cleanup and reset state
+                        webrtcManager.cleanup();
+                        await signaling.cleanup();
+                        setActiveCall(null);
+                        setCallStatus('idle');
+                        setLocalStream(null);
+                        setRemoteStream(null);
+                        setIsMicMuted(false);
+                        setIsCameraOff(true);
+                        setIsScreenSharing(false);
+                        setConnectionState(null);
+                        setSignalingService(null);
+                        console.log('[CallContext] ✓ Cleanup complete after receiving call-cancelled');
+                    } else if (signal.signal_type === 'call-ended') {
+                        console.log('[CallContext] ========== RECEIVED CALL-ENDED SIGNAL (CALLEE) ==========');
+                        console.log('[CallContext] Caller ended the call, cleaning up...');
+                        // Cleanup and reset state
+                        webrtcManager.cleanup();
+                        await signaling.cleanup();
+                        setActiveCall(null);
+                        setCallStatus('idle');
+                        setLocalStream(null);
+                        setRemoteStream(null);
+                        setIsMicMuted(false);
+                        setIsCameraOff(true);
+                        setIsScreenSharing(false);
+                        setConnectionState(null);
+                        setSignalingService(null);
+                        console.log('[CallContext] ✓ Cleanup complete after receiving call-ended');
                     }
                 } catch (signalError) {
                     console.error('[CallContext] Error processing signal:', signalError);
@@ -233,35 +303,87 @@ export function CallProvider({ children }: { children: ReactNode }) {
         try {
             console.log('[CallContext] Rejecting call:', callId);
 
-            // Delete the call record instead of updating
+            // If we have an active call, send rejection signal
+            if (activeCall && user) {
+                try {
+                    // Initialize signaling if not already done
+                    let signaling = signalingService;
+                    if (!signaling) {
+                        signaling = new SignalingService(activeCall.id, user.id, activeCall.caller_id);
+                        // We don't need to fully initialize, just send the signal
+                    }
+                    await signaling.sendCallRejected();
+                } catch (signalError) {
+                    console.error('[CallContext] Error sending rejection signal:', signalError);
+                }
+            }
+
+            // Delete the call record
             await supabase
                 .from('direct_calls')
                 .delete()
                 .eq('id', callId);
 
+            // Cleanup if signaling was initialized
+            if (signalingService) {
+                await signalingService.cleanup();
+            }
+
             setCallStatus('idle');
             setActiveCall(null);
+            setSignalingService(null);
         } catch (error) {
             console.error('[CallContext] Error rejecting call:', error);
         }
-    }, []);
+    }, [activeCall, user, signalingService]);
 
     /**
      * End the active call
      */
     const endCall = useCallback(async () => {
         try {
-            console.log('[CallContext] Ending call');
+            console.log('[CallContext] ========== ENDING CALL ==========');
+            console.log('[CallContext] Active call:', activeCall?.id);
+            console.log('[CallContext] Signaling service available:', !!signalingService);
+            console.log('[CallContext] Call status:', callStatus);
+
+            // Determine which signal to send based on call status
+            const isCancelling = callStatus === 'ringing_outgoing';
+
+            // Send appropriate signal to peer if signaling is available
+            if (signalingService && activeCall) {
+                try {
+                    if (isCancelling) {
+                        console.log('[CallContext] Sending call-cancelled signal (caller cancelling during ringing)...');
+                        await signalingService.sendCallCancelled();
+                        console.log('[CallContext] ✓ Call-cancelled signal sent successfully');
+                    } else {
+                        console.log('[CallContext] Sending call-ended signal (active call ending)...');
+                        await signalingService.sendCallEnded();
+                        console.log('[CallContext] ✓ Call-ended signal sent successfully');
+                    }
+
+                    // Wait a bit to ensure signal is delivered before cleanup
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (signalError) {
+                    console.error('[CallContext] ✗ Error sending termination signal:', signalError);
+                }
+            } else {
+                console.warn('[CallContext] Cannot send termination signal - signalingService:', !!signalingService, 'activeCall:', !!activeCall);
+            }
 
             if (activeCall) {
-                // Delete the call record instead of updating
+                // Delete the call record
+                console.log('[CallContext] Deleting call record from database...');
                 await supabase
                     .from('direct_calls')
                     .delete()
                     .eq('id', activeCall.id);
+                console.log('[CallContext] ✓ Call record deleted');
             }
 
             // Cleanup
+            console.log('[CallContext] Starting cleanup...');
             webrtcManager.cleanup();
             if (signalingService) {
                 await signalingService.cleanup();
@@ -276,10 +398,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setIsScreenSharing(false);
             setConnectionState(null);
             setSignalingService(null);
+            console.log('[CallContext] ✓ Cleanup complete');
         } catch (error) {
             console.error('[CallContext] Error ending call:', error);
         }
-    }, [activeCall, webrtcManager, signalingService]);
+    }, [activeCall, webrtcManager, signalingService, callStatus]);
 
     /**
      * Toggle microphone mute
@@ -345,6 +468,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     if (call.status === 'ringing' && isRecent) {
                         setActiveCall(call);
                         setCallStatus('ringing_incoming');
+
+                        // Initialize signaling immediately to listen for cancellation
+                        console.log('[CallContext] Initializing signaling for incoming call');
+                        const signaling = new SignalingService(call.id, user.id, call.caller_id);
+                        setSignalingService(signaling);
+
+                        // Listen for call cancellation
+                        signaling.initialize(async (signal) => {
+                            if (signal.signal_type === 'call-cancelled') {
+                                console.log('[CallContext] ========== RECEIVED CALL-CANCELLED SIGNAL (INCOMING) ==========');
+                                console.log('[CallContext] Caller cancelled the call before we answered');
+                                // Cleanup
+                                await signaling.cleanup();
+                                setActiveCall(null);
+                                setCallStatus('idle');
+                                setSignalingService(null);
+                                console.log('[CallContext] ✓ Cleanup complete after call-cancelled');
+                            }
+                        });
                     } else if (!isRecent) {
                         console.log('[CallContext] Ignoring old call from', new Date(call.created_at).toLocaleTimeString());
                     }

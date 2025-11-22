@@ -92,7 +92,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
     const showVideo = isVideoCall && !isCameraOff;
 
     return (
-        <div className="absolute top-0 left-0 right-0 h-1/2 bg-gray-900 border-b border-gray-700 z-10 flex flex-col">
+        <div className="relative w-full h-1/2 bg-gray-900 border-b border-gray-700 z-10 flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-4 bg-gray-800/50 backdrop-blur-sm">
                 <div className="flex items-center space-x-3">
