@@ -1,0 +1,424 @@
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from './AuthContext';
+import { DirectCall } from '@/lib/types';
+import { WebRTCManager } from '@/services/WebRTCManager';
+import { SignalingService } from '@/services/SignalingService';
+
+type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
+
+interface CallContextType {
+    // State
+    activeCall: DirectCall | null;
+    callStatus: CallStatus;
+    localStream: MediaStream | null;
+    remoteStream: MediaStream | null;
+    isMicMuted: boolean;
+    isCameraOff: boolean;
+    isScreenSharing: boolean;
+    connectionState: RTCPeerConnectionState | null;
+
+    // Actions
+    initiateCall: (contactId: string, contactName: string, callType: 'voice' | 'video') => Promise<void>;
+    acceptCall: (call: DirectCall) => Promise<void>;
+    rejectCall: (callId: string) => Promise<void>;
+    endCall: () => Promise<void>;
+    toggleMic: () => void;
+    toggleCamera: () => void;
+    toggleScreenShare: () => Promise<void>;
+}
+
+const CallContext = createContext<CallContextType | undefined>(undefined);
+
+export function CallProvider({ children }: { children: ReactNode }) {
+    const { user } = useAuth();
+
+    // State
+    const [activeCall, setActiveCall] = useState<DirectCall | null>(null);
+    const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const [isMicMuted, setIsMicMuted] = useState(false);
+    const [isCameraOff, setIsCameraOff] = useState(true);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
+
+    // Services
+    const [webrtcManager] = useState(() => new WebRTCManager());
+    const [signalingService, setSignalingService] = useState<SignalingService | null>(null);
+
+    /**
+     * Initiate a call to a contact
+     */
+    const initiateCall = useCallback(async (contactId: string, contactName: string, callType: 'voice' | 'video') => {
+        if (!user) return;
+
+        try {
+            console.log('[CallContext] Initiating call to:', contactName);
+            setCallStatus('ringing_outgoing');
+
+            // Create call record in database
+            const { data: call, error: callError } = await supabase
+                .from('direct_calls')
+                .insert({
+                    caller_id: user.id,
+                    callee_id: contactId,
+                    call_type: callType,
+                    status: 'ringing'
+                })
+                .select()
+                .single();
+
+            if (callError) throw callError;
+
+            setActiveCall(call);
+
+            // Get user media
+            const stream = await webrtcManager.getUserMedia(true, callType === 'video');
+            setLocalStream(stream);
+            setIsCameraOff(callType === 'voice');
+
+            // Initialize signaling
+            const signaling = new SignalingService(call.id, user.id, contactId);
+            setSignalingService(signaling);
+
+            // Create peer connection
+            webrtcManager.createPeerConnection(
+                (remoteStream) => {
+                    console.log('[CallContext] Remote stream received');
+                    setRemoteStream(remoteStream);
+                },
+                async (candidate) => {
+                    await signaling.sendICECandidate(candidate);
+                },
+                (state) => {
+                    setConnectionState(state);
+                    if (state === 'connected') {
+                        setCallStatus('active');
+                    }
+                }
+            );
+
+            // Add local stream
+            webrtcManager.addLocalStream(stream);
+
+            // Queue for ICE candidates that arrive before answer
+            const pendingIceCandidates: RTCIceCandidateInit[] = [];
+            let remoteDescriptionSet = false;
+
+            // Initialize signaling and handle incoming signals
+            await signaling.initialize(async (signal) => {
+                if (signal.signal_type === 'answer') {
+                    await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+                    remoteDescriptionSet = true;
+
+                    // Add any pending ICE candidates
+                    console.log('[CallContext] Processing', pendingIceCandidates.length, 'pending ICE candidates');
+                    for (const candidate of pendingIceCandidates) {
+                        await webrtcManager.addICECandidate(candidate);
+                    }
+                    pendingIceCandidates.length = 0; // Clear queue
+                } else if (signal.signal_type === 'ice-candidate') {
+                    if (remoteDescriptionSet) {
+                        // Remote description is set, add immediately
+                        await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
+                    } else {
+                        // Queue for later
+                        console.log('[CallContext] Queueing ICE candidate until answer arrives');
+                        pendingIceCandidates.push(signal.payload as RTCIceCandidateInit);
+                    }
+                }
+            });
+
+            // Create and send offer
+            const offer = await webrtcManager.createOffer();
+            await signaling.sendOffer(offer);
+
+        } catch (error) {
+            console.error('[CallContext] Error initiating call:', error);
+            setCallStatus('idle');
+            setActiveCall(null);
+        }
+    }, [user, webrtcManager]);
+
+    /**
+     * Accept an incoming call
+     */
+    const acceptCall = useCallback(async (call: DirectCall) => {
+        if (!user) return;
+
+        try {
+            console.log('[CallContext] Accepting call:', call.id);
+            setCallStatus('connecting');
+            setActiveCall(call);
+
+            // Update call status in database
+            await supabase
+                .from('direct_calls')
+                .update({
+                    status: 'active',
+                    answered_at: new Date().toISOString()
+                })
+                .eq('id', call.id);
+
+            // Get user media
+            const stream = await webrtcManager.getUserMedia(true, call.call_type === 'video');
+            setLocalStream(stream);
+            setIsCameraOff(call.call_type === 'voice');
+
+            // Initialize signaling FIRST
+            const signaling = new SignalingService(call.id, user.id, call.caller_id);
+            setSignalingService(signaling);
+
+            // Wait for offer before creating peer connection
+            let peerConnectionCreated = false;
+
+            // Don't await - this is a callback-based subscription
+            signaling.initialize(async (signal) => {
+                try {
+                    console.log('[CallContext] Received signal:', signal.signal_type);
+
+                    // Create peer connection on first offer
+                    if (signal.signal_type === 'offer' && !peerConnectionCreated) {
+                        console.log('[CallContext] Creating peer connection for callee');
+                        peerConnectionCreated = true;
+
+                        // Create peer connection
+                        webrtcManager.createPeerConnection(
+                            (remoteStream) => {
+                                console.log('[CallContext] Remote stream received');
+                                setRemoteStream(remoteStream);
+                            },
+                            async (candidate) => {
+                                await signaling.sendICECandidate(candidate);
+                            },
+                            (state) => {
+                                console.log('[CallContext] Connection state changed to:', state);
+                                setConnectionState(state);
+                                if (state === 'connected') {
+                                    console.log('[CallContext] Setting callStatus to ACTIVE (callee)');
+                                    setCallStatus('active');
+                                }
+                            }
+                        );
+
+                        // Add local stream
+                        webrtcManager.addLocalStream(stream);
+
+                        // Set remote description (offer)
+                        await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+
+                        // Create and send answer
+                        const answer = await webrtcManager.createAnswer();
+                        await signaling.sendAnswer(answer);
+                    } else if (signal.signal_type === 'ice-candidate') {
+                        await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
+                    }
+                } catch (signalError) {
+                    console.error('[CallContext] Error processing signal:', signalError);
+                }
+            });
+
+        } catch (error) {
+            console.error('[CallContext] Error accepting call:', error);
+            setCallStatus('idle');
+            setActiveCall(null);
+        }
+    }, [user, webrtcManager]);
+
+    /**
+     * Reject an incoming call
+     */
+    const rejectCall = useCallback(async (callId: string) => {
+        try {
+            console.log('[CallContext] Rejecting call:', callId);
+
+            // Delete the call record instead of updating
+            await supabase
+                .from('direct_calls')
+                .delete()
+                .eq('id', callId);
+
+            setCallStatus('idle');
+            setActiveCall(null);
+        } catch (error) {
+            console.error('[CallContext] Error rejecting call:', error);
+        }
+    }, []);
+
+    /**
+     * End the active call
+     */
+    const endCall = useCallback(async () => {
+        try {
+            console.log('[CallContext] Ending call');
+
+            if (activeCall) {
+                // Delete the call record instead of updating
+                await supabase
+                    .from('direct_calls')
+                    .delete()
+                    .eq('id', activeCall.id);
+            }
+
+            // Cleanup
+            webrtcManager.cleanup();
+            if (signalingService) {
+                await signalingService.cleanup();
+            }
+
+            setActiveCall(null);
+            setCallStatus('idle');
+            setLocalStream(null);
+            setRemoteStream(null);
+            setIsMicMuted(false);
+            setIsCameraOff(true);
+            setIsScreenSharing(false);
+            setConnectionState(null);
+            setSignalingService(null);
+        } catch (error) {
+            console.error('[CallContext] Error ending call:', error);
+        }
+    }, [activeCall, webrtcManager, signalingService]);
+
+    /**
+     * Toggle microphone mute
+     */
+    const toggleMic = useCallback(() => {
+        const newMutedState = !isMicMuted;
+        webrtcManager.toggleMicrophone(newMutedState);
+        setIsMicMuted(newMutedState);
+    }, [isMicMuted, webrtcManager]);
+
+    /**
+     * Toggle camera on/off
+     */
+    const toggleCamera = useCallback(() => {
+        const newCameraState = !isCameraOff;
+        webrtcManager.toggleCamera(!newCameraState);
+        setIsCameraOff(newCameraState);
+    }, [isCameraOff, webrtcManager]);
+
+    /**
+     * Toggle screen sharing
+     */
+    const toggleScreenShare = useCallback(async () => {
+        try {
+            if (isScreenSharing) {
+                await webrtcManager.stopScreenShare();
+                setIsScreenSharing(false);
+            } else {
+                await webrtcManager.startScreenShare();
+                setIsScreenSharing(true);
+            }
+        } catch (error) {
+            console.error('[CallContext] Error toggling screen share:', error);
+        }
+    }, [isScreenSharing, webrtcManager]);
+
+    // Subscribe to incoming calls and call status updates
+    useEffect(() => {
+        if (!user) return;
+
+        console.log('[CallContext] Setting up call subscriptions for user:', user.id);
+
+        const channel = supabase
+            .channel('call_updates')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'direct_calls',
+                    filter: `callee_id=eq.${user.id}`
+                },
+                (payload) => {
+                    const call = payload.new as DirectCall;
+                    console.log('[CallContext] Incoming call:', call);
+
+                    // Only process if call is ringing and recent (within last 30 seconds)
+                    const callAge = Date.now() - new Date(call.created_at).getTime();
+                    const isRecent = callAge < 30000; // 30 seconds
+
+                    console.log('[CallContext] Call age:', callAge, 'ms, Is recent:', isRecent);
+
+                    if (call.status === 'ringing' && isRecent) {
+                        setActiveCall(call);
+                        setCallStatus('ringing_incoming');
+                    } else if (!isRecent) {
+                        console.log('[CallContext] Ignoring old call from', new Date(call.created_at).toLocaleTimeString());
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'direct_calls',
+                    filter: `caller_id=eq.${user.id}`
+                },
+                (payload) => {
+                    const call = payload.new as DirectCall;
+                    console.log('[CallContext] Call status updated (as caller):', call.status);
+
+                    // Handle call acceptance
+                    if (call.status === 'active') {
+                        console.log('[CallContext] Call accepted by callee');
+                        setCallStatus('connecting');
+                        setActiveCall(call);
+                    }
+                }
+            )
+        setActiveCall(null);
+        setCallStatus('idle');
+        setLocalStream(null);
+        setRemoteStream(null);
+        setIsMicMuted(false);
+        setIsCameraOff(true);
+        setIsScreenSharing(false);
+        setConnectionState(null);
+        setSignalingService(null);
+    }
+                }
+            )
+            .subscribe();
+
+return () => {
+    console.log('[CallContext] Cleaning up call subscriptions');
+    channel.unsubscribe();
+};
+    }, [user?.id]); // Only re-subscribe when user changes, not on every state change
+
+const value: CallContextType = {
+    activeCall,
+    callStatus,
+    localStream,
+    remoteStream,
+    isMicMuted,
+    isCameraOff,
+    isScreenSharing,
+    connectionState,
+    initiateCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    toggleMic,
+    toggleCamera,
+    toggleScreenShare
+};
+
+return (
+    <CallContext.Provider value={value}>
+        {children}
+    </CallContext.Provider>
+);
+}
+
+export function useCall() {
+    const context = useContext(CallContext);
+    if (context === undefined) {
+        throw new Error('useCall must be used within a CallProvider');
+    }
+    return context;
+}
