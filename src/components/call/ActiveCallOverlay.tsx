@@ -158,7 +158,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
 
                     {/* Remote Camera (only if no screen shares) */}
                     {(!isRemoteScreenSharing && !isScreenSharing) && (
-                        <div className="flex-1 max-w-4xl flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
+                        <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
                             <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800">
                                 {showVideo && remoteStream ? (
                                     <video
