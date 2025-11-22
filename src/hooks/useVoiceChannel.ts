@@ -14,6 +14,7 @@ interface VoiceParticipant {
     peerConnection?: RTCPeerConnection;
     stream?: MediaStream;
     screenStream?: MediaStream;
+    cameraStream?: MediaStream;
 }
 
 export function useVoiceChannel(channelId: number | null) {
@@ -23,12 +24,14 @@ export function useVoiceChannel(channelId: number | null) {
     const [isMuted, setIsMuted] = useState(false);
     const [isDeafened, setIsDeafened] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [isCameraEnabled, setIsCameraEnabled] = useState(false);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
     const screenStreamRef = useRef<MediaStream | null>(null);
+    const cameraStreamRef = useRef<MediaStream | null>(null);
 
     const sendSignal = async (toUserId: string, type: string, payload: any) => {
         if (!user || !channelId) return;
@@ -137,6 +140,12 @@ export function useVoiceChannel(channelId: number | null) {
                 setParticipants(prev => prev.map(p =>
                     p.user_id === peerId ? { ...p, screenStream: screenStream } : p
                 ));
+            },
+            (cameraStream) => {
+                console.log('[useVoiceChannel] Received camera from', peerId);
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === peerId ? { ...p, cameraStream: cameraStream } : p
+                ));
             }
         );
 
@@ -145,11 +154,18 @@ export function useVoiceChannel(channelId: number | null) {
         }
 
         // If already screen sharing, add screen share to this new peer
-        if (screenStreamRef.current && isScreenSharing) {
+        if (screenStreamRef.current) {
             console.log('[useVoiceChannel] Adding existing screen share to new peer:', peerId);
             await manager.startScreenShare(screenStreamRef.current);
         } else {
-            console.log('[useVoiceChannel] Not adding screen share to new peer. isScreenSharing:', isScreenSharing, 'hasStream:', !!screenStreamRef.current);
+            console.log('[useVoiceChannel] Not adding screen share to new peer. hasStream:', !!screenStreamRef.current);
+        }
+
+        // If already camera enabled, add camera to this new peer
+        if (cameraStreamRef.current) {
+            console.log('[useVoiceChannel] Adding existing camera to new peer:', peerId);
+            const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
+            manager.addVideoTrack(videoTrack, cameraStreamRef.current);
         }
 
         // Create offer
@@ -183,19 +199,38 @@ export function useVoiceChannel(channelId: number | null) {
                     setParticipants(prev => prev.map(p =>
                         p.user_id === from_user_id ? { ...p, screenStream: screenStream } : p
                     ));
+                },
+                (cameraStream) => {
+                    console.log('[useVoiceChannel] Received camera from', from_user_id);
+                    setParticipants(prev => prev.map(p =>
+                        p.user_id === from_user_id ? { ...p, cameraStream: cameraStream } : p
+                    ));
                 }
             );
 
             if (localStreamRef.current) {
+                console.log('[useVoiceChannel] Adding local audio stream to incoming peer:', from_user_id);
                 manager.addLocalStream(localStreamRef.current);
             }
 
             // If already screen sharing, add screen share to this new peer
-            if (screenStreamRef.current && isScreenSharing) {
-                console.log('[useVoiceChannel] Adding existing screen share to incoming peer:', from_user_id);
+            // If already screen sharing, add screen share to this new peer
+            console.log('[useVoiceChannel] Checking screen share for incoming peer. hasStream:', !!screenStreamRef.current, 'from:', from_user_id);
+            if (screenStreamRef.current) {
+                console.log('[useVoiceChannel] ✅ Adding existing screen share to incoming peer:', from_user_id);
                 await manager.startScreenShare(screenStreamRef.current);
             } else {
-                console.log('[useVoiceChannel] Not adding screen share to incoming peer. isScreenSharing:', isScreenSharing, 'hasStream:', !!screenStreamRef.current);
+                console.log('[useVoiceChannel] ❌ Not adding screen share to incoming peer:', from_user_id);
+            }
+
+            // If already camera enabled, add camera to this new peer
+            console.log('[useVoiceChannel] Checking camera for incoming peer. hasStream:', !!cameraStreamRef.current, 'from:', from_user_id);
+            if (cameraStreamRef.current) {
+                console.log('[useVoiceChannel] ✅ Adding existing camera to incoming peer:', from_user_id);
+                const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
+                manager.addVideoTrack(videoTrack, cameraStreamRef.current);
+            } else {
+                console.log('[useVoiceChannel] ❌ Not adding camera to incoming peer:', from_user_id);
             }
         }
 
@@ -263,15 +298,8 @@ export function useVoiceChannel(channelId: number | null) {
 
     // Handle deafen toggle
     useEffect(() => {
-        // Deafen usually means muting incoming audio
-        participants.forEach(p => {
-            if (p.stream) {
-                p.stream.getAudioTracks().forEach(track => {
-                    track.enabled = !isDeafened;
-                });
-            }
-        });
-
+        // Deafen is handled by muting the audio elements in ChannelList.tsx
+        // We just update the database here
         if (channelId && user && isConnected) {
             supabase
                 .from('voice_channel_users')
@@ -282,7 +310,7 @@ export function useVoiceChannel(channelId: number | null) {
                     if (error) console.error('Error updating deafen state:', error);
                 });
         }
-    }, [isDeafened, channelId, user, isConnected, participants]);
+    }, [isDeafened, channelId, user, isConnected]);
 
     const fetchParticipants = async () => {
         if (!channelId) return;
@@ -290,7 +318,8 @@ export function useVoiceChannel(channelId: number | null) {
         const { data } = await supabase
             .from('voice_channel_users')
             .select('*, profile:profiles(*)')
-            .eq('channel_id', channelId);
+            .eq('channel_id', channelId)
+            .order('joined_at', { ascending: true });
 
         if (data) {
             setParticipants(prev => {
@@ -381,16 +410,80 @@ export function useVoiceChannel(channelId: number | null) {
         }
     }, [isScreenSharing, user, channelId, isConnected]);
 
+    // Toggle camera
+    const toggleCamera = useCallback(async () => {
+        if (!user || !channelId || !isConnected) return;
+
+        try {
+            if (isCameraEnabled) {
+                // Stop camera
+                if (cameraStreamRef.current) {
+                    cameraStreamRef.current.getTracks().forEach(track => track.stop());
+                    cameraStreamRef.current = null;
+                }
+
+                // Update database
+                await supabase
+                    .from('voice_channel_users')
+                    .update({ is_video_enabled: false })
+                    .eq('channel_id', channelId)
+                    .eq('user_id', user.id);
+
+                // Remove local camera from participants
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === user.id ? { ...p, cameraStream: undefined } : p
+                ));
+
+                setIsCameraEnabled(false);
+            } else {
+                // Start camera
+                const cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: false
+                });
+
+                cameraStreamRef.current = cameraStream;
+
+                // Send camera to all peers (camera uses video track, different from screen share)
+                for (const [peerId, manager] of peerManagers.current.entries()) {
+                    const videoTrack = cameraStream.getVideoTracks()[0];
+                    manager.addVideoTrack(videoTrack, cameraStream);
+                    // Trigger renegotiation
+                    const offer = await manager.createOffer();
+                    await sendSignal(peerId, 'offer', offer);
+                }
+
+                // Update database
+                await supabase
+                    .from('voice_channel_users')
+                    .update({ is_video_enabled: true })
+                    .eq('channel_id', channelId)
+                    .eq('user_id', user.id);
+
+                // Add local camera to participants for display
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === user.id ? { ...p, cameraStream: cameraStream } : p
+                ));
+
+                setIsCameraEnabled(true);
+            }
+        } catch (error) {
+            console.error('Error toggling camera:', error);
+        }
+    }, [isCameraEnabled, user, channelId, isConnected]);
+
     return {
         participants,
         isConnected,
         isMuted,
         isDeafened,
         isScreenSharing,
+        isCameraEnabled,
         joinChannel,
         leaveChannel,
         toggleMute: () => setIsMuted(!isMuted),
         toggleDeafen: () => setIsDeafened(!isDeafened),
-        toggleScreenShare
+        toggleScreenShare,
+        toggleCamera
     };
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp } from 'lucide-react';
+import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember } from '@/lib/types';
@@ -28,7 +28,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<number | null>(null);
 
   const { user, profile } = useAuth();
-  const { participants, joinChannel, leaveChannel, isConnected, isMuted, isDeafened, isScreenSharing, toggleMute, toggleDeafen, toggleScreenShare } = useVoiceChannel(activeVoiceChannelId);
+  const { participants, joinChannel, leaveChannel, isConnected, isMuted, isDeafened, isScreenSharing, isCameraEnabled, toggleMute, toggleDeafen, toggleScreenShare, toggleCamera } = useVoiceChannel(activeVoiceChannelId);
 
   // Use ref to avoid stale closure in realtime subscription
   const voiceChannelsRef = useRef<Channel[]>([]);
@@ -472,6 +472,13 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               title={isScreenSharing ? "Ekran Paylaşımını Durdur" : "Ekran Paylaş"}
             >
               <MonitorUp size={18} />
+            </button>
+            <button
+              onClick={toggleCamera}
+              className={`p-2 rounded-full transition-colors ${isCameraEnabled ? 'bg-blue-500/20 text-blue-500' : 'hover:bg-gray-700 text-gray-300'}`}
+              title={isCameraEnabled ? "Kamerayı Kapat" : "Kamerayı Aç"}
+            >
+              {isCameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
             </button>
             <button
               className="p-2 rounded-full hover:bg-gray-700 text-gray-300"

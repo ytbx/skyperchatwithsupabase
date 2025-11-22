@@ -32,7 +32,8 @@ export class WebRTCManager {
         onICECandidate: (candidate: RTCIceCandidateInit) => void,
         onConnectionStateChange?: (state: RTCPeerConnectionState) => void,
         onNegotiationNeeded?: () => void,
-        onRemoteScreen?: (stream: MediaStream) => void
+        onRemoteScreen?: (stream: MediaStream) => void,
+        onRemoteCamera?: (stream: MediaStream) => void
     ) {
         console.log('[WebRTCManager] Creating peer connection');
 
@@ -240,6 +241,15 @@ export class WebRTCManager {
         });
 
         console.log('[WebRTCManager] Camera', enabled ? 'enabled' : 'disabled');
+    }
+
+    /**
+     * Add a video track to the peer connection
+     */
+    addVideoTrack(track: MediaStreamTrack, stream: MediaStream) {
+        if (this.peerConnection) {
+            this.peerConnection.addTrack(track, stream);
+        }
     }
 
     /**
