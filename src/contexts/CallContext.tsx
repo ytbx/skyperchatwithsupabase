@@ -13,9 +13,11 @@ interface CallContextType {
     callStatus: CallStatus;
     localStream: MediaStream | null;
     remoteStream: MediaStream | null;
+    screenStream: MediaStream | null;
     isMicMuted: boolean;
     isCameraOff: boolean;
     isScreenSharing: boolean;
+    isRemoteScreenSharing: boolean;
     connectionState: RTCPeerConnectionState | null;
 
     // Actions
@@ -38,9 +40,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
     const [isMicMuted, setIsMicMuted] = useState(false);
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
 
     // Services
@@ -86,7 +90,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
             webrtcManager.createPeerConnection(
                 (remoteStream) => {
                     console.log('[CallContext] Remote stream received');
-                    setRemoteStream(remoteStream);
+                    // Create a new MediaStream reference to ensure React re-renders
+                    setRemoteStream(new MediaStream(remoteStream.getTracks()));
                 },
                 async (candidate) => {
                     await signaling.sendICECandidate(candidate);
@@ -96,6 +101,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     if (state === 'connected') {
                         setCallStatus('active');
                     }
+                },
+                async () => {
+                    // Handle renegotiation (e.g., when screen sharing starts/stops)
+                    console.log('[CallContext] Renegotiation needed - creating new offer');
+                    const offer = await webrtcManager.createOffer();
+                    await signaling.sendOffer(offer);
                 }
             );
 
@@ -126,6 +137,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         // Queue for later
                         console.log('[CallContext] Queueing ICE candidate until answer arrives');
                         pendingIceCandidates.push(signal.payload as RTCIceCandidateInit);
+                    }
+                } else if (signal.signal_type === 'offer') {
+                    // Handle renegotiation offer from peer (e.g., peer started screen sharing)
+                    console.log('[CallContext] Received renegotiation offer from peer');
+                    await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+                    const answer = await webrtcManager.createAnswer();
+                    await signaling.sendAnswer(answer);
+                } else if (signal.signal_type === 'screen-share-started') {
+                    console.log('[CallContext] Peer started screen sharing');
+                    setIsRemoteScreenSharing(true);
+                    // Force update remote stream to ensure UI updates
+                    const currentRemoteStream = webrtcManager.getRemoteStream();
+                    if (currentRemoteStream) {
+                        console.log('[CallContext] Force updating remote stream for screen share start');
+                        setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
+                    }
+                } else if (signal.signal_type === 'screen-share-stopped') {
+                    console.log('[CallContext] Peer stopped screen sharing');
+                    setIsRemoteScreenSharing(false);
+                    // Force update remote stream to ensure UI updates
+                    const currentRemoteStream = webrtcManager.getRemoteStream();
+                    if (currentRemoteStream) {
+                        console.log('[CallContext] Force updating remote stream for screen share stop');
+                        setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
                     }
                 } else if (signal.signal_type === 'call-rejected') {
                     console.log('[CallContext] ========== RECEIVED CALL-REJECTED SIGNAL (CALLER) ==========');
@@ -225,7 +260,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         webrtcManager.createPeerConnection(
                             (remoteStream) => {
                                 console.log('[CallContext] Remote stream received');
-                                setRemoteStream(remoteStream);
+                                // Create a new MediaStream reference to ensure React re-renders
+                                setRemoteStream(new MediaStream(remoteStream.getTracks()));
                             },
                             async (candidate) => {
                                 await signaling.sendICECandidate(candidate);
@@ -237,6 +273,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                     console.log('[CallContext] Setting callStatus to ACTIVE (callee)');
                                     setCallStatus('active');
                                 }
+                            },
+                            async () => {
+                                // Handle renegotiation (e.g., when screen sharing starts/stops)
+                                console.log('[CallContext] Renegotiation needed - creating new offer');
+                                const offer = await webrtcManager.createOffer();
+                                await signaling.sendOffer(offer);
                             }
                         );
 
@@ -249,8 +291,32 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         // Create and send answer
                         const answer = await webrtcManager.createAnswer();
                         await signaling.sendAnswer(answer);
+                    } else if (signal.signal_type === 'offer' && peerConnectionCreated) {
+                        // Handle renegotiation offer (e.g., peer started screen sharing)
+                        console.log('[CallContext] Received renegotiation offer from peer');
+                        await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+                        const answer = await webrtcManager.createAnswer();
+                        await signaling.sendAnswer(answer);
                     } else if (signal.signal_type === 'ice-candidate') {
                         await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
+                    } else if (signal.signal_type === 'screen-share-started') {
+                        console.log('[CallContext] Peer started screen sharing');
+                        setIsRemoteScreenSharing(true);
+                        // Force update remote stream to ensure UI updates
+                        const currentRemoteStream = webrtcManager.getRemoteStream();
+                        if (currentRemoteStream) {
+                            console.log('[CallContext] Force updating remote stream for screen share start');
+                            setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
+                        }
+                    } else if (signal.signal_type === 'screen-share-stopped') {
+                        console.log('[CallContext] Peer stopped screen sharing');
+                        setIsRemoteScreenSharing(false);
+                        // Force update remote stream to ensure UI updates
+                        const currentRemoteStream = webrtcManager.getRemoteStream();
+                        if (currentRemoteStream) {
+                            console.log('[CallContext] Force updating remote stream for screen share stop');
+                            setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
+                        }
                     } else if (signal.signal_type === 'call-cancelled') {
                         console.log('[CallContext] ========== RECEIVED CALL-CANCELLED SIGNAL (CALLEE) ==========');
                         console.log('[CallContext] Caller cancelled the call, cleaning up...');
@@ -428,16 +494,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const toggleScreenShare = useCallback(async () => {
         try {
             if (isScreenSharing) {
+                // Stop screen sharing
                 await webrtcManager.stopScreenShare();
                 setIsScreenSharing(false);
+                setScreenStream(null);
+
+                // Notify peer that screen sharing stopped
+                if (signalingService) {
+                    await signalingService.sendScreenShareStopped();
+                }
+
+                console.log('[CallContext] Screen sharing stopped, renegotiation will be triggered automatically');
             } else {
-                await webrtcManager.startScreenShare();
+                // Start screen sharing
+                const stream = await webrtcManager.startScreenShare();
                 setIsScreenSharing(true);
+                setScreenStream(stream);
+
+                // Notify peer that screen sharing started
+                if (signalingService) {
+                    await signalingService.sendScreenShareStarted();
+                }
+
+                console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');
             }
         } catch (error) {
             console.error('[CallContext] Error toggling screen share:', error);
         }
-    }, [isScreenSharing, webrtcManager]);
+    }, [isScreenSharing, webrtcManager, signalingService]);
 
     // Subscribe to incoming calls and call status updates
     useEffect(() => {
@@ -613,9 +697,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         callStatus,
         localStream,
         remoteStream,
+        screenStream,
         isMicMuted,
         isCameraOff,
         isScreenSharing,
+        isRemoteScreenSharing,
         connectionState,
         initiateCall,
         acceptCall,

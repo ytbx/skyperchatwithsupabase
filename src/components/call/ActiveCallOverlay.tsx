@@ -15,53 +15,28 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
         isMicMuted,
         isCameraOff,
         isScreenSharing,
+        isRemoteScreenSharing,
         connectionState,
         toggleMic,
         toggleCamera,
         toggleScreenShare,
         endCall,
-        activeCall
+        activeCall,
+        screenStream
     } = useCall();
 
-    const localVideoRef = useRef<HTMLVideoElement>(null);
-    const remoteVideoRef = useRef<HTMLVideoElement>(null);
-    const remoteAudioRef = useRef<HTMLAudioElement>(null);
     const [callDuration, setCallDuration] = useState(0);
 
-    // Update local video stream
-    useEffect(() => {
-        if (localVideoRef.current && localStream) {
-            localVideoRef.current.srcObject = localStream;
+    // Helper to set video stream
+    const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null) => {
+        if (el && stream) {
+            if (el.srcObject !== stream) {
+                console.log('[ActiveCallOverlay] Setting stream to video element');
+                el.srcObject = stream;
+                el.play().catch(e => console.error('Error playing video:', e));
+            }
         }
-    }, [localStream]);
-
-    // Update remote video stream
-    useEffect(() => {
-        if (remoteVideoRef.current && remoteStream) {
-            console.log('[ActiveCallOverlay] Setting remote stream');
-            console.log('[ActiveCallOverlay] Remote stream audio tracks:', remoteStream.getAudioTracks().length);
-            console.log('[ActiveCallOverlay] Remote stream video tracks:', remoteStream.getVideoTracks().length);
-            remoteVideoRef.current.srcObject = remoteStream;
-
-            // Ensure video is playing
-            remoteVideoRef.current.play().catch(e => {
-                console.error('[ActiveCallOverlay] Error playing remote video:', e);
-            });
-        }
-    }, [remoteStream]);
-
-    // Update remote audio stream (SEPARATE for better compatibility)
-    useEffect(() => {
-        if (remoteAudioRef.current && remoteStream) {
-            console.log('[ActiveCallOverlay] Setting remote audio stream');
-            remoteAudioRef.current.srcObject = remoteStream;
-
-            // Ensure audio is playing
-            remoteAudioRef.current.play().catch(e => {
-                console.error('[ActiveCallOverlay] Error playing remote audio:', e);
-            });
-        }
-    }, [remoteStream]);
+    };
 
     // Call duration timer
     useEffect(() => {
@@ -69,7 +44,6 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
             const interval = setInterval(() => {
                 setCallDuration(prev => prev + 1);
             }, 1000);
-
             return () => clearInterval(interval);
         } else {
             setCallDuration(0);
@@ -83,13 +57,15 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // Don't show overlay if call is not active or connecting
     if (callStatus !== 'active' && callStatus !== 'connecting') {
         return null;
     }
 
     const isVideoCall = activeCall?.call_type === 'video';
-    const showVideo = isVideoCall && !isCameraOff;
+    const showVideo = (isVideoCall && !isCameraOff) || isRemoteScreenSharing || isScreenSharing;
+
+    // Determine layout mode
+    const isBidirectionalScreenShare = isScreenSharing && screenStream && remoteStream && isRemoteScreenSharing;
 
     return (
         <div className="relative w-full h-1/2 bg-gray-900 border-b border-gray-700 z-10 flex flex-col">
@@ -130,45 +106,90 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
 
             {/* Video/Audio Display Area */}
             <div className="flex-1 relative bg-gray-950">
-                {/* Hidden audio element for remote audio */}
-                <audio ref={remoteAudioRef} autoPlay playsInline />
+                <audio
+                    ref={(el) => {
+                        if (el && remoteStream) {
+                            if (el.srcObject !== remoteStream) {
+                                el.srcObject = remoteStream;
+                                el.play().catch(e => console.error('Error playing remote audio:', e));
+                            }
+                        }
+                    }}
+                    autoPlay
+                    playsInline
+                />
 
-                {/* Remote Video/Audio */}
-                {remoteStream ? (
-                    <div className="w-full h-full flex items-center justify-center">
-                        {showVideo || isScreenSharing ? (
-                            <video
-                                ref={remoteVideoRef}
-                                autoPlay
-                                playsInline
-                                className="w-full h-full object-contain"
-                            />
-                        ) : (
-                            // Audio-only call - show avatar
-                            <div className="flex flex-col items-center justify-center">
-                                <div className="w-32 h-32 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center mb-4">
-                                    <User size={48} className="text-white" />
+                <div className="w-full h-full flex items-center justify-center p-4">
+                    {isBidirectionalScreenShare ? (
+                        // Case 1: Bidirectional Screen Share (Split View)
+                        <div className="w-full h-full flex space-x-4">
+                            <div className="flex-1 flex flex-col items-center justify-center">
+                                <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800">
+                                    <video
+                                        ref={(el) => setVideoStream(el, screenStream)}
+                                        autoPlay
+                                        playsInline
+                                        muted
+                                        className="w-full h-full object-contain bg-gray-900"
+                                    />
+                                    <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
+                                        Sizin Ekranınız
+                                    </div>
                                 </div>
-                                <p className="text-white text-lg font-medium">{contactName}</p>
-                                <p className="text-gray-400 text-sm">Voice call</p>
                             </div>
-                        )}
-                    </div>
-                ) : (
-                    // Waiting for remote stream
-                    <div className="w-full h-full flex items-center justify-center">
-                        <div className="text-center">
-                            <div className="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-                            <p className="text-gray-400">Waiting for {contactName}...</p>
+                            <div className="flex-1 flex flex-col items-center justify-center">
+                                <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800">
+                                    <video
+                                        ref={(el) => setVideoStream(el, remoteStream)}
+                                        autoPlay
+                                        playsInline
+                                        className="w-full h-full object-contain bg-gray-900"
+                                    />
+                                    <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
+                                        {contactName}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    ) : (
+                        // Case 2: Single View
+                        (remoteStream || (isScreenSharing && screenStream)) ? (
+                            <div className="relative w-full max-w-4xl aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800">
+                                {showVideo ? (
+                                    <video
+                                        // If screen sharing, use local screen stream, otherwise remote stream
+                                        ref={(el) => setVideoStream(el, (isScreenSharing && screenStream) ? screenStream : remoteStream)}
+                                        autoPlay
+                                        playsInline
+                                        muted={isScreenSharing}
+                                        className="w-full h-full object-contain bg-gray-900"
+                                    />
+                                ) : (
+                                    // Audio-only avatar
+                                    <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900">
+                                        <div className="w-32 h-32 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center mb-4">
+                                            <User size={48} className="text-white" />
+                                        </div>
+                                        <p className="text-white text-lg font-medium">{contactName}</p>
+                                        <p className="text-gray-400 text-sm">Voice call</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            // Waiting state
+                            <div className="text-center">
+                                <div className="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+                                <p className="text-gray-400">Waiting for {contactName}...</p>
+                            </div>
+                        )
+                    )}
+                </div>
 
-                {/* Local Video Thumbnail (Picture-in-Picture) */}
-                {localStream && (showVideo || isScreenSharing) && (
+                {/* Local Video Thumbnail (PIP) - Hide when screen sharing */}
+                {localStream && showVideo && !isScreenSharing && (
                     <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-700 shadow-xl">
                         <video
-                            ref={localVideoRef}
+                            ref={(el) => setVideoStream(el, localStream)}
                             autoPlay
                             playsInline
                             muted
@@ -197,12 +218,11 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                 />
             </div>
 
-            {/* CSS for mirror effect on local video */}
             <style>{`
-        .mirror {
-          transform: scaleX(-1);
-        }
-      `}</style>
+                .mirror {
+                    transform: scaleX(-1);
+                }
+            `}</style>
         </div>
     );
 };

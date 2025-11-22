@@ -198,7 +198,7 @@ export interface CallSignal {
   call_id: string;
   from_user_id: string;
   to_user_id: string;
-  signal_type: 'offer' | 'answer' | 'ice-candidate' | 'call-ended' | 'call-rejected' | 'call-cancelled';
+  signal_type: 'offer' | 'answer' | 'ice-candidate' | 'call-ended' | 'call-rejected' | 'call-cancelled' | 'screen-share-started' | 'screen-share-stopped';
   payload: RTCSessionDescriptionInit | RTCIceCandidateInit | Record<string, never>;
   created_at: string;
 }

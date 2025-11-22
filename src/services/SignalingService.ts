@@ -212,6 +212,50 @@ export class SignalingService {
     }
 
     /**
+     * Send screen share started signal to peer
+     */
+    async sendScreenShareStarted() {
+        console.log('[SignalingService] Sending screen share started signal');
+
+        const { error } = await supabase
+            .from('webrtc_signals')
+            .insert({
+                call_id: this.callId,
+                from_user_id: this.userId,
+                to_user_id: this.peerId,
+                signal_type: 'screen-share-started',
+                payload: {}
+            });
+
+        if (error) {
+            console.error('[SignalingService] Error sending screen share started signal:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Send screen share stopped signal to peer
+     */
+    async sendScreenShareStopped() {
+        console.log('[SignalingService] Sending screen share stopped signal');
+
+        const { error } = await supabase
+            .from('webrtc_signals')
+            .insert({
+                call_id: this.callId,
+                from_user_id: this.userId,
+                to_user_id: this.peerId,
+                signal_type: 'screen-share-stopped',
+                payload: {}
+            });
+
+        if (error) {
+            console.error('[SignalingService] Error sending screen share stopped signal:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Clean up and close the signaling channel
      */
     async cleanup() {

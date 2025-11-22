@@ -357,48 +357,50 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
   return (
     <div className="flex-1 flex flex-col bg-gray-800">
-      {/* Header */}
-      <div className="h-16 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-            <User size={16} className="text-white" />
+      {/* Header - Hide when call is active or connecting */}
+      {callStatus !== 'active' && callStatus !== 'connecting' && (
+        <div className="h-16 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+              <User size={16} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold">{contactName}</h3>
+              <p className="text-xs text-gray-400">Direct Message</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-white font-semibold">{contactName}</h3>
-            <p className="text-xs text-gray-400">Direct Message</p>
+
+          <div className="flex items-center space-x-2">
+            {/* Voice Call Button */}
+            <button
+              onClick={() => initiateCall(contactId, contactName, 'voice')}
+              className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white"
+              title="Start voice call"
+            >
+              <Phone size={20} />
+            </button>
+
+            {/* Video Call Button */}
+            <button
+              onClick={() => initiateCall(contactId, contactName, 'video')}
+              className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white"
+              title="Start video call"
+            >
+              <Video size={20} />
+            </button>
+
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className={`p-2 rounded-lg transition-colors ${showSearch ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}
+            >
+              <Search size={20} />
+            </button>
+            <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
+              <MoreVertical size={20} className="text-gray-400" />
+            </button>
           </div>
         </div>
-
-        <div className="flex items-center space-x-2">
-          {/* Voice Call Button */}
-          <button
-            onClick={() => initiateCall(contactId, contactName, 'voice')}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white"
-            title="Start voice call"
-          >
-            <Phone size={20} />
-          </button>
-
-          {/* Video Call Button */}
-          <button
-            onClick={() => initiateCall(contactId, contactName, 'video')}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white"
-            title="Start video call"
-          >
-            <Video size={20} />
-          </button>
-
-          <button
-            onClick={() => setShowSearch(!showSearch)}
-            className={`p-2 rounded-lg transition-colors ${showSearch ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}
-          >
-            <Search size={20} />
-          </button>
-          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-            <MoreVertical size={20} className="text-gray-400" />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Active Call Overlay */}
       {(callStatus === 'active' || callStatus === 'connecting') && (
