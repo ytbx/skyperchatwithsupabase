@@ -144,6 +144,14 @@ export function useVoiceChannel(channelId: number | null) {
             manager.addLocalStream(localStreamRef.current);
         }
 
+        // If already screen sharing, add screen share to this new peer
+        if (screenStreamRef.current && isScreenSharing) {
+            console.log('[useVoiceChannel] Adding existing screen share to new peer:', peerId);
+            await manager.startScreenShare(screenStreamRef.current);
+        } else {
+            console.log('[useVoiceChannel] Not adding screen share to new peer. isScreenSharing:', isScreenSharing, 'hasStream:', !!screenStreamRef.current);
+        }
+
         // Create offer
         const offer = await manager.createOffer();
         await sendSignal(peerId, 'offer', offer);
@@ -180,6 +188,14 @@ export function useVoiceChannel(channelId: number | null) {
 
             if (localStreamRef.current) {
                 manager.addLocalStream(localStreamRef.current);
+            }
+
+            // If already screen sharing, add screen share to this new peer
+            if (screenStreamRef.current && isScreenSharing) {
+                console.log('[useVoiceChannel] Adding existing screen share to incoming peer:', from_user_id);
+                await manager.startScreenShare(screenStreamRef.current);
+            } else {
+                console.log('[useVoiceChannel] Not adding screen share to incoming peer. isScreenSharing:', isScreenSharing, 'hasStream:', !!screenStreamRef.current);
             }
         }
 
