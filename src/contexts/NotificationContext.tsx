@@ -156,7 +156,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           type,
           title,
           message: body,
-          is_read: false,
           metadata: data
         });
     } catch (error) {

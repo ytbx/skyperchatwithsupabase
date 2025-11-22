@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Bell, X, MessageCircle, UserPlus, Phone, Video, Check } from 'lucide-react';
+import { Bell, X, MessageCircle, UserPlus, Phone, Trash2 } from 'lucide-react';
 
 interface Notification {
   id: string;
@@ -9,7 +9,6 @@ interface Notification {
   type: 'message' | 'friend_request' | 'call' | 'server_invite';
   title: string;
   message: string;
-  is_read: boolean;
   created_at: string;
   metadata?: {
     sender_id?: string;
@@ -23,7 +22,7 @@ export const NotificationSystem: React.FC = () => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -33,8 +32,7 @@ export const NotificationSystem: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    const count = notifications.filter(n => !n.is_read).length;
-    setUnreadCount(count);
+    setNotificationCount(notifications.length);
   }, [notifications]);
 
   const loadNotifications = async () => {
@@ -72,7 +70,7 @@ export const NotificationSystem: React.FC = () => {
         (payload) => {
           const newNotification = payload.new as Notification;
           setNotifications(prev => [newNotification, ...prev]);
-          
+
           // Show browser notification if permission granted
           showBrowserNotification(newNotification);
         }
@@ -99,53 +97,49 @@ export const NotificationSystem: React.FC = () => {
     }
   };
 
-  const markAsRead = async (notificationId: string) => {
-    try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId);
-
-      if (error) throw error;
-
-      setNotifications(prev =>
-        prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
-      );
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', user?.id)
-        .eq('is_read', false);
-
-      if (error) throw error;
-
-      setNotifications(prev =>
-        prev.map(n => ({ ...n, is_read: true }))
-      );
-    } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-    }
-  };
-
   const deleteNotification = async (notificationId: string) => {
+    console.log('🗑️ Attempting to delete notification:', notificationId);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('notifications')
         .delete()
-        .eq('id', notificationId);
+        .eq('id', notificationId)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase delete error:', error);
+        alert(`Bildirim silinemedi: ${error.message}`);
+        throw error;
+      }
 
+      console.log('✅ Notification deleted from DB:', data);
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
-      console.error('Error deleting notification:', error);
+      console.error('❌ Error deleting notification:', error);
+    }
+  };
+
+  const deleteAllNotifications = async () => {
+    if (!user) return;
+
+    console.log('🗑️ Attempting to delete all notifications for user:', user.id);
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', user.id)
+        .select();
+
+      if (error) {
+        console.error('❌ Supabase delete all error:', error);
+        alert(`Tüm bildirimler silinemedi: ${error.message}`);
+        throw error;
+      }
+
+      console.log('✅ All notifications deleted from DB:', data);
+      setNotifications([]);
+    } catch (error) {
+      console.error('❌ Error deleting all notifications:', error);
     }
   };
 
@@ -169,13 +163,13 @@ export const NotificationSystem: React.FC = () => {
 
     if (diffInMinutes < 1) return 'Şimdi';
     if (diffInMinutes < 60) return `${diffInMinutes}dk önce`;
-    
+
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `${diffInHours}sa önce`;
-    
+
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) return `${diffInDays}g önce`;
-    
+
     return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
   };
 
@@ -192,9 +186,9 @@ export const NotificationSystem: React.FC = () => {
         className="relative p-2 hover:bg-gray-700 rounded-lg transition-colors"
       >
         <Bell size={20} className="text-gray-400" />
-        {unreadCount > 0 && (
+        {notificationCount > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {notificationCount > 99 ? '99+' : notificationCount}
           </span>
         )}
       </button>
@@ -214,22 +208,12 @@ export const NotificationSystem: React.FC = () => {
             <div className="p-4 border-b border-gray-700">
               <div className="flex items-center justify-between">
                 <h3 className="text-white font-semibold">Bildirimler</h3>
-                <div className="flex items-center space-x-2">
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={markAllAsRead}
-                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      Tümünü okundu işaretle
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className="p-1 hover:bg-gray-700 rounded transition-colors"
-                  >
-                    <X size={16} className="text-gray-400" />
-                  </button>
-                </div>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 hover:bg-gray-700 rounded transition-colors"
+                >
+                  <X size={16} className="text-gray-400" />
+                </button>
               </div>
             </div>
 
@@ -245,11 +229,7 @@ export const NotificationSystem: React.FC = () => {
                   {notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      className={`p-4 transition-colors ${
-                        !notification.is_read 
-                          ? 'bg-blue-600/10 border-l-2 border-l-blue-600' 
-                          : 'hover:bg-gray-800'
-                      }`}
+                      className="p-4 hover:bg-gray-800 transition-colors"
                     >
                       <div className="flex items-start space-x-3">
                         {/* Icon */}
@@ -259,9 +239,7 @@ export const NotificationSystem: React.FC = () => {
 
                         {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <h4 className={`text-sm font-medium ${
-                            !notification.is_read ? 'text-white' : 'text-gray-300'
-                          }`}>
+                          <h4 className="text-sm font-medium text-white">
                             {notification.title}
                           </h4>
                           <p className="text-sm text-gray-400 mt-1 line-clamp-2">
@@ -271,25 +249,14 @@ export const NotificationSystem: React.FC = () => {
                             <span className="text-xs text-gray-500">
                               {formatTime(notification.created_at)}
                             </span>
-                            
-                            <div className="flex items-center space-x-1">
-                              {!notification.is_read && (
-                                <button
-                                  onClick={() => markAsRead(notification.id)}
-                                  className="p-1 hover:bg-gray-700 rounded transition-colors"
-                                  title="Okundu işaretle"
-                                >
-                                  <Check size={12} className="text-green-400" />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => deleteNotification(notification.id)}
-                                className="p-1 hover:bg-gray-700 rounded transition-colors"
-                                title="Sil"
-                              >
-                                <X size={12} className="text-red-400" />
-                              </button>
-                            </div>
+
+                            <button
+                              onClick={() => deleteNotification(notification.id)}
+                              className="p-1.5 hover:bg-red-600/20 rounded transition-colors group"
+                              title="Sil"
+                            >
+                              <X size={14} className="text-red-400 group-hover:text-red-300" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -302,8 +269,12 @@ export const NotificationSystem: React.FC = () => {
             {/* Footer */}
             {notifications.length > 0 && (
               <div className="p-3 border-t border-gray-700 text-center">
-                <button className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                  Tüm bildirimleri görüntüle
+                <button
+                  onClick={deleteAllNotifications}
+                  className="flex items-center justify-center gap-2 w-full text-sm text-red-400 hover:text-red-300 transition-colors py-1"
+                >
+                  <Trash2 size={14} />
+                  Tüm bildirimleri sil
                 </button>
               </div>
             )}
@@ -330,8 +301,7 @@ export const createNotification = async (
         type,
         title,
         message,
-        metadata,
-        is_read: false
+        metadata
       });
 
     if (error) throw error;

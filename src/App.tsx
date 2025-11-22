@@ -265,7 +265,7 @@ function AppContent() {
       )}
 
       {/* Right Sidebar - Member List (only for servers) */}
-      {showMemberList && currentView === 'servers' && selectedServerId && (activeVoiceChannel || selectedChannel) && (
+      {showMemberList && currentView === 'servers' && selectedServerId && (
         <MemberList serverId={selectedServerId} />
       )}
 

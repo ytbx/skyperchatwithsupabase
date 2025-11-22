@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSupabaseRealtime } from '../../contexts/SupabaseRealtimeContext';
 import { Profile } from '../../lib/types';
 import { UserPlus, Users, UserMinus, Check, X, Search } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   onStartDM
 }) => {
   const { user } = useAuth();
+  const { isUserOnline } = useSupabaseRealtime();
   const [activeTab, setActiveTab] = useState<'friends' | 'pending' | 'add'>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
@@ -73,12 +75,13 @@ export const FriendsList: React.FC<FriendsListProps> = ({
           ? friendship.requested
           : friendship.requester;
 
+        const isOnline = isUserOnline(friend.id);
         friendsList.push({
           id: friend.id,
           username: friend.username,
           profile_image_url: friend.profile_image_url,
-          isOnline: false, // Will be updated by presence
-          status: 'offline'
+          isOnline,
+          status: isOnline ? 'online' : 'offline'
         });
       }
 
@@ -458,11 +461,16 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                       onClick={() => onStartDM(friend.id, friend.username)}
                     >
                       <div className="flex items-center space-x-3">
-                        {/* Avatar */}
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">
-                            {friend.username.charAt(0).toUpperCase()}
-                          </span>
+                        {/* Avatar with online status */}
+                        <div className="relative">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                            <span className="text-white text-sm font-medium">
+                              {friend.username.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          {/* Online status indicator */}
+                          <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${isUserOnline(friend.id) ? 'bg-green-500' : 'bg-gray-500'
+                            }`} />
                         </div>
 
                         {/* Info */}
@@ -470,8 +478,9 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                           <h3 className="text-white font-medium text-sm truncate">
                             {friend.username}
                           </h3>
-                          <p className="text-xs text-gray-400 truncate">
-                            Arkadaş
+                          <p className={`text-xs truncate ${isUserOnline(friend.id) ? 'text-green-400' : 'text-gray-400'
+                            }`}>
+                            {isUserOnline(friend.id) ? 'Çevrimiçi' : 'Çevrimdışı'}
                           </p>
                         </div>
 

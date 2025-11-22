@@ -7,6 +7,13 @@ export interface Profile {
   custom_status?: string | null;
   custom_emoji?: string | null;
   status?: 'online' | 'idle' | 'dnd' | 'invisible' | 'offline';
+  last_seen?: string;
+}
+
+export interface UserPresence {
+  user_id: string;
+  online_at: string;
+  status: 'online' | 'offline';
 }
 
 export interface Server {
@@ -88,7 +95,6 @@ export interface Notification {
   type: 'message' | 'friend_request' | 'call' | 'server_invite';
   title: string;
   message: string;
-  is_read: boolean;
   created_at: string;
   metadata?: {
     sender_id?: string;
