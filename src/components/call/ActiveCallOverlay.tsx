@@ -22,7 +22,8 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
         toggleScreenShare,
         endCall,
         activeCall,
-        screenStream
+        screenStream,
+        remoteScreenStream
     } = useCall();
 
     const [callDuration, setCallDuration] = useState(0);
@@ -65,7 +66,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
     const showVideo = (isVideoCall && !isCameraOff) || isRemoteScreenSharing || isScreenSharing;
 
     // Determine layout mode
-    const isBidirectionalScreenShare = isScreenSharing && screenStream && remoteStream && isRemoteScreenSharing;
+    const isBidirectionalScreenShare = isScreenSharing && screenStream && isRemoteScreenSharing && remoteScreenStream;
 
     return (
         <div className="relative w-full h-1/2 bg-gray-900 border-b border-gray-700 z-10 flex flex-col">
@@ -140,7 +141,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                             <div className="flex-1 flex flex-col items-center justify-center">
                                 <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800">
                                     <video
-                                        ref={(el) => setVideoStream(el, remoteStream)}
+                                        ref={(el) => setVideoStream(el, remoteScreenStream)}
                                         autoPlay
                                         playsInline
                                         className="w-full h-full object-contain bg-gray-900"
@@ -153,15 +154,23 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                         </div>
                     ) : (
                         // Case 2: Single View
-                        (remoteStream || (isScreenSharing && screenStream)) ? (
+                        (remoteStream || (isScreenSharing && screenStream) || (isRemoteScreenSharing && remoteScreenStream)) ? (
                             <div className="relative w-full max-w-4xl aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800">
                                 {showVideo ? (
                                     <video
-                                        // If screen sharing, use local screen stream, otherwise remote stream
-                                        ref={(el) => setVideoStream(el, (isScreenSharing && screenStream) ? screenStream : remoteStream)}
+                                        // Priority: Remote Screen > Local Screen > Remote Camera
+                                        ref={(el) => {
+                                            let streamToShow = remoteStream;
+                                            if (isRemoteScreenSharing && remoteScreenStream) {
+                                                streamToShow = remoteScreenStream;
+                                            } else if (isScreenSharing && screenStream) {
+                                                streamToShow = screenStream;
+                                            }
+                                            setVideoStream(el, streamToShow);
+                                        }}
                                         autoPlay
                                         playsInline
-                                        muted={isScreenSharing}
+                                        muted={isScreenSharing && !isRemoteScreenSharing} // Mute if showing local screen
                                         className="w-full h-full object-contain bg-gray-900"
                                     />
                                 ) : (

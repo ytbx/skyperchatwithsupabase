@@ -14,6 +14,7 @@ interface CallContextType {
     localStream: MediaStream | null;
     remoteStream: MediaStream | null;
     screenStream: MediaStream | null;
+    remoteScreenStream: MediaStream | null;
     isMicMuted: boolean;
     isCameraOff: boolean;
     isScreenSharing: boolean;
@@ -33,6 +34,11 @@ interface CallContextType {
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
 export function CallProvider({ children }: { children: ReactNode }) {
+
+    // Services
+    const [webrtcManager] = useState(() => new WebRTCManager());
+    const [signalingService, setSignalingService] = useState<SignalingService | null>(null);
+
     const { user } = useAuth();
 
     // State
@@ -41,15 +47,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+    const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
     const [isMicMuted, setIsMicMuted] = useState(false);
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
-
-    // Services
-    const [webrtcManager] = useState(() => new WebRTCManager());
-    const [signalingService, setSignalingService] = useState<SignalingService | null>(null);
 
     /**
      * Initiate a call to a contact
@@ -103,10 +106,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     }
                 },
                 async () => {
-                    // Handle renegotiation (e.g., when screen sharing starts/stops)
+                    // Handle renegotiation
                     console.log('[CallContext] Renegotiation needed - creating new offer');
                     const offer = await webrtcManager.createOffer();
                     await signaling.sendOffer(offer);
+                },
+                (screenStream) => {
+                    console.log('[CallContext] Remote screen stream received');
+                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
                 }
             );
 
@@ -279,6 +286,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 console.log('[CallContext] Renegotiation needed - creating new offer');
                                 const offer = await webrtcManager.createOffer();
                                 await signaling.sendOffer(offer);
+                            },
+                            (screenStream) => {
+                                console.log('[CallContext] Remote screen stream received (callee)');
+                                setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
                             }
                         );
 
@@ -507,9 +518,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 console.log('[CallContext] Screen sharing stopped, renegotiation will be triggered automatically');
             } else {
                 // Start screen sharing
-                const stream = await webrtcManager.startScreenShare();
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: false
+                });
+
+                await webrtcManager.startScreenShare(stream);
                 setIsScreenSharing(true);
                 setScreenStream(stream);
+
+                // Handle stream stop (user clicks "Stop sharing" in browser UI)
+                stream.getVideoTracks()[0].onended = () => {
+                    toggleScreenShare();
+                };
 
                 // Notify peer that screen sharing started
                 if (signalingService) {
@@ -698,6 +719,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         localStream,
         remoteStream,
         screenStream,
+        remoteScreenStream,
         isMicMuted,
         isCameraOff,
         isScreenSharing,
