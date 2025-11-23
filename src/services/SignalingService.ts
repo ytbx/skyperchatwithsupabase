@@ -24,6 +24,13 @@ export class SignalingService {
     async initialize(onSignal: (signal: CallSignal) => void) {
         this.onSignalCallback = onSignal;
 
+        // If channel already exists, clean it up first to avoid duplicates
+        if (this.channel) {
+            console.log('[SignalingService] Cleaning up existing channel before re-initialization');
+            await this.channel.unsubscribe();
+            this.channel = null;
+        }
+
         // First, fetch any existing signals that were sent before we subscribed
         console.log('[SignalingService] Fetching historical signals');
         const { data: historicalSignals, error: fetchError } = await supabase
@@ -66,7 +73,7 @@ export class SignalingService {
                     }
                 }
             )
-            .subscribe((status) => {
+            .subscribe((status: any) => {
                 console.log('[SignalingService] Channel status:', status);
             });
 

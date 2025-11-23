@@ -107,18 +107,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
 
             {/* Video/Audio Display Area */}
             <div className="flex-1 relative bg-gray-950">
-                <audio
-                    ref={(el) => {
-                        if (el && remoteStream) {
-                            if (el.srcObject !== remoteStream) {
-                                el.srcObject = remoteStream;
-                                el.play().catch(e => console.error('Error playing remote audio:', e));
-                            }
-                        }
-                    }}
-                    autoPlay
-                    playsInline
-                />
+                {/* GlobalAudio handles the audio playback now */}
 
                 <div className="w-full h-full flex items-center justify-center p-4 gap-4">
                     {/* Remote Screen Share */}

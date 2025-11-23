@@ -526,6 +526,14 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isCameraEnabled, user, activeChannelId, isConnected]);
 
+    // Auto-leave channel when active call starts
+    useEffect(() => {
+        if (activeCall && activeChannelId) {
+            console.log('[VoiceChannelContext] Active call detected, leaving voice channel...');
+            leaveChannel();
+        }
+    }, [activeCall, activeChannelId, leaveChannel]);
+
     const value: VoiceChannelContextType = {
         activeChannelId,
         participants,
