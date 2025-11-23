@@ -10,6 +10,8 @@ import { MemberList } from '@/components/layout/MemberList';
 import { CreateServerModal } from '@/components/modals/CreateServerModal';
 import { CreateChannelModal } from '@/components/modals/CreateChannelModal';
 import { SettingsModal } from '@/components/modals/SettingsModal';
+import { ServerSettingsModal } from '@/components/modals/ServerSettingsModal';
+import { EditChannelModal } from '@/components/modals/EditChannelModal';
 import { ServerInviteModal } from '@/components/modals/ServerInviteModal';
 import { DirectMessageArea } from '@/components/dm/DirectMessageArea';
 import { FriendsList } from '@/components/friends/FriendsList';
@@ -50,7 +52,10 @@ function AppContent() {
     const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showServerInviteModal, setShowServerInviteModal] = useState(false);
-    const [showServerRolesModal, setShowServerRolesModal] = useState(false);
+    const [showServerSettingsModal, setShowServerSettingsModal] = useState(false);
+    const [showEditChannelModal, setShowEditChannelModal] = useState(false);
+    const [editingChannelId, setEditingChannelId] = useState<number | null>(null);
+
     const [showMemberList, setShowMemberList] = useState(true);
     const [showGlobalSearch, setShowGlobalSearch] = useState(false);
 
@@ -213,7 +218,11 @@ function AppContent() {
                     onSelectChannel={setSelectedChannelId}
                     onCreateChannel={handleCreateChannel}
                     onInvite={() => setShowServerInviteModal(true)}
-                    onManageRoles={() => setShowServerRolesModal(true)}
+                    onServerSettings={() => setShowServerSettingsModal(true)}
+                    onEditChannel={(channelId) => {
+                        setEditingChannelId(channelId);
+                        setShowEditChannelModal(true);
+                    }}
                 />
             )}
 
@@ -320,7 +329,19 @@ function AppContent() {
                         serverId={selectedServerId}
                         serverName={selectedServerName}
                     />
-
+                    <ServerSettingsModal
+                        isOpen={showServerSettingsModal}
+                        onClose={() => setShowServerSettingsModal(false)}
+                        serverId={selectedServerId}
+                    />
+                    {editingChannelId && (
+                        <EditChannelModal
+                            isOpen={showEditChannelModal}
+                            onClose={() => setShowEditChannelModal(false)}
+                            channelId={editingChannelId}
+                            serverId={selectedServerId}
+                        />
+                    )}
                 </>
             )}
 

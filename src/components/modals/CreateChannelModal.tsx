@@ -38,7 +38,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
           name: channelName.trim(),
           server_id: serverId,
           is_voice: isVoice,
-          is_owner_only: isPrivate
+          is_private: isPrivate
         });
 
       if (channelError) throw channelError;

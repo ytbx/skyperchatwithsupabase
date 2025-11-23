@@ -32,6 +32,7 @@ export interface Channel {
   is_voice: boolean;
   is_owner_only: boolean;
   server_id: string;
+  is_private: boolean;
 }
 
 export interface ChannelMessage {
@@ -114,16 +115,41 @@ export interface WebRTCSignal {
   delivered: boolean;
 }
 
+
+
+export const PERMISSIONS = {
+  ADMINISTRATOR: 1n << 0n,    // (1) Bypass all checks
+  MANAGE_SERVER: 1n << 1n,    // (2) Edit server settings
+  MANAGE_ROLES: 1n << 2n,     // (4) Create/Edit/Delete roles
+  MANAGE_CHANNELS: 1n << 3n,  // (8) Create/Edit/Delete channels
+  KICK_MEMBERS: 1n << 4n,     // (16) Kick lower-ranked members
+  BAN_MEMBERS: 1n << 5n,      // (32) Ban lower-ranked members
+  CREATE_INVITE: 1n << 6n,    // (64) Create invites
+  VIEW_CHANNEL: 1n << 7n,     // (128) See channel
+  SEND_MESSAGES: 1n << 8n,    // (256) Send messages
+  CONNECT: 1n << 9n,          // (512) Connect to voice channels
+  SPEAK: 1n << 10n,           // (1024) Speak in voice channels
+  STREAM: 1n << 11n,          // (2048) Share screen
+};
+
 export interface ServerRole {
   id: number;
   server_id: string;
   name: string;
-  permissions: number;
+  color: string;
   position: number;
-  color: number | null;
-  hoist: boolean;
-  mentionable: boolean;
+  permissions: string; // BigInt sent as string from Supabase
+  is_hoisted: boolean;
   created_at: string;
+}
+
+export interface ChannelPermission {
+  id: number;
+  channel_id: number;
+  role_id: number | null;
+  user_id: string | null;
+  allow: string; // BigInt string
+  deny: string; // BigInt string
 }
 
 export type UserStatus = 'online' | 'away' | 'busy' | 'offline';

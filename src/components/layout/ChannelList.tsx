@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Channel, Server, Profile, VoiceChannelMember } from '@/lib/types';
+import { Channel, Server, Profile, VoiceChannelMember, PERMISSIONS, ServerRole, ChannelPermission } from '@/lib/types';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
+import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
 
 interface ChannelListProps {
   serverId: string | null;
@@ -11,14 +12,17 @@ interface ChannelListProps {
   onSelectChannel: (channelId: number) => void;
   onCreateChannel?: () => void;
   onInvite?: () => void;
-  onManageRoles?: () => void;
+  onServerSettings?: () => void;
+  onEditChannel?: (channelId: number) => void;
 }
 
-export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onManageRoles }: ChannelListProps) {
+export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onServerSettings, onEditChannel }: ChannelListProps) {
   const [server, setServer] = useState<Server | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
   const [voiceParticipants, setVoiceParticipants] = useState<Record<number, VoiceChannelMember[]>>({});
+  const [userRoles, setUserRoles] = useState<ServerRole[]>([]);
+  const [channelPermissions, setChannelPermissions] = useState<ChannelPermission[]>([]);
   const [textChannelsExpanded, setTextChannelsExpanded] = useState(true);
   const [voiceChannelsExpanded, setVoiceChannelsExpanded] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
@@ -194,9 +198,71 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       .eq('server_id', serverId)
       .order('name', { ascending: true });
 
+    // Fetch user roles
+    const { data: userRolesData } = await supabase
+      .from('server_user_roles')
+      .select('role_id, server_roles(*)')
+      .eq('user_id', user?.id)
+      .eq('server_id', serverId);
+
+    const myRoles = userRolesData?.map((ur: any) => ur.server_roles) || [];
+    setUserRoles(myRoles);
+
+    // Fetch channel permissions
+    const { data: permissionsData } = await supabase
+      .from('channel_permissions')
+      .select('*')
+      .in('channel_id', channelsData?.map(c => c.id) || []);
+
+    setChannelPermissions(permissionsData || []);
+
     if (channelsData) {
-      setChannels(channelsData.filter(c => !c.is_voice));
-      setVoiceChannels(channelsData.filter(c => c.is_voice));
+      // Filter channels based on permissions
+      const visibleChannels = channelsData.filter(channel => {
+        if (!channel.is_private) return true; // Public channels are visible to everyone (unless we add VIEW_CHANNEL check for public too, but usually public means visible)
+        // Actually, Discord hides channels if you don't have VIEW_CHANNEL.
+        // For now, let's assume is_private means "needs explicit permission".
+
+        if (serverData?.owner_id === user?.id) return true;
+
+        const basePermissions = computeBasePermissions(myRoles, serverData?.owner_id || '', user?.id || '');
+        const finalPermissions = computeChannelPermissions(
+          basePermissions,
+          myRoles,
+          permissionsData || [],
+          user?.id || '',
+          serverData?.owner_id || ''
+        );
+
+        // For private channels, we check if they have VIEW_CHANNEL or if they are explicitly allowed
+        // But our computeChannelPermissions logic is generic. 
+        // Let's simplify: if is_private, check if user has VIEW_CHANNEL permission calculated for this channel.
+
+        // Wait, computeChannelPermissions needs specific channel logic.
+        // The helper function I wrote `computeChannelPermissions` takes ALL channel permissions.
+        // I need to filter `permissionsData` for THIS channel inside the loop?
+        // No, the helper expects `channelPermissions` array. It should probably filter inside?
+        // Let's look at `PermissionUtils.ts` again.
+        // It takes `channelPermissions: ChannelPermission[]`.
+        // It iterates over roles and checks `channelPermissions.find`.
+        // So I should pass ONLY the permissions for THIS channel to the helper?
+        // Yes, likely.
+
+        const thisChannelPermissions = (permissionsData || []).filter(cp => cp.channel_id === channel.id);
+
+        const permissions = computeChannelPermissions(
+          basePermissions,
+          myRoles,
+          thisChannelPermissions,
+          user?.id || '',
+          serverData?.owner_id || ''
+        );
+
+        return hasPermission(permissions, PERMISSIONS.VIEW_CHANNEL);
+      });
+
+      setChannels(visibleChannels.filter(c => !c.is_voice));
+      setVoiceChannels(visibleChannels.filter(c => c.is_voice));
     }
   }
 
@@ -232,13 +298,13 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               <UserPlus className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
             </button>
           )}
-          {server?.owner_id === user?.id && onManageRoles && (
+          {(server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_SERVER) || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_ROLES)) && onServerSettings && (
             <button
-              onClick={onManageRoles}
+              onClick={onServerSettings}
               className="p-1.5 hover:bg-gray-700 rounded transition-all duration-150 hover:scale-105"
-              title="Roller ve Üyeler"
+              title="Sunucu Ayarları"
             >
-              <Shield className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
+              <Settings className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
             </button>
           )}
         </div>
@@ -339,7 +405,18 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                     }`}
                 >
                   <Hash className={`w-4 h-4 flex-shrink-0 ${selectedChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
-                  <span className="text-sm truncate font-medium">{channel.name}</span>
+                  <span className="text-sm truncate font-medium flex-1 text-left">{channel.name}</span>
+                  {onEditChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditChannel(channel.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-white transition-opacity"
+                    >
+                      <Settings size={12} />
+                    </button>
+                  )}
                 </button>
               ))}
             </div>
@@ -367,7 +444,18 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                       }`}
                   >
                     <Volume2 className={`w-4 h-4 flex-shrink-0 ${activeChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
-                    <span className="text-sm truncate font-medium">{channel.name}</span>
+                    <span className="text-sm truncate font-medium flex-1 text-left">{channel.name}</span>
+                    {onEditChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditChannel(channel.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-white transition-opacity"
+                      >
+                        <Settings size={12} />
+                      </button>
+                    )}
                   </button>
 
                   {/* Voice Participants */}
@@ -393,7 +481,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
           )}
         </div>
 
-        {onCreateChannel && server?.owner_id === user?.id && (
+        {onCreateChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
           <button
             onClick={onCreateChannel}
             className="w-full px-2 py-1.5 mx-2 mt-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150"
