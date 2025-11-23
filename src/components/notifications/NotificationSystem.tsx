@@ -112,6 +112,12 @@ export const NotificationSystem: React.FC = () => {
         throw error;
       }
 
+      if (data && data.length === 0) {
+        console.warn('⚠️ Delete operation returned 0 rows. This usually means RLS policy is missing.');
+        alert('Bildirim silinemedi! Veritabanı izni eksik olabilir.\n\nLütfen Supabase SQL editöründe şu komutu çalıştırın:\n\nCREATE POLICY "Users can delete own notifications" ON notifications FOR DELETE USING (auth.uid() = user_id);');
+        return;
+      }
+
       console.log('✅ Notification deleted from DB:', data);
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
@@ -134,6 +140,13 @@ export const NotificationSystem: React.FC = () => {
         console.error('❌ Supabase delete all error:', error);
         alert(`Tüm bildirimler silinemedi: ${error.message}`);
         throw error;
+      }
+
+      // Check if RLS blocked the delete
+      if (data && data.length === 0) {
+        console.warn('⚠️ Delete operation returned 0 rows. This usually means RLS policy is missing.');
+        alert('Bildirimler silinemedi! Veritabanı izni eksik olabilir.\n\nLütfen Supabase SQL editöründe şu komutu çalıştırın:\n\nCREATE POLICY "Users can delete own notifications" ON notifications FOR DELETE USING (auth.uid() = user_id);');
+        return;
       }
 
       console.log('✅ All notifications deleted from DB:', data);
