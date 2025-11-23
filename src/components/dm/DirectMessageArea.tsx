@@ -14,11 +14,13 @@ import { toast } from 'sonner';
 interface DirectMessageAreaProps {
   contactId: string;
   contactName: string;
+  contactProfileImageUrl?: string | null;
 }
 
 export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   contactId,
-  contactName
+  contactName,
+  contactProfileImageUrl
 }) => {
   const { user } = useAuth();
   const { setActiveChat } = useNotifications();
@@ -419,8 +421,16 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
       {callStatus !== 'active' && callStatus !== 'connecting' && (
         <div className="h-16 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-              <User size={16} className="text-white" />
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center overflow-hidden">
+              {contactProfileImageUrl ? (
+                <img
+                  src={contactProfileImageUrl}
+                  alt={contactName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User size={16} className="text-white" />
+              )}
             </div>
             <div>
               <h3 className="text-white font-semibold">{contactName}</h3>

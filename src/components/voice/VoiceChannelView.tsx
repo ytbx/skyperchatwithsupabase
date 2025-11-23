@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { MonitorUp, Users } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { MonitorUp, Users, Maximize2, Minimize2 } from 'lucide-react';
 
 interface VoiceParticipant {
     user_id: string;
@@ -23,6 +23,7 @@ interface VoiceChannelViewProps {
 
 export function VoiceChannelView({ channelId, channelName, participants, onStartScreenShare }: VoiceChannelViewProps) {
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+    const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
 
     // Get participants with camera or screen share
     const cameraParticipants = participants.filter(p => p.is_video_enabled && p.cameraStream);
@@ -48,6 +49,36 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             }
         });
     }, [cameraParticipants, screenSharingParticipants]);
+
+    // Fullscreen toggle function
+    const toggleFullscreen = async (videoId: string) => {
+        const video = videoRefs.current.get(videoId);
+        if (!video) return;
+
+        try {
+            if (!document.fullscreenElement) {
+                await video.requestFullscreen();
+                setFullscreenVideoId(videoId);
+            } else {
+                await document.exitFullscreen();
+                setFullscreenVideoId(null);
+            }
+        } catch (error) {
+            console.error('Error toggling fullscreen:', error);
+        }
+    };
+
+    // Listen for fullscreen changes (e.g., ESC key)
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                setFullscreenVideoId(null);
+            }
+        };
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
 
     const hasAnyStreams = cameraParticipants.length > 0 || screenSharingParticipants.length > 0;
 
@@ -91,101 +122,150 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                     // Vertical list of camera and screen shares
                     <div className="space-y-4">
                         {/* Camera streams */}
-                        {cameraParticipants.map((participant) => (
-                            <div
-                                key={`camera-${participant.user_id}`}
-                                className="relative bg-gray-800 rounded-lg overflow-hidden"
-                                style={{ maxHeight: '400px' }}
-                            >
-                                <video
-                                    ref={(el) => {
-                                        if (el) {
-                                            videoRefs.current.set(`camera-${participant.user_id}`, el);
-                                        } else {
-                                            videoRefs.current.delete(`camera-${participant.user_id}`);
-                                        }
-                                    }}
-                                    autoPlay
-                                    playsInline
-                                    className="w-full h-auto object-contain"
+                        {cameraParticipants.map((participant) => {
+                            const videoId = `camera-${participant.user_id}`;
+                            const isFullscreen = fullscreenVideoId === videoId;
+
+                            return (
+                                <div
+                                    key={videoId}
+                                    className="relative bg-gray-800 rounded-lg overflow-hidden group"
                                     style={{ maxHeight: '400px' }}
-                                />
-                                {/* User info overlay */}
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
-                                            {participant.profile?.profile_image_url ? (
-                                                <img
-                                                    src={participant.profile.profile_image_url}
-                                                    alt=""
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <span className="text-xs text-white font-semibold">
-                                                    {participant.profile?.username?.charAt(0).toUpperCase()}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">
-                                                {participant.profile?.username}
-                                            </p>
-                                            <p className="text-xs text-blue-400">Kamera açık</p>
+                                >
+                                    <video
+                                        ref={(el) => {
+                                            if (el) {
+                                                videoRefs.current.set(videoId, el);
+                                            } else {
+                                                videoRefs.current.delete(videoId);
+                                            }
+                                        }}
+                                        autoPlay
+                                        playsInline
+                                        className="w-full h-auto object-contain bg-black"
+                                        style={{ maxHeight: '400px' }}
+                                    />
+
+                                    {/* Fullscreen button */}
+                                    <button
+                                        onClick={() => toggleFullscreen(videoId)}
+                                        className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
+                                        title="Tam ekran"
+                                    >
+                                        {isFullscreen ? (
+                                            <Minimize2 className="w-5 h-5 text-white" />
+                                        ) : (
+                                            <Maximize2 className="w-5 h-5 text-white" />
+                                        )}
+                                    </button>
+
+                                    {/* User info overlay */}
+                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
+                                                {participant.profile?.profile_image_url ? (
+                                                    <img
+                                                        src={participant.profile.profile_image_url}
+                                                        alt=""
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <span className="text-xs text-white font-semibold">
+                                                        {participant.profile?.username?.charAt(0).toUpperCase()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-white truncate">
+                                                    {participant.profile?.username}
+                                                </p>
+                                                <p className="text-xs text-blue-400">Kamera açık</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
 
                         {/* Screen share streams */}
-                        {screenSharingParticipants.map((participant) => (
-                            <div
-                                key={`screen-${participant.user_id}`}
-                                className="relative bg-gray-800 rounded-lg overflow-hidden"
-                                style={{ maxHeight: '400px' }}
-                            >
-                                <video
-                                    ref={(el) => {
-                                        if (el) {
-                                            videoRefs.current.set(`screen-${participant.user_id}`, el);
-                                        } else {
-                                            videoRefs.current.delete(`screen-${participant.user_id}`);
-                                        }
-                                    }}
-                                    autoPlay
-                                    playsInline
-                                    className="w-full h-auto object-contain"
+                        {screenSharingParticipants.map((participant) => {
+                            const videoId = `screen-${participant.user_id}`;
+                            const isFullscreen = fullscreenVideoId === videoId;
+
+                            return (
+                                <div
+                                    key={videoId}
+                                    className="relative bg-gray-800 rounded-lg overflow-hidden group"
                                     style={{ maxHeight: '400px' }}
-                                />
-                                {/* User info overlay */}
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center overflow-hidden">
-                                            {participant.profile?.profile_image_url ? (
-                                                <img
-                                                    src={participant.profile.profile_image_url}
-                                                    alt=""
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <span className="text-xs text-white font-semibold">
-                                                    {participant.profile?.username?.charAt(0).toUpperCase()}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">
-                                                {participant.profile?.username}
-                                            </p>
-                                            <p className="text-xs text-green-400">Ekran paylaşıyor</p>
+                                >
+                                    <video
+                                        ref={(el) => {
+                                            if (el) {
+                                                videoRefs.current.set(videoId, el);
+                                            } else {
+                                                videoRefs.current.delete(videoId);
+                                            }
+                                        }}
+                                        autoPlay
+                                        playsInline
+                                        className="w-full h-auto object-contain bg-black"
+                                        style={{ maxHeight: '400px' }}
+                                    />
+
+                                    {/* Fullscreen button */}
+                                    <button
+                                        onClick={() => toggleFullscreen(videoId)}
+                                        className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
+                                        title="Tam ekran"
+                                    >
+                                        {isFullscreen ? (
+                                            <Minimize2 className="w-5 h-5 text-white" />
+                                        ) : (
+                                            <Maximize2 className="w-5 h-5 text-white" />
+                                        )}
+                                    </button>
+
+                                    {/* User info overlay */}
+                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center overflow-hidden">
+                                                {participant.profile?.profile_image_url ? (
+                                                    <img
+                                                        src={participant.profile.profile_image_url}
+                                                        alt=""
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <span className="text-xs text-white font-semibold">
+                                                        {participant.profile?.username?.charAt(0).toUpperCase()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-white truncate">
+                                                    {participant.profile?.username}
+                                                </p>
+                                                <p className="text-xs text-green-400">Ekran paylaşıyor</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
+
+            <style>{`
+                video:fullscreen {
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    max-width: 100vw !important;
+                    max-height: 100vh !important;
+                    object-fit: contain;
+                    background: #000;
+                }
+            `}</style>
         </div>
     );
 }

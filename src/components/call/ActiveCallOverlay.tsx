@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useCall } from '@/contexts/CallContext';
 import { CallControls } from './CallControls';
-import { User, Wifi, WifiOff } from 'lucide-react';
+import { User, Wifi, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
 
 interface ActiveCallOverlayProps {
     contactName: string;
@@ -27,6 +27,11 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
     } = useCall();
 
     const [callDuration, setCallDuration] = useState(0);
+    const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
+
+    const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
+    const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
+    const remoteCameraVideoRef = useRef<HTMLVideoElement | null>(null);
 
     // Helper to set video stream
     const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null) => {
@@ -57,6 +62,36 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
+
+    // Fullscreen toggle function
+    const toggleFullscreen = async (videoId: string, videoRef: React.RefObject<HTMLVideoElement>) => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        try {
+            if (!document.fullscreenElement) {
+                await video.requestFullscreen();
+                setFullscreenVideoId(videoId);
+            } else {
+                await document.exitFullscreen();
+                setFullscreenVideoId(null);
+            }
+        } catch (error) {
+            console.error('Error toggling fullscreen:', error);
+        }
+    };
+
+    // Listen for fullscreen changes (e.g., ESC key)
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                setFullscreenVideoId(null);
+            }
+        };
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
 
     if (callStatus !== 'active' && callStatus !== 'connecting') {
         return null;
@@ -113,13 +148,30 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                     {/* Remote Screen Share */}
                     {(isRemoteScreenSharing && remoteScreenStream) && (
                         <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800">
+                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800 group">
                                 <video
-                                    ref={(el) => setVideoStream(el, remoteScreenStream)}
+                                    ref={(el) => {
+                                        remoteScreenVideoRef.current = el;
+                                        setVideoStream(el, remoteScreenStream);
+                                    }}
                                     autoPlay
                                     playsInline
                                     className="w-full h-full object-contain bg-gray-900"
                                 />
+
+                                {/* Fullscreen button */}
+                                <button
+                                    onClick={() => toggleFullscreen('remote-screen', remoteScreenVideoRef)}
+                                    className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
+                                    title="Tam ekran"
+                                >
+                                    {fullscreenVideoId === 'remote-screen' ? (
+                                        <Minimize2 className="w-5 h-5 text-white" />
+                                    ) : (
+                                        <Maximize2 className="w-5 h-5 text-white" />
+                                    )}
+                                </button>
+
                                 <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
                                     {contactName}
                                 </div>
@@ -130,14 +182,31 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                     {/* Local Screen Share */}
                     {(isScreenSharing && screenStream) && (
                         <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800">
+                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800 group">
                                 <video
-                                    ref={(el) => setVideoStream(el, screenStream)}
+                                    ref={(el) => {
+                                        localScreenVideoRef.current = el;
+                                        setVideoStream(el, screenStream);
+                                    }}
                                     autoPlay
                                     playsInline
                                     muted
                                     className="w-full h-full object-contain bg-gray-900"
                                 />
+
+                                {/* Fullscreen button */}
+                                <button
+                                    onClick={() => toggleFullscreen('local-screen', localScreenVideoRef)}
+                                    className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
+                                    title="Tam ekran"
+                                >
+                                    {fullscreenVideoId === 'local-screen' ? (
+                                        <Minimize2 className="w-5 h-5 text-white" />
+                                    ) : (
+                                        <Maximize2 className="w-5 h-5 text-white" />
+                                    )}
+                                </button>
+
                                 <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
                                     Sizin Ekranınız
                                 </div>
@@ -148,14 +217,32 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                     {/* Remote Camera (only if no screen shares) */}
                     {(!isRemoteScreenSharing && !isScreenSharing) && (
                         <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800">
+                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800 group">
                                 {showVideo && remoteStream ? (
-                                    <video
-                                        ref={(el) => setVideoStream(el, remoteStream)}
-                                        autoPlay
-                                        playsInline
-                                        className="w-full h-full object-contain bg-gray-900"
-                                    />
+                                    <>
+                                        <video
+                                            ref={(el) => {
+                                                remoteCameraVideoRef.current = el;
+                                                setVideoStream(el, remoteStream);
+                                            }}
+                                            autoPlay
+                                            playsInline
+                                            className="w-full h-full object-contain bg-gray-900"
+                                        />
+
+                                        {/* Fullscreen button */}
+                                        <button
+                                            onClick={() => toggleFullscreen('remote-camera', remoteCameraVideoRef)}
+                                            className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
+                                            title="Tam ekran"
+                                        >
+                                            {fullscreenVideoId === 'remote-camera' ? (
+                                                <Minimize2 className="w-5 h-5 text-white" />
+                                            ) : (
+                                                <Maximize2 className="w-5 h-5 text-white" />
+                                            )}
+                                        </button>
+                                    </>
                                 ) : (
                                     // Audio-only avatar
                                     <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900">
@@ -207,6 +294,15 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
             <style>{`
                 .mirror {
                     transform: scaleX(-1);
+                }
+                
+                video:fullscreen {
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    max-width: 100vw !important;
+                    max-height: 100vh !important;
+                    object-fit: contain;
+                    background: #000;
                 }
             `}</style>
         </div>

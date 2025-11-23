@@ -24,7 +24,7 @@ interface FriendRequest {
 }
 
 interface FriendsListProps {
-  onStartDM: (friendId: string, friendName: string) => void;
+  onStartDM: (friendId: string, friendName: string, profileImageUrl: string | null) => void;
 }
 
 export const FriendsList: React.FC<FriendsListProps> = ({
@@ -458,7 +458,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                     <div
                       key={friend.id}
                       className="p-3 rounded-lg hover:bg-gray-800 transition-colors group cursor-pointer"
-                      onClick={() => onStartDM(friend.id, friend.username)}
+                      onClick={() => onStartDM(friend.id, friend.username, friend.profile_image_url)}
                     >
                       <div className="flex items-center space-x-3">
                         {/* Avatar with online status */}

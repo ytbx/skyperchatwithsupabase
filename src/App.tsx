@@ -46,6 +46,7 @@ function AppContent() {
     // DM-related states
     const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
     const [selectedContactName, setSelectedContactName] = useState<string | null>(null);
+    const [selectedContactProfileImage, setSelectedContactProfileImage] = useState<string | null>(null);
 
     // Modal states
     const [showCreateServerModal, setShowCreateServerModal] = useState(false);
@@ -156,9 +157,10 @@ function AppContent() {
     };
 
     // Handle starting DM from friends list - Open chat directly without changing view
-    const handleStartDM = (friendId: string, friendName: string) => {
+    const handleStartDM = (friendId: string, friendName: string, profileImageUrl: string | null) => {
         setSelectedContactId(friendId);
         setSelectedContactName(friendName);
+        setSelectedContactProfileImage(profileImageUrl);
     };
 
     // Global add action handler - Always opens server modal
@@ -282,6 +284,7 @@ function AppContent() {
                 <DirectMessageArea
                     contactId={selectedContactId}
                     contactName={selectedContactName}
+                    contactProfileImageUrl={selectedContactProfileImage}
                 />
             )}
 
