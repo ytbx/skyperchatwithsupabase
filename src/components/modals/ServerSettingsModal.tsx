@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
-import { X, Shield, Trash2, Plus, Save } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Shield, Trash2, Plus, Save, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Server, ServerRole, PERMISSIONS } from '@/lib/types';
 import { hasPermission } from '@/utils/PermissionUtils';
+import { FileUploadService } from '@/services/FileUploadService';
+import { toast } from 'sonner';
 
 interface ServerSettingsModalProps {
     isOpen: boolean;
@@ -21,6 +23,13 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
     const [members, setMembers] = useState<any[]>([]);
     const [memberRoles, setMemberRoles] = useState<Record<string, ServerRole[]>>({});
     const [openDropdownMemberId, setOpenDropdownMemberId] = useState<string | null>(null);
+
+    // Overview tab states
+    const [editedServerName, setEditedServerName] = useState('');
+    const [editedServerDescription, setEditedServerDescription] = useState('');
+    const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+    const [isSavingServer, setIsSavingServer] = useState(false);
+    const serverIconInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (isOpen && serverId && activeTab === 'members') {
@@ -92,6 +101,10 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
     async function loadServerData() {
         const { data } = await supabase.from('servers').select('*').eq('id', serverId).single();
         setServer(data);
+        if (data) {
+            setEditedServerName(data.name || '');
+            setEditedServerDescription(data.description || '');
+        }
     }
 
     async function loadRoles() {
@@ -158,6 +171,66 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
             setEditedPermissions(editedPermissions & ~permission);
         } else {
             setEditedPermissions(editedPermissions | permission);
+        }
+    }
+
+    async function handleServerIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file || !server) return;
+
+        const validation = FileUploadService.validateFile(file);
+        if (!validation.valid) {
+            toast.error(validation.error);
+            return;
+        }
+
+        setIsUploadingIcon(true);
+        try {
+            const iconUrl = await FileUploadService.uploadServerImage(server.id, file);
+
+            // Update server in database
+            const { error } = await supabase
+                .from('servers')
+                .update({ server_image_url: iconUrl })
+                .eq('id', server.id);
+
+            if (error) throw error;
+
+            setServer({ ...server, server_image_url: iconUrl });
+            toast.success('Sunucu ikonu güncellendi!');
+        } catch (error) {
+            console.error('Server icon upload error:', error);
+            toast.error('İkon yüklenirken bir hata oluştu');
+        } finally {
+            setIsUploadingIcon(false);
+            if (serverIconInputRef.current) {
+                serverIconInputRef.current.value = '';
+            }
+        }
+    }
+
+    async function handleSaveServerInfo() {
+        if (!server) return;
+
+        setIsSavingServer(true);
+        try {
+            const { error } = await supabase
+                .from('servers')
+                .update({
+                    name: editedServerName,
+                    description: editedServerDescription
+                })
+                .eq('id', server.id);
+
+            if (error) throw error;
+
+            setServer({ ...server, name: editedServerName, description: editedServerDescription });
+            toast.success('Sunucu bilgileri güncellendi!');
+        } catch (error) {
+            console.error('Server update error:', error);
+            toast.error('Sunucu güncellenirken bir hata oluştu');
+        } finally {
+            setIsSavingServer(false);
         }
     }
 
@@ -299,9 +372,105 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
                     )}
 
                     {activeTab === 'overview' && (
-                        <div className="p-8">
-                            <h2 className="text-2xl font-bold text-white mb-4">Sunucu Genel Görünümü</h2>
-                            <p className="text-gray-400">Sunucu adı ve görseli ayarları burada olacak.</p>
+                        <div className="p-8 overflow-y-auto">
+                            <h2 className="text-2xl font-bold text-white mb-6">Sunucu Genel Görünümü</h2>
+
+                            <div className="max-w-2xl space-y-6">
+                                {/* Server Icon */}
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-400 uppercase mb-3">Sunucu İkonu</label>
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center relative overflow-hidden">
+                                            {server?.server_image_url ? (
+                                                <img
+                                                    src={server.server_image_url}
+                                                    alt="Server icon"
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <ImageIcon className="w-12 h-12 text-gray-500" />
+                                            )}
+                                            {isUploadingIcon && (
+                                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <input
+                                                ref={serverIconInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleServerIconUpload}
+                                                className="hidden"
+                                            />
+                                            <button
+                                                onClick={() => serverIconInputRef.current?.click()}
+                                                disabled={isUploadingIcon}
+                                                className="px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                            >
+                                                {isUploadingIcon ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                        Yükleniyor...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Upload className="w-4 h-4" />
+                                                        İkon Yükle
+                                                    </>
+                                                )}
+                                            </button>
+                                            <p className="text-xs text-gray-500 mt-2">Maksimum 1MB</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Server Name */}
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Sunucu Adı</label>
+                                    <input
+                                        type="text"
+                                        value={editedServerName}
+                                        onChange={e => setEditedServerName(e.target.value)}
+                                        className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-white focus:border-primary-500 outline-none"
+                                        placeholder="Sunucu adını girin"
+                                    />
+                                </div>
+
+                                {/* Server Description */}
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Sunucu Açıklaması</label>
+                                    <textarea
+                                        value={editedServerDescription}
+                                        onChange={e => setEditedServerDescription(e.target.value)}
+                                        className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-white focus:border-primary-500 outline-none resize-none"
+                                        placeholder="Sunucu açıklamasını girin (opsiyonel)"
+                                        rows={4}
+                                    />
+                                </div>
+
+                                {/* Save Button */}
+                                <div className="pt-4">
+                                    <button
+                                        onClick={handleSaveServerInfo}
+                                        disabled={isSavingServer}
+                                        className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        {isSavingServer ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Kaydediliyor...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="w-4 h-4" />
+                                                Değişiklikleri Kaydet
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 

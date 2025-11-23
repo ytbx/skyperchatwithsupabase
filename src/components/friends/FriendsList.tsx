@@ -463,10 +463,18 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                       <div className="flex items-center space-x-3">
                         {/* Avatar with online status */}
                         <div className="relative">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-                            <span className="text-white text-sm font-medium">
-                              {friend.username.charAt(0).toUpperCase()}
-                            </span>
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center overflow-hidden">
+                            {friend.profile_image_url ? (
+                              <img
+                                src={friend.profile_image_url}
+                                alt={friend.username}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-white text-sm font-medium">
+                                {friend.username.charAt(0).toUpperCase()}
+                              </span>
+                            )}
                           </div>
                           {/* Online status indicator */}
                           <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${isUserOnline(friend.id) ? 'bg-green-500' : 'bg-gray-500'

@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { X, LogOut, User } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { X, LogOut, User, Upload, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { FileUploadService } from '@/services/FileUploadService';
+import { toast } from 'sonner';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -8,14 +10,46 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'account'>('profile');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
   async function handleSignOut() {
     await signOut();
     onClose();
+  }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+
+    const validation = FileUploadService.validateFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    try {
+      await FileUploadService.uploadAvatar(profile.id, file);
+      toast.success('Avatar başarıyla güncellendi!');
+
+      // Refresh profile to show new avatar
+      if (refreshProfile) {
+        await refreshProfile();
+      }
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      toast.error('Avatar yüklenirken bir hata oluştu');
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   }
 
   return (
@@ -26,21 +60,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <div className="space-y-1">
             <button
               onClick={() => setActiveTab('profile')}
-              className={`w-full px-3 py-2 text-left rounded transition-colors ${
-                activeTab === 'profile'
-                  ? 'bg-primary-500/10 text-primary-500'
-                  : 'text-gray-200 hover:bg-gray-700'
-              }`}
+              className={`w-full px-3 py-2 text-left rounded transition-colors ${activeTab === 'profile'
+                ? 'bg-primary-500/10 text-primary-500'
+                : 'text-gray-200 hover:bg-gray-700'
+                }`}
             >
               Profil
             </button>
             <button
               onClick={() => setActiveTab('account')}
-              className={`w-full px-3 py-2 text-left rounded transition-colors ${
-                activeTab === 'account'
-                  ? 'bg-primary-500/10 text-primary-500'
-                  : 'text-gray-200 hover:bg-gray-700'
-              }`}
+              className={`w-full px-3 py-2 text-left rounded transition-colors ${activeTab === 'account'
+                ? 'bg-primary-500/10 text-primary-500'
+                : 'text-gray-200 hover:bg-gray-700'
+                }`}
             >
               Hesap
             </button>
@@ -75,7 +107,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {activeTab === 'profile' && (
               <div className="space-y-6">
                 <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center relative">
                     {profile?.profile_image_url ? (
                       <img
                         src={profile.profile_image_url}
@@ -85,11 +117,38 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     ) : (
                       <User className="w-10 h-10 text-white" />
                     )}
+                    {isUploadingAvatar && (
+                      <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-white animate-spin" />
+                      </div>
+                    )}
                   </div>
                   <div>
-                    <button className="px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-700 transition-colors">
-                      Avatar Değiştir
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      className="px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {isUploadingAvatar ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Yükleniyor...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          Avatar Değiştir
+                        </>
+                      )}
                     </button>
+                    <p className="text-xs text-gray-400 mt-2">Maksimum 1MB</p>
                   </div>
                 </div>
 

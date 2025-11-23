@@ -6,6 +6,10 @@ import { useCall } from '../../contexts/CallContext';
 import { DirectMessage } from '../../lib/types';
 import { Send, Paperclip, Smile, MoreVertical, Hash, User, Search, X, Clock, Hash as ChannelIcon, Users, Phone, Video } from 'lucide-react';
 import { ActiveCallOverlay } from '../call/ActiveCallOverlay';
+import { FileUploadService } from '@/services/FileUploadService';
+import { FilePreview } from '@/components/common/FilePreview';
+import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
+import { toast } from 'sonner';
 
 interface DirectMessageAreaProps {
   contactId: string;
@@ -23,7 +27,10 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Search functionality states
   const [showSearch, setShowSearch] = useState(false);
@@ -265,15 +272,28 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   };
 
   const sendMessage = async () => {
-    if (!user || !contactId || !newMessage.trim()) return;
+    if (!user || !contactId || (!newMessage.trim() && !selectedFile)) return;
 
     try {
+      setIsUploading(true);
+      let fileData = null;
+
+      // Upload file if selected
+      if (selectedFile) {
+        const uploadResult = await FileUploadService.uploadMessageAttachment(selectedFile);
+        fileData = uploadResult;
+      }
+
       const messageData = {
-        message: newMessage.trim(),
+        message: newMessage.trim() || (fileData ? fileData.name : ''),
         sender_id: user.id,
         receiver_id: contactId,
-        is_image: false,
-        is_read: false
+        is_image: fileData ? FileUploadService.isImage(selectedFile!) : false,
+        is_read: false,
+        file_url: fileData?.url,
+        file_name: fileData?.name,
+        file_type: fileData?.type,
+        file_size: fileData?.size,
       };
 
       const { data, error } = await supabase
@@ -286,8 +306,46 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
       setMessages(prev => [...prev, data]);
       setNewMessage('');
+      setSelectedFile(null);
     } catch (error) {
       console.error('Error sending message:', error);
+      toast.error('Mesaj gönderilirken bir hata oluştu');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = FileUploadService.validateFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    setSelectedFile(file);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const validation = FileUploadService.validateFile(file);
+          if (!validation.valid) {
+            toast.error(validation.error);
+            return;
+          }
+          setSelectedFile(file);
+          e.preventDefault();
+          break;
+        }
+      }
     }
   };
 
@@ -604,8 +662,22 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
                         : 'bg-gray-700 text-white'
                         } ${messageIndex === 0 ? '' : 'mt-1'
                         }`}>
-                        {message.is_image ? (
-                          <div className="text-sm">📷 Fotoğraf</div>
+                        {message.is_image || message.file_url ? (
+                          <div>
+                            {message.file_url && (
+                              <AttachmentDisplay
+                                fileUrl={message.file_url}
+                                fileName={message.file_name || 'file'}
+                                fileType={message.file_type}
+                                fileSize={message.file_size}
+                              />
+                            )}
+                            {message.message && (
+                              <div className="text-sm whitespace-pre-wrap break-words mt-2">
+                                {message.message}
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <div className="text-sm whitespace-pre-wrap break-words">
                             {message.message}
@@ -632,8 +704,29 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
       {/* Message Input */}
       <div className="p-4 border-t border-gray-700">
+        {/* File Preview */}
+        {selectedFile && (
+          <div className="mb-2">
+            <FilePreview
+              file={selectedFile}
+              onRemove={() => setSelectedFile(null)}
+            />
+          </div>
+        )}
+
         <div className="flex items-center space-x-3">
-          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileSelect}
+            className="hidden"
+            accept="image/*,application/pdf,.doc,.docx,.txt"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="p-2 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+          >
             <Paperclip size={20} className="text-gray-400" />
           </button>
 
@@ -643,8 +736,10 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
+              onPaste={handlePaste}
               placeholder={`${contactName} ile mesajlaş...`}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+              disabled={isUploading}
             />
           </div>
 
@@ -654,14 +749,21 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
           <button
             onClick={sendMessage}
-            disabled={!newMessage.trim()}
-            className={`p-2 rounded-lg transition-colors ${newMessage.trim()
+            disabled={(!newMessage.trim() && !selectedFile) || isUploading}
+            className={`p-2 rounded-lg transition-colors ${(newMessage.trim() || selectedFile) && !isUploading
               ? 'bg-blue-600 hover:bg-blue-700 text-white'
               : 'bg-gray-700 text-gray-400 cursor-not-allowed'
               }`}
           >
             <Send size={20} />
           </button>
+        </div>
+
+        {/* Helper text */}
+        <div className="mt-2 px-2">
+          <p className="text-xs text-gray-500">
+            <span className="font-semibold">Enter</span> ile gönder • <span className="font-semibold">Ctrl+V</span> ile resim yapıştır • Maks 1MB
+          </p>
         </div>
       </div>
     </div>

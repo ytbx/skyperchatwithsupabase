@@ -24,6 +24,7 @@ export interface Server {
   owner_id: string;
   invite_code: string | null;
   created_at: string;
+  description?: string | null;
 }
 
 export interface Channel {
@@ -61,6 +62,10 @@ export interface Chat {
   is_image: boolean;
   is_read: boolean;
   sender?: Profile;
+  file_url?: string | null;
+  file_name?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
 }
 
 export interface DirectMessage {
@@ -71,6 +76,10 @@ export interface DirectMessage {
   created_at: string;
   is_image: boolean;
   is_read: boolean;
+  file_url?: string | null;
+  file_name?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
 }
 
 export interface Friend {

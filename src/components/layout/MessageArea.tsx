@@ -3,6 +3,10 @@ import { Hash, Send, Paperclip, Smile, Plus, Gift, Image, Sticker } from 'lucide
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChannelMessage, Channel, Profile } from '@/lib/types';
+import { FileUploadService } from '@/services/FileUploadService';
+import { FilePreview } from '@/components/common/FilePreview';
+import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
+import { toast } from 'sonner';
 
 interface MessageAreaProps {
   channelId: number | null;
@@ -19,8 +23,11 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const [messageInput, setMessageInput] = useState('');
   const [sending, setSending] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
 
   function formatTime(dateString: string) {
@@ -165,23 +172,79 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!messageInput.trim() || !channelId || !user || sending) return;
+    if ((!messageInput.trim() && !selectedFile) || !channelId || !user || sending) return;
 
     setSending(true);
-    const { error } = await supabase
-      .from('channel_messages')
-      .insert({
-        message: messageInput.trim(),
-        sender_id: user.id,
-        channel_id: channelId,
-        is_image: false,
-      });
+    setIsUploading(true);
 
-    if (!error) {
+    try {
+      let fileData = null;
+
+      // Upload file if selected
+      if (selectedFile) {
+        const uploadResult = await FileUploadService.uploadMessageAttachment(selectedFile);
+        fileData = uploadResult;
+      }
+
+      const { error } = await supabase
+        .from('channel_messages')
+        .insert({
+          message: messageInput.trim() || (fileData ? fileData.name : ''),
+          sender_id: user.id,
+          channel_id: channelId,
+          is_image: fileData ? FileUploadService.isImage(selectedFile!) : false,
+          file_url: fileData?.url,
+          file_name: fileData?.name,
+          file_type: fileData?.type,
+          file_size: fileData?.size,
+        });
+
+      if (error) throw error;
+
       setMessageInput('');
+      setSelectedFile(null);
       inputRef.current?.focus();
+    } catch (error) {
+      console.error('Send message error:', error);
+      toast.error('Mesaj gönderilirken bir hata oluştu');
+    } finally {
+      setSending(false);
+      setIsUploading(false);
     }
-    setSending(false);
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = FileUploadService.validateFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    setSelectedFile(file);
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const validation = FileUploadService.validateFile(file);
+          if (!validation.valid) {
+            toast.error(validation.error);
+            return;
+          }
+          setSelectedFile(file);
+          e.preventDefault();
+          break;
+        }
+      }
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -274,6 +337,14 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                         <div className="text-gray-100 text-sm leading-relaxed break-words">
                           {message.message}
                         </div>
+                        {message.file_url && (
+                          <AttachmentDisplay
+                            fileUrl={message.file_url}
+                            fileName={message.file_name || 'file'}
+                            fileType={message.file_type}
+                            fileSize={message.file_size}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -287,15 +358,34 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
       {/* Message Input - Modern Discord Style */}
       <div className="px-4 pb-6 pt-2">
+        {/* File Preview */}
+        {selectedFile && (
+          <div className="mb-2">
+            <FilePreview
+              file={selectedFile}
+              onRemove={() => setSelectedFile(null)}
+            />
+          </div>
+        )}
+
         <form onSubmit={handleSendMessage} className="relative">
           <div className="bg-gray-700 rounded-lg shadow-lg transition-all duration-200 focus-within:bg-gray-650">
             <div className="flex items-center px-4 py-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                className="hidden"
+                accept="image/*,application/pdf,.doc,.docx,.txt"
+              />
               <button
                 type="button"
+                onClick={() => fileInputRef.current?.click()}
                 className="text-gray-400 hover:text-gray-300 transition-colors p-1 rounded hover:bg-gray-600"
                 title="Dosya ekle"
+                disabled={isUploading}
               >
-                <Plus className="w-5 h-5" />
+                <Paperclip className="w-5 h-5" />
               </button>
 
               <input
@@ -304,9 +394,10 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={`#${channel?.name || 'kanal'} kanalına mesaj gönder`}
                 className="flex-1 mx-2 bg-transparent text-white placeholder:text-gray-500 focus:outline-none text-sm"
-                disabled={sending}
+                disabled={sending || isUploading}
               />
 
               <div className="flex items-center gap-1">
@@ -325,7 +416,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
         {/* Helper text */}
         <div className="mt-1 px-2">
           <p className="text-xs text-gray-500">
-            <span className="font-semibold">Enter</span> ile gönder
+            <span className="font-semibold">Enter</span> ile gönder • <span className="font-semibold">Ctrl+V</span> ile resim yapıştır • Maks 1MB
           </p>
         </div>
       </div>
