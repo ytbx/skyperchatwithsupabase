@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Phone, PhoneOff, Video, X } from 'lucide-react';
 import { useCall } from '@/contexts/CallContext';
+import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/lib/types';
 
 export const CallNotification: React.FC = () => {
     const { activeCall, callStatus, acceptCall, rejectCall, endCall } = useCall();
+    const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [callerProfile, setCallerProfile] = useState<Profile | null>(null);
 
     // Load caller profile for incoming calls
@@ -27,6 +29,20 @@ export const CallNotification: React.FC = () => {
         if (data && !error) {
             setCallerProfile(data);
         }
+    };
+
+    const handleAcceptCall = async () => {
+        if (!activeCall) return;
+
+        // Leave voice channel if connected
+        if (activeChannelId) {
+            console.log('[CallNotification] Leaving voice channel before accepting call');
+            await leaveChannel();
+            // Give a small buffer for cleanup
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        await acceptCall(activeCall);
     };
 
     // Don't show notification if no active call or call is already active
@@ -88,7 +104,7 @@ export const CallNotification: React.FC = () => {
                         <>
                             {/* Accept Button */}
                             <button
-                                onClick={() => acceptCall(activeCall)}
+                                onClick={handleAcceptCall}
                                 className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 font-medium"
                             >
                                 <Phone size={18} />

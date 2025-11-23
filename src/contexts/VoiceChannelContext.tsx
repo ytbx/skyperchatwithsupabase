@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from './AuthContext';
+import { useCall } from './CallContext';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 
@@ -17,8 +18,29 @@ interface VoiceParticipant {
     cameraStream?: MediaStream;
 }
 
-export function useVoiceChannel(channelId: number | null) {
+interface VoiceChannelContextType {
+    activeChannelId: number | null;
+    participants: VoiceParticipant[];
+    isConnected: boolean;
+    isMuted: boolean;
+    isDeafened: boolean;
+    isScreenSharing: boolean;
+    isCameraEnabled: boolean;
+    joinChannel: (channelId: number) => Promise<void>;
+    leaveChannel: () => Promise<void>;
+    toggleMute: () => void;
+    toggleDeafen: () => void;
+    toggleScreenShare: () => Promise<void>;
+    toggleCamera: () => Promise<void>;
+}
+
+const VoiceChannelContext = createContext<VoiceChannelContextType | undefined>(undefined);
+
+export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const { user, profile } = useAuth();
+    const { activeCall, endCall } = useCall();
+
+    const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
     const [participants, setParticipants] = useState<VoiceParticipant[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
@@ -34,10 +56,10 @@ export function useVoiceChannel(channelId: number | null) {
     const cameraStreamRef = useRef<MediaStream | null>(null);
 
     const sendSignal = async (toUserId: string, type: string, payload: any) => {
-        if (!user || !channelId) return;
+        if (!user || !activeChannelId) return;
 
         await supabase.from('webrtc_signals').insert({
-            channel_id: channelId,
+            channel_id: activeChannelId,
             from_user_id: user.id,
             to_user_id: toUserId,
             signal_type: type,
@@ -45,17 +67,90 @@ export function useVoiceChannel(channelId: number | null) {
         });
     };
 
+    // Leave channel
+    const leaveChannel = useCallback(async () => {
+        if (!user) return;
+
+        console.log('[VoiceChannelContext] Leaving channel...');
+
+        // Stop local stream
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+            setLocalStream(null);
+        }
+
+        // Stop screen share
+        if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach(track => track.stop());
+            screenStreamRef.current = null;
+        }
+
+        // Stop camera
+        if (cameraStreamRef.current) {
+            cameraStreamRef.current.getTracks().forEach(track => track.stop());
+            cameraStreamRef.current = null;
+        }
+
+        // Close all peer connections
+        peerManagers.current.forEach(manager => manager.cleanup());
+        peerManagers.current.clear();
+
+        if (activeChannelId && isConnected) {
+            await supabase
+                .from('voice_channel_users')
+                .delete()
+                .eq('channel_id', activeChannelId)
+                .eq('user_id', user.id);
+        }
+
+        setIsConnected(false);
+        setParticipants([]);
+        setActiveChannelId(null);
+        setIsScreenSharing(false);
+        setIsCameraEnabled(false);
+        // We keep mute/deafen state as user preference
+    }, [activeChannelId, user, isConnected]);
+
     // Join channel
-    const joinChannel = useCallback(async () => {
-        if (!channelId || !user || !profile) return;
+    const joinChannel = useCallback(async (channelId: number) => {
+        if (!user || !profile) return;
+
+        console.log('[VoiceChannelContext] Request to join channel:', channelId);
+
+        // 1. Handle existing connections
+        if (activeCall) {
+            console.log('[VoiceChannelContext] Active direct call detected. Ending it...');
+            await endCall();
+            // Give a small buffer for cleanup
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        if (activeChannelId) {
+            if (activeChannelId === channelId) {
+                console.log('[VoiceChannelContext] Already in this channel.');
+                return;
+            }
+            console.log('[VoiceChannelContext] Already in another channel. Leaving...');
+            await leaveChannel();
+            // Give a small buffer for cleanup
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
 
         try {
-            // 1. Get local media
+            setActiveChannelId(channelId);
+
+            // 2. Get local media
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             setLocalStream(stream);
             localStreamRef.current = stream;
 
-            // 2. Add user to voice_channel_users
+            // Apply mute state
+            stream.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted;
+            });
+
+            // 3. Add user to voice_channel_users
             const { error } = await supabase
                 .from('voice_channel_users')
                 .insert({
@@ -69,7 +164,7 @@ export function useVoiceChannel(channelId: number | null) {
 
             setIsConnected(true);
 
-            // 3. Fetch existing participants
+            // 4. Fetch existing participants
             const { data: existingUsers } = await supabase
                 .from('voice_channel_users')
                 .select('*, profile:profiles(*)')
@@ -79,45 +174,18 @@ export function useVoiceChannel(channelId: number | null) {
             if (existingUsers) {
                 // Initialize connections with existing users
                 existingUsers.forEach(participant => {
-                    initiateConnection(participant.user_id);
+                    initiateConnection(participant.user_id, channelId);
                 });
             }
 
         } catch (error) {
-            console.error('Error joining voice channel:', error);
-            leaveChannel();
+            console.error('[VoiceChannelContext] Error joining voice channel:', error);
+            await leaveChannel();
         }
-    }, [channelId, user, profile, isMuted, isDeafened]);
-
-    // Leave channel
-    const leaveChannel = useCallback(async () => {
-        if (!user) return;
-
-        // Stop local stream
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-            setLocalStream(null);
-        }
-
-        // Close all peer connections
-        peerManagers.current.forEach(manager => manager.cleanup());
-        peerManagers.current.clear();
-
-        if (channelId && isConnected) {
-            await supabase
-                .from('voice_channel_users')
-                .delete()
-                .eq('channel_id', channelId)
-                .eq('user_id', user.id);
-        }
-
-        setIsConnected(false);
-        setParticipants([]);
-    }, [channelId, user, isConnected]);
+    }, [activeChannelId, activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel]);
 
     // Initialize WebRTC connection with a peer
-    const initiateConnection = async (peerId: string) => {
+    const initiateConnection = async (peerId: string, channelId: number) => {
         if (peerManagers.current.has(peerId)) return;
 
         const manager = new WebRTCManager();
@@ -131,18 +199,27 @@ export function useVoiceChannel(channelId: number | null) {
                 ));
             },
             (candidate) => {
-                sendSignal(peerId, 'ice-candidate', candidate);
+                // We need to pass channelId because activeChannelId state might not be updated in this closure if called immediately
+                if (user) {
+                    supabase.from('webrtc_signals').insert({
+                        channel_id: channelId,
+                        from_user_id: user.id,
+                        to_user_id: peerId,
+                        signal_type: 'ice-candidate',
+                        payload: candidate
+                    }).then();
+                }
             },
             undefined,
             undefined,
             (screenStream) => {
-                console.log('[useVoiceChannel] Received screen share from', peerId);
+                console.log('[VoiceChannelContext] Received screen share from', peerId);
                 setParticipants(prev => prev.map(p =>
                     p.user_id === peerId ? { ...p, screenStream: screenStream } : p
                 ));
             },
             (cameraStream) => {
-                console.log('[useVoiceChannel] Received camera from', peerId);
+                console.log('[VoiceChannelContext] Received camera from', peerId);
                 setParticipants(prev => prev.map(p =>
                     p.user_id === peerId ? { ...p, cameraStream: cameraStream } : p
                 ));
@@ -155,22 +232,28 @@ export function useVoiceChannel(channelId: number | null) {
 
         // If already screen sharing, add screen share to this new peer
         if (screenStreamRef.current) {
-            console.log('[useVoiceChannel] Adding existing screen share to new peer:', peerId);
+            console.log('[VoiceChannelContext] Adding existing screen share to new peer:', peerId);
             await manager.startScreenShare(screenStreamRef.current);
-        } else {
-            console.log('[useVoiceChannel] Not adding screen share to new peer. hasStream:', !!screenStreamRef.current);
         }
 
         // If already camera enabled, add camera to this new peer
         if (cameraStreamRef.current) {
-            console.log('[useVoiceChannel] Adding existing camera to new peer:', peerId);
+            console.log('[VoiceChannelContext] Adding existing camera to new peer:', peerId);
             const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
             manager.addVideoTrack(videoTrack, cameraStreamRef.current);
         }
 
         // Create offer
         const offer = await manager.createOffer();
-        await sendSignal(peerId, 'offer', offer);
+        if (user) {
+            await supabase.from('webrtc_signals').insert({
+                channel_id: channelId,
+                from_user_id: user.id,
+                to_user_id: peerId,
+                signal_type: 'offer',
+                payload: offer
+            });
+        }
     };
 
     // Handle incoming signals
@@ -195,13 +278,13 @@ export function useVoiceChannel(channelId: number | null) {
                 undefined,
                 undefined,
                 (screenStream) => {
-                    console.log('[useVoiceChannel] Received screen share from', from_user_id);
+                    console.log('[VoiceChannelContext] Received screen share from', from_user_id);
                     setParticipants(prev => prev.map(p =>
                         p.user_id === from_user_id ? { ...p, screenStream: screenStream } : p
                     ));
                 },
                 (cameraStream) => {
-                    console.log('[useVoiceChannel] Received camera from', from_user_id);
+                    console.log('[VoiceChannelContext] Received camera from', from_user_id);
                     setParticipants(prev => prev.map(p =>
                         p.user_id === from_user_id ? { ...p, cameraStream: cameraStream } : p
                     ));
@@ -209,28 +292,16 @@ export function useVoiceChannel(channelId: number | null) {
             );
 
             if (localStreamRef.current) {
-                console.log('[useVoiceChannel] Adding local audio stream to incoming peer:', from_user_id);
                 manager.addLocalStream(localStreamRef.current);
             }
 
-            // If already screen sharing, add screen share to this new peer
-            // If already screen sharing, add screen share to this new peer
-            console.log('[useVoiceChannel] Checking screen share for incoming peer. hasStream:', !!screenStreamRef.current, 'from:', from_user_id);
             if (screenStreamRef.current) {
-                console.log('[useVoiceChannel] ✅ Adding existing screen share to incoming peer:', from_user_id);
                 await manager.startScreenShare(screenStreamRef.current);
-            } else {
-                console.log('[useVoiceChannel] ❌ Not adding screen share to incoming peer:', from_user_id);
             }
 
-            // If already camera enabled, add camera to this new peer
-            console.log('[useVoiceChannel] Checking camera for incoming peer. hasStream:', !!cameraStreamRef.current, 'from:', from_user_id);
             if (cameraStreamRef.current) {
-                console.log('[useVoiceChannel] ✅ Adding existing camera to incoming peer:', from_user_id);
                 const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
                 manager.addVideoTrack(videoTrack, cameraStreamRef.current);
-            } else {
-                console.log('[useVoiceChannel] ❌ Not adding camera to incoming peer:', from_user_id);
             }
         }
 
@@ -245,16 +316,41 @@ export function useVoiceChannel(channelId: number | null) {
         }
     };
 
+    const fetchParticipants = async () => {
+        if (!activeChannelId) return;
+
+        const { data } = await supabase
+            .from('voice_channel_users')
+            .select('*, profile:profiles(*)')
+            .eq('channel_id', activeChannelId)
+            .order('joined_at', { ascending: true });
+
+        if (data) {
+            setParticipants(prev => {
+                // Merge existing streams with new data
+                return data.map((p: any) => {
+                    const existing = prev.find(prevP => prevP.user_id === p.user_id);
+                    return {
+                        ...p,
+                        stream: existing?.stream,
+                        screenStream: existing?.screenStream,
+                        cameraStream: existing?.cameraStream
+                    };
+                });
+            });
+        }
+    };
+
     // Subscribe to channel changes and signals
     useEffect(() => {
-        if (!channelId || !user || !isConnected) return;
+        if (!activeChannelId || !user || !isConnected) return;
 
-        const channel = supabase.channel(`voice_${channelId}`)
+        const channel = supabase.channel(`voice_${activeChannelId}`)
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'voice_channel_users',
-                filter: `channel_id=eq.${channelId}`
+                filter: `channel_id=eq.${activeChannelId}`
             }, (payload) => {
                 // Handle participant list updates
                 fetchParticipants();
@@ -274,7 +370,7 @@ export function useVoiceChannel(channelId: number | null) {
         return () => {
             channel.unsubscribe();
         };
-    }, [channelId, user, isConnected]);
+    }, [activeChannelId, user, isConnected]);
 
     // Handle mute toggle
     useEffect(() => {
@@ -284,61 +380,35 @@ export function useVoiceChannel(channelId: number | null) {
             });
         }
 
-        if (channelId && user && isConnected) {
+        if (activeChannelId && user && isConnected) {
             supabase
                 .from('voice_channel_users')
                 .update({ is_muted: isMuted })
-                .eq('channel_id', channelId)
+                .eq('channel_id', activeChannelId)
                 .eq('user_id', user.id)
                 .then(({ error }) => {
                     if (error) console.error('Error updating mute state:', error);
                 });
         }
-    }, [isMuted, channelId, user, isConnected]);
+    }, [isMuted, activeChannelId, user, isConnected]);
 
     // Handle deafen toggle
     useEffect(() => {
-        // Deafen is handled by muting the audio elements in ChannelList.tsx
-        // We just update the database here
-        if (channelId && user && isConnected) {
+        if (activeChannelId && user && isConnected) {
             supabase
                 .from('voice_channel_users')
                 .update({ is_deafened: isDeafened })
-                .eq('channel_id', channelId)
+                .eq('channel_id', activeChannelId)
                 .eq('user_id', user.id)
                 .then(({ error }) => {
                     if (error) console.error('Error updating deafen state:', error);
                 });
         }
-    }, [isDeafened, channelId, user, isConnected]);
-
-    const fetchParticipants = async () => {
-        if (!channelId) return;
-
-        const { data } = await supabase
-            .from('voice_channel_users')
-            .select('*, profile:profiles(*)')
-            .eq('channel_id', channelId)
-            .order('joined_at', { ascending: true });
-
-        if (data) {
-            setParticipants(prev => {
-                // Merge existing streams with new data
-                return data.map((p: any) => {
-                    const existing = prev.find(prevP => prevP.user_id === p.user_id);
-                    return {
-                        ...p,
-                        stream: existing?.stream,
-                        screenStream: existing?.screenStream
-                    };
-                });
-            });
-        }
-    };
+    }, [isDeafened, activeChannelId, user, isConnected]);
 
     // Toggle screen share
     const toggleScreenShare = useCallback(async () => {
-        if (!user || !channelId || !isConnected) return;
+        if (!user || !activeChannelId || !isConnected) return;
 
         try {
             if (isScreenSharing) {
@@ -351,19 +421,16 @@ export function useVoiceChannel(channelId: number | null) {
                 // Stop screen share for all peers and trigger renegotiation
                 for (const [peerId, manager] of peerManagers.current.entries()) {
                     await manager.stopScreenShare();
-                    // Trigger renegotiation to remove screen share track
                     const offer = await manager.createOffer();
                     await sendSignal(peerId, 'offer', offer);
                 }
 
-                // Update database
                 await supabase
                     .from('voice_channel_users')
                     .update({ is_screen_sharing: false })
-                    .eq('channel_id', channelId)
+                    .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
 
-                // Remove local screen share from participants
                 setParticipants(prev => prev.map(p =>
                     p.user_id === user.id ? { ...p, screenStream: undefined } : p
                 ));
@@ -378,27 +445,22 @@ export function useVoiceChannel(channelId: number | null) {
 
                 screenStreamRef.current = screenStream;
 
-                // Handle screen share stop (when user clicks browser's stop button)
                 screenStream.getVideoTracks()[0].onended = () => {
                     toggleScreenShare();
                 };
 
-                // Start screen share for all peers
                 for (const [peerId, manager] of peerManagers.current.entries()) {
                     await manager.startScreenShare(screenStream);
-                    // Trigger renegotiation
                     const offer = await manager.createOffer();
                     await sendSignal(peerId, 'offer', offer);
                 }
 
-                // Update database
                 await supabase
                     .from('voice_channel_users')
                     .update({ is_screen_sharing: true })
-                    .eq('channel_id', channelId)
+                    .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
 
-                // Add local screen share to participants for display
                 setParticipants(prev => prev.map(p =>
                     p.user_id === user.id ? { ...p, screenStream: screenStream } : p
                 ));
@@ -408,35 +470,31 @@ export function useVoiceChannel(channelId: number | null) {
         } catch (error) {
             console.error('Error toggling screen share:', error);
         }
-    }, [isScreenSharing, user, channelId, isConnected]);
+    }, [isScreenSharing, user, activeChannelId, isConnected]);
 
     // Toggle camera
     const toggleCamera = useCallback(async () => {
-        if (!user || !channelId || !isConnected) return;
+        if (!user || !activeChannelId || !isConnected) return;
 
         try {
             if (isCameraEnabled) {
-                // Stop camera
                 if (cameraStreamRef.current) {
                     cameraStreamRef.current.getTracks().forEach(track => track.stop());
                     cameraStreamRef.current = null;
                 }
 
-                // Update database
                 await supabase
                     .from('voice_channel_users')
                     .update({ is_video_enabled: false })
-                    .eq('channel_id', channelId)
+                    .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
 
-                // Remove local camera from participants
                 setParticipants(prev => prev.map(p =>
                     p.user_id === user.id ? { ...p, cameraStream: undefined } : p
                 ));
 
                 setIsCameraEnabled(false);
             } else {
-                // Start camera
                 const cameraStream = await navigator.mediaDevices.getUserMedia({
                     video: true,
                     audio: false
@@ -444,23 +502,19 @@ export function useVoiceChannel(channelId: number | null) {
 
                 cameraStreamRef.current = cameraStream;
 
-                // Send camera to all peers (camera uses video track, different from screen share)
                 for (const [peerId, manager] of peerManagers.current.entries()) {
                     const videoTrack = cameraStream.getVideoTracks()[0];
                     manager.addVideoTrack(videoTrack, cameraStream);
-                    // Trigger renegotiation
                     const offer = await manager.createOffer();
                     await sendSignal(peerId, 'offer', offer);
                 }
 
-                // Update database
                 await supabase
                     .from('voice_channel_users')
                     .update({ is_video_enabled: true })
-                    .eq('channel_id', channelId)
+                    .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
 
-                // Add local camera to participants for display
                 setParticipants(prev => prev.map(p =>
                     p.user_id === user.id ? { ...p, cameraStream: cameraStream } : p
                 ));
@@ -470,9 +524,10 @@ export function useVoiceChannel(channelId: number | null) {
         } catch (error) {
             console.error('Error toggling camera:', error);
         }
-    }, [isCameraEnabled, user, channelId, isConnected]);
+    }, [isCameraEnabled, user, activeChannelId, isConnected]);
 
-    return {
+    const value: VoiceChannelContextType = {
+        activeChannelId,
         participants,
         isConnected,
         isMuted,
@@ -486,4 +541,18 @@ export function useVoiceChannel(channelId: number | null) {
         toggleScreenShare,
         toggleCamera
     };
+
+    return (
+        <VoiceChannelContext.Provider value={value}>
+            {children}
+        </VoiceChannelContext.Provider>
+    );
+}
+
+export function useVoiceChannel() {
+    const context = useContext(VoiceChannelContext);
+    if (context === undefined) {
+        throw new Error('useVoiceChannel must be used within a VoiceChannelProvider');
+    }
+    return context;
 }

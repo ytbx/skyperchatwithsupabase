@@ -3,7 +3,7 @@ import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, V
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember } from '@/lib/types';
-import { useVoiceChannel } from '@/hooks/useVoiceChannel';
+import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 
 interface ChannelListProps {
   serverId: string | null;
@@ -12,10 +12,9 @@ interface ChannelListProps {
   onCreateChannel?: () => void;
   onInvite?: () => void;
   onManageRoles?: () => void;
-  onVoiceChannelChange?: (channel: { id: number; name: string; participants: any[] } | null) => void;
 }
 
-export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onManageRoles, onVoiceChannelChange }: ChannelListProps) {
+export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCreateChannel, onInvite, onManageRoles }: ChannelListProps) {
   const [server, setServer] = useState<Server | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
@@ -25,10 +24,23 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ channels: Channel[], members: Profile[] }>({ channels: [], members: [] });
-  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<number | null>(null);
 
   const { user, profile } = useAuth();
-  const { participants, joinChannel, leaveChannel, isConnected, isMuted, isDeafened, isScreenSharing, isCameraEnabled, toggleMute, toggleDeafen, toggleScreenShare, toggleCamera } = useVoiceChannel(activeVoiceChannelId);
+  const {
+    activeChannelId,
+    joinChannel,
+    leaveChannel,
+    isConnected,
+    isMuted,
+    isDeafened,
+    isScreenSharing,
+    isCameraEnabled,
+    toggleMute,
+    toggleDeafen,
+    toggleScreenShare,
+    toggleCamera,
+    participants: activeParticipants
+  } = useVoiceChannel();
 
   // Use ref to avoid stale closure in realtime subscription
   const voiceChannelsRef = useRef<Channel[]>([]);
@@ -40,7 +52,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
 
   // Render audio elements for remote participants
   useEffect(() => {
-    participants.forEach(participant => {
+    activeParticipants.forEach(participant => {
       if (participant.stream && participant.user_id !== user?.id) {
         const audio = document.getElementById(`audio-${participant.user_id}`) as HTMLAudioElement;
         if (audio && audio.srcObject !== participant.stream) {
@@ -49,7 +61,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
         }
       }
     });
-  }, [participants, user]);
+  }, [activeParticipants, user]);
 
   useEffect(() => {
     if (!serverId) {
@@ -98,29 +110,6 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       setSearchResults({ channels: [], members: [] });
     }
   }, [searchQuery, serverId]);
-
-  // Handle joining voice channel
-  useEffect(() => {
-    if (activeVoiceChannelId) {
-      joinChannel();
-    }
-  }, [activeVoiceChannelId]);
-
-  // Notify parent when voice channel state changes
-  useEffect(() => {
-    if (activeVoiceChannelId && isConnected && onVoiceChannelChange) {
-      const channel = voiceChannels.find(c => c.id === activeVoiceChannelId);
-      if (channel) {
-        onVoiceChannelChange({
-          id: channel.id,
-          name: channel.name,
-          participants: participants
-        });
-      }
-    } else if (!activeVoiceChannelId && onVoiceChannelChange) {
-      onVoiceChannelChange(null);
-    }
-  }, [activeVoiceChannelId, isConnected, voiceChannels, participants, onVoiceChannelChange]);
 
   async function performSearch(query: string) {
     if (!serverId) return;
@@ -371,13 +360,13 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               {voiceChannels.map((channel) => (
                 <div key={channel.id}>
                   <button
-                    onClick={() => setActiveVoiceChannelId(channel.id)}
-                    className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeVoiceChannelId === channel.id
+                    onClick={() => joinChannel(channel.id)}
+                    className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
                       ? 'bg-gray-700 text-white'
                       : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
                       }`}
                   >
-                    <Volume2 className={`w-4 h-4 flex-shrink-0 ${activeVoiceChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
+                    <Volume2 className={`w-4 h-4 flex-shrink-0 ${activeChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
                     <span className="text-sm truncate font-medium">{channel.name}</span>
                   </button>
 
@@ -393,7 +382,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                           </span>
                         )}
                       </div>
-                      <span className={`text-sm truncate ${activeVoiceChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
+                      <span className={`text-sm truncate ${activeChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
                         {participant.profile?.username}
                       </span>
                     </div>
@@ -416,7 +405,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       </div>
 
       {/* Hidden Audio Elements */}
-      {participants.map((participant) => (
+      {activeParticipants.map((participant) => (
         <audio
           key={participant.user_id}
           id={`audio-${participant.user_id}`}
@@ -427,7 +416,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       ))}
 
       {/* Voice Controls (if connected) */}
-      {activeVoiceChannelId && (
+      {activeChannelId && (
         <div className="bg-gray-850 border-t border-gray-800 p-2 pb-0">
           <div className="flex items-center justify-between px-2 py-1 bg-green-900/20 rounded border border-green-900/50 mb-2">
             <div className="flex items-center gap-2 overflow-hidden">
@@ -435,14 +424,13 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-bold text-green-500 truncate">Ses Bağlantısı</span>
                 <span className="text-xs text-gray-400 truncate">
-                  {voiceChannels.find(c => c.id === activeVoiceChannelId)?.name}
+                  {voiceChannels.find(c => c.id === activeChannelId)?.name}
                 </span>
               </div>
             </div>
             <button
               onClick={() => {
                 leaveChannel();
-                setActiveVoiceChannelId(null);
               }}
               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
               title="Bağlantıyı Kes"

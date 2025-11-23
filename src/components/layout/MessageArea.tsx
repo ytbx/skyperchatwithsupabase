@@ -61,7 +61,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
         // Check if messages are within 5 minutes
         const lastMessage = currentGroup.messages[currentGroup.messages.length - 1];
         const timeDiff = new Date(message.created_at).getTime() - new Date(lastMessage.created_at).getTime();
-        
+
         if (timeDiff < 5 * 60 * 1000) { // 5 minutes
           currentGroup.messages.push(message);
         } else {
@@ -104,7 +104,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
             .select('*')
             .eq('id', newMessage.sender_id)
             .maybeSingle();
-          
+
           newMessage.sender = senderData || undefined;
           setMessages((prev) => [...prev, newMessage]);
         }
@@ -297,7 +297,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
               >
                 <Plus className="w-5 h-5" />
               </button>
-              
+
               <input
                 ref={inputRef}
                 type="text"
@@ -321,7 +321,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
             </div>
           </div>
         </form>
-        
+
         {/* Helper text */}
         <div className="mt-1 px-2">
           <p className="text-xs text-gray-500">

@@ -11,7 +11,6 @@ import { CreateServerModal } from '@/components/modals/CreateServerModal';
 import { CreateChannelModal } from '@/components/modals/CreateChannelModal';
 import { SettingsModal } from '@/components/modals/SettingsModal';
 import { ServerInviteModal } from '@/components/modals/ServerInviteModal';
-import { ServerRolesModal } from '@/components/modals/ServerRolesModal';
 import { DirectMessageArea } from '@/components/dm/DirectMessageArea';
 import { FriendsList } from '@/components/friends/FriendsList';
 import { NotificationSystem } from '@/components/notifications/NotificationSystem';
@@ -25,9 +24,11 @@ import { Channel } from '@/lib/types';
 import { SupabaseRealtimeProvider } from '@/contexts/SupabaseRealtimeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { CallProvider } from '@/contexts/CallContext';
+import { VoiceChannelProvider, useVoiceChannel } from '@/contexts/VoiceChannelContext';
 
 function AppContent() {
   const { user, loading } = useAuth();
+  const { activeChannelId, participants, toggleScreenShare } = useVoiceChannel();
   const [showSignUp, setShowSignUp] = useState(false);
 
   // View states - Default is Friends page
@@ -51,7 +52,6 @@ function AppContent() {
   const [showServerRolesModal, setShowServerRolesModal] = useState(false);
   const [showMemberList, setShowMemberList] = useState(true);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
-  const [activeVoiceChannel, setActiveVoiceChannel] = useState<{ id: number; name: string; participants: any[] } | null>(null);
 
   // Handle ESC key and keyboard shortcuts
   useEffect(() => {
@@ -85,6 +85,21 @@ function AppContent() {
       setSelectedServerName('');
     }
   }, [selectedServerId]);
+
+  // Fetch active channel name if connected
+  const [activeChannelName, setActiveChannelName] = useState<string>('');
+  useEffect(() => {
+    if (activeChannelId) {
+      supabase
+        .from('channels')
+        .select('name')
+        .eq('id', activeChannelId)
+        .single()
+        .then(({ data }) => {
+          if (data) setActiveChannelName(data.name);
+        });
+    }
+  }, [activeChannelId]);
 
   async function loadChannelDetails() {
     if (!selectedChannelId) return;
@@ -198,7 +213,6 @@ function AppContent() {
           onCreateChannel={handleCreateChannel}
           onInvite={() => setShowServerInviteModal(true)}
           onManageRoles={() => setShowServerRolesModal(true)}
-          onVoiceChannelChange={setActiveVoiceChannel}
         />
       )}
 
@@ -209,19 +223,16 @@ function AppContent() {
       )}
 
       {/* Main Content Area */}
-      {currentView === 'servers' && activeVoiceChannel && (
+      {currentView === 'servers' && activeChannelId && (
         <VoiceChannelView
-          channelId={activeVoiceChannel.id}
-          channelName={activeVoiceChannel.name}
-          participants={activeVoiceChannel.participants}
-          onStartScreenShare={() => {
-            // Screen share is handled by the button in ChannelList
-            console.log('Start screen share clicked');
-          }}
+          channelId={activeChannelId}
+          channelName={activeChannelName}
+          participants={participants}
+          onStartScreenShare={toggleScreenShare}
         />
       )}
 
-      {currentView === 'servers' && !activeVoiceChannel && !selectedChannel && (
+      {currentView === 'servers' && !activeChannelId && !selectedChannel && (
         <div className="flex-1 flex items-center justify-center bg-gray-900">
           <div className="text-center px-4">
             <div className="w-20 h-20 bg-gray-800 rounded-full mx-auto mb-6 flex items-center justify-center">
@@ -237,7 +248,7 @@ function AppContent() {
         </div>
       )}
 
-      {currentView === 'servers' && !activeVoiceChannel && selectedChannel && (
+      {currentView === 'servers' && !activeChannelId && selectedChannel && (
         <MessageArea channelId={selectedChannelId} />
       )}
 
@@ -308,12 +319,7 @@ function AppContent() {
             serverId={selectedServerId}
             serverName={selectedServerName}
           />
-          <ServerRolesModal
-            isOpen={showServerRolesModal}
-            onClose={() => setShowServerRolesModal(false)}
-            serverId={selectedServerId}
-            serverName={selectedServerName}
-          />
+
         </>
       )}
 
@@ -353,12 +359,14 @@ function App() {
     <AuthProvider>
       <NotificationProvider>
         <CallProvider>
-          <SupabaseRealtimeProvider>
-            <Routes>
-              <Route path="/" element={<AppContent />} />
-              <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
-            </Routes>
-          </SupabaseRealtimeProvider>
+          <VoiceChannelProvider>
+            <SupabaseRealtimeProvider>
+              <Routes>
+                <Route path="/" element={<AppContent />} />
+                <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
+              </Routes>
+            </SupabaseRealtimeProvider>
+          </VoiceChannelProvider>
         </CallProvider>
       </NotificationProvider>
     </AuthProvider>
