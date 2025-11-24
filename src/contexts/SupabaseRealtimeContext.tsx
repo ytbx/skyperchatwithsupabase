@@ -134,13 +134,20 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             )
             .subscribe();
 
-        // Update last_seen on window close/refresh
+        // Update last_seen on window close/refresh - OPTIMIZED
+        let lastSeenUpdated = false;
         const updateLastSeen = async () => {
-            if (user?.id) {
-                await supabase.rpc('update_user_last_seen', { user_id: user.id });
+            if (user?.id && !lastSeenUpdated) {
+                lastSeenUpdated = true;
+                try {
+                    await supabase.rpc('update_user_last_seen', { user_id: user.id });
+                } catch (error) {
+                    console.error('[SupabaseRealtime] Error updating last_seen:', error);
+                }
             }
         };
 
+        // Only add listener, don't call immediately
         window.addEventListener('beforeunload', updateLastSeen);
 
         return () => {

@@ -481,7 +481,10 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                   onDrop={(e) => handleDrop(e, channel.id)}
                 >
                   <button
-                    onClick={() => joinChannel(channel.id)}
+                    onClick={() => {
+                      joinChannel(channel.id);
+                      onSelectChannel(channel.id);
+                    }}
                     className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
                       ? 'bg-gray-700 text-white'
                       : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'

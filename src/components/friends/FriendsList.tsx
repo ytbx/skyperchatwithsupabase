@@ -137,8 +137,8 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     }
   };
 
-  // Search users
-  const searchUsers = async (query: string) => {
+  // Search users - wrapped in useCallback to prevent unnecessary re-renders
+  const searchUsers = React.useCallback(async (query: string) => {
     if (!user || !query.trim()) {
       setSearchResults([]);
       return;
@@ -189,7 +189,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     } finally {
       setSearchingUsers(false);
     }
-  };
+  }, [user, friends]); // Added dependencies
 
   // Debounced search
   useEffect(() => {
@@ -202,7 +202,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [newFriendUsername]);
+  }, [newFriendUsername, searchUsers]); // Added searchUsers to dependencies
 
   const handleFriendRequestByUsername = async (username: string) => {
     if (!user || !username.trim() || sendingRequest) return;

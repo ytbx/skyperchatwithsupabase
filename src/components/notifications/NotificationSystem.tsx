@@ -6,7 +6,7 @@ import { Bell, X, MessageCircle, UserPlus, Phone, Trash2 } from 'lucide-react';
 interface Notification {
   id: string;
   user_id: string;
-  type: 'message' | 'friend_request' | 'call' | 'server_invite';
+  type: 'message' | 'friend_request' | 'call' | 'server_invite' | 'mention';
   title: string;
   message: string;
   created_at: string;
@@ -35,7 +35,37 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
   useEffect(() => {
     if (user) {
       loadNotifications();
-      setupRealtimeSubscription();
+
+      // Setup realtime subscription with proper cleanup
+      const subscription = supabase
+        .channel('notifications')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`
+          },
+          (payload) => {
+            const newNotification = payload.new as Notification;
+            setNotifications(prev => [newNotification, ...prev]);
+
+            // Show browser notification if permission granted
+            if (Notification.permission === 'granted') {
+              new Notification(newNotification.title, {
+                body: newNotification.message,
+                icon: '/logo.png'
+              });
+            }
+          }
+        )
+        .subscribe();
+
+      // Return cleanup function
+      return () => {
+        subscription.unsubscribe();
+      };
     }
   }, [user]);
 
@@ -62,42 +92,9 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
     }
   };
 
-  const setupRealtimeSubscription = () => {
-    if (!user) return;
 
-    const subscription = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          const newNotification = payload.new as Notification;
-          setNotifications(prev => [newNotification, ...prev]);
 
-          // Show browser notification if permission granted
-          showBrowserNotification(newNotification);
-        }
-      )
-      .subscribe();
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  };
-
-  const showBrowserNotification = (notification: Notification) => {
-    if (Notification.permission === 'granted') {
-      new Notification(notification.title, {
-        body: notification.message,
-        icon: '/logo.png'
-      });
-    }
-  };
 
   const requestNotificationPermission = () => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -327,7 +324,7 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
 // Utility function to create notifications
 export const createNotification = async (
   userId: string,
-  type: 'message' | 'friend_request' | 'call' | 'server_invite',
+  type: 'message' | 'friend_request' | 'call' | 'server_invite' | 'mention',
   title: string,
   message: string,
   metadata?: any
