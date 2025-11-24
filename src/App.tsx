@@ -295,7 +295,33 @@ function AppContent() {
 
             {/* Top Bar with Notifications - Always visible */}
             <div className="absolute top-4 right-4 z-30">
-                <NotificationSystem />
+                <NotificationSystem
+                    onNavigate={(type, id, serverId) => {
+                        console.log('[App] Notification navigation:', type, id, serverId);
+                        if (type === 'channel') {
+                            if (serverId) {
+                                setSelectedServerId(serverId);
+                                setSelectedChannelId(Number(id));
+                                setCurrentView('servers');
+                            }
+                        } else if (type === 'dm') {
+                            // Fetch user details to open DM
+                            supabase
+                                .from('profiles')
+                                .select('username, profile_image_url')
+                                .eq('id', id)
+                                .single()
+                                .then(({ data }) => {
+                                    if (data) {
+                                        setSelectedContactId(id);
+                                        setSelectedContactName(data.username);
+                                        setSelectedContactProfileImage(data.profile_image_url);
+                                        setCurrentView('friends');
+                                    }
+                                });
+                        }
+                    }}
+                />
             </div>
 
             {/* Call Notification - Always visible */}

@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useCall } from '../../contexts/CallContext';
 import { DirectMessage } from '../../lib/types';
-import { Send, Paperclip, Smile, MoreVertical, Hash, User, Search, X, Clock, Hash as ChannelIcon, Users, Phone, Video } from 'lucide-react';
+import { Send, Paperclip, Smile, MoreVertical, Hash, User, Search, X, Clock, Hash as ChannelIcon, Users, Phone, Video, Trash2 } from 'lucide-react';
 import { ActiveCallOverlay } from '../call/ActiveCallOverlay';
 import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
@@ -72,11 +72,16 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'chats'
           },
           (payload) => {
+            if (payload.eventType === 'DELETE') {
+              const deletedId = (payload.old as { id: string }).id;
+              setMessages(prev => prev.filter(m => m.id !== deletedId));
+              return;
+            }
             const newMessage = payload.new as DirectMessage;
             // Only add messages related to this conversation
             if (
@@ -314,6 +319,23 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
       toast.error('Mesaj gönderilirken bir hata oluştu');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase
+        .from('chats')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      // Optimistic update
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      toast.error('Mesaj silinirken bir hata oluştu');
     }
   };
 
@@ -653,7 +675,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
                     key={message.id}
                     className={`flex ${message.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-xs lg:max-w-md ${message.sender_id === user?.id ? 'order-1' : 'order-2'
+                    <div className={`max-w-xs lg:max-w-md group relative ${message.sender_id === user?.id ? 'order-1' : 'order-2'
                       }`}>
                       {/* Show avatar only for first message in group from other user */}
                       {messageIndex === 0 && message.sender_id !== user?.id && (
@@ -700,6 +722,16 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
                             }`}>
                             {formatMessageTime(message.created_at)}
                           </div>
+                        )}
+                        {/* Delete button */}
+                        {message.sender_id === user?.id && (
+                          <button
+                            onClick={() => deleteMessage(message.id)}
+                            className="absolute -top-2 -right-2 p-1 bg-gray-700 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 hover:text-white text-gray-400"
+                            title="Mesajı sil"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         )}
                       </div>
                     </div>

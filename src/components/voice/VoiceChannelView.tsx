@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MonitorUp, Users, Maximize2, Minimize2 } from 'lucide-react';
+import { MonitorUp, Users, Maximize2, Minimize2, MicOff, Headphones } from 'lucide-react';
 
 interface VoiceParticipant {
     user_id: string;
@@ -9,6 +9,8 @@ interface VoiceParticipant {
     };
     is_screen_sharing: boolean;
     is_video_enabled: boolean;
+    is_muted: boolean;
+    is_deafened: boolean;
     stream?: MediaStream;
     screenStream?: MediaStream;
     cameraStream?: MediaStream;
@@ -180,6 +182,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                                     {participant.profile?.username}
                                                 </p>
                                                 <p className="text-xs text-blue-400">Kamera açık</p>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                {participant.is_muted && <MicOff className="w-4 h-4 text-red-500" />}
+                                                {participant.is_deafened && <Headphones className="w-4 h-4 text-red-500" />}
                                             </div>
                                         </div>
                                     </div>

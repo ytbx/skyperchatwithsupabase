@@ -15,10 +15,18 @@ interface Notification {
     sender_name?: string;
     call_type?: 'voice' | 'video';
     server_id?: string;
+    channelId?: string;
+    serverId?: string;
+    senderId?: string;
+    type?: string;
   };
 }
 
-export const NotificationSystem: React.FC = () => {
+interface NotificationSystemProps {
+  onNavigate?: (type: 'channel' | 'dm', id: string, serverId?: string) => void;
+}
+
+export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -242,7 +250,20 @@ export const NotificationSystem: React.FC = () => {
                   {notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      className="p-4 hover:bg-gray-800 transition-colors"
+                      className="p-4 hover:bg-gray-800 transition-colors cursor-pointer"
+                      onClick={() => {
+                        if (onNavigate) {
+                          if (notification.type === 'message' || notification.type === 'mention') {
+                            if (notification.metadata?.channelId) {
+                              onNavigate('channel', notification.metadata.channelId, notification.metadata.serverId);
+                              setIsOpen(false);
+                            } else if (notification.metadata?.senderId) {
+                              onNavigate('dm', notification.metadata.senderId);
+                              setIsOpen(false);
+                            }
+                          }
+                        }
+                      }}
                     >
                       <div className="flex items-start space-x-3">
                         {/* Icon */}
@@ -264,7 +285,10 @@ export const NotificationSystem: React.FC = () => {
                             </span>
 
                             <button
-                              onClick={() => deleteNotification(notification.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteNotification(notification.id);
+                              }}
                               className="p-1.5 hover:bg-red-600/20 rounded transition-colors group"
                               title="Sil"
                             >
@@ -280,21 +304,23 @@ export const NotificationSystem: React.FC = () => {
             </div>
 
             {/* Footer */}
-            {notifications.length > 0 && (
-              <div className="p-3 border-t border-gray-700 text-center">
-                <button
-                  onClick={deleteAllNotifications}
-                  className="flex items-center justify-center gap-2 w-full text-sm text-red-400 hover:text-red-300 transition-colors py-1"
-                >
-                  <Trash2 size={14} />
-                  Tüm bildirimleri sil
-                </button>
-              </div>
-            )}
-          </div>
+            {
+              notifications.length > 0 && (
+                <div className="p-3 border-t border-gray-700 text-center">
+                  <button
+                    onClick={deleteAllNotifications}
+                    className="flex items-center justify-center gap-2 w-full text-sm text-red-400 hover:text-red-300 transition-colors py-1"
+                  >
+                    <Trash2 size={14} />
+                    Tüm bildirimleri sil
+                  </button>
+                </div>
+              )
+            }
+          </div >
         </>
       )}
-    </div>
+    </div >
   );
 };
 

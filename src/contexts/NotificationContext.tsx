@@ -290,26 +290,101 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
             const senderName = senderProfile?.username || 'Birisi';
 
-            // Check if it's a mention
-            const isMention = newMessage.message?.includes(`<@${currentUserId}>`);
+            // Check for mentions
+            let shouldTriggerNotification = false;
+            let notificationTitle = '';
+            let notificationBody = '';
 
-            if (isMention) {
-              console.log('[Notifications] Creating mention notification');
-              addNotification(
-                'mention',
-                'Bahsedildiniz',
-                `${senderName} sizi bir mesajda bahsetti`,
-                { type: 'mention', channelId: newMessage.channel_id, messageId: newMessage.id }
-              );
-            } else {
-              // Regular message notification
-              console.log('[Notifications] Creating channel message notification');
+            // 1. Check for @everyone
+            if (newMessage.message?.includes('@everyone')) {
+              console.log('[Notifications] @everyone mention detected');
+              shouldTriggerNotification = true;
+              notificationTitle = `Everyone (${senderName})`;
+              notificationBody = `${senderName}: ${newMessage.message}`;
+            }
+
+            // 2. Check for user mention (@username)
+            // We need to fetch current user's username to check this properly if we want to support @username text
+            // But usually mentions are stored as <@uuid> or similar in rich text, or just plain text @username
+            // The user requested "@isim" so we check for @CurrentUsername
+            if (!shouldTriggerNotification) {
+              const { data: currentUserProfile } = await supabase
+                .from('profiles')
+                .select('username')
+                .eq('id', currentUserId)
+                .single();
+
+              if (currentUserProfile?.username && newMessage.message?.includes(`@${currentUserProfile.username}`)) {
+                console.log('[Notifications] User mention detected (@username)');
+                shouldTriggerNotification = true;
+                notificationTitle = 'Sizden bahsedildi';
+                notificationBody = `${senderName} sizden bahsetti: ${newMessage.message}`;
+              }
+            }
+
+            // 3. Check for role mentions
+            if (!shouldTriggerNotification) {
+              // Get channel's server
+              const { data: channelData } = await supabase
+                .from('channels')
+                .select('server_id')
+                .eq('id', newMessage.channel_id)
+                .single();
+
+              if (channelData) {
+                // Get user's roles in this server
+                const { data: userRoles } = await supabase
+                  .from('server_user_roles')
+                  .select(`
+                    role_id,
+                    server_roles (
+                      name
+                    )
+                  `)
+                  .eq('user_id', currentUserId)
+                  .eq('server_id', channelData.server_id);
+
+                if (userRoles && userRoles.length > 0) {
+                  for (const userRole of userRoles) {
+                    const roleName = (userRole.server_roles as any)?.name;
+                    if (roleName && newMessage.message?.includes(`@${roleName}`)) {
+                      console.log(`[Notifications] Role mention detected (@${roleName})`);
+                      shouldTriggerNotification = true;
+                      notificationTitle = `@${roleName}`;
+                      notificationBody = `${senderName} rolünüzden bahsetti: ${newMessage.message}`;
+                      break; // Stop checking other roles if one matches
+                    }
+                  }
+                }
+              }
+            }
+
+            if (shouldTriggerNotification) {
+              // Fetch server_id if not already fetched
+              let serverId = undefined;
+              const { data: channelData } = await supabase
+                .from('channels')
+                .select('server_id')
+                .eq('id', newMessage.channel_id)
+                .single();
+
+              if (channelData) {
+                serverId = channelData.server_id;
+              }
+
               addNotification(
                 'message',
-                'Yeni Kanal Mesajı',
-                `${senderName}: ${newMessage.message?.substring(0, 50) || 'Yeni mesaj'}${newMessage.message?.length > 50 ? '...' : ''}`,
-                { type: 'message', channelId: newMessage.channel_id, messageId: newMessage.id }
+                notificationTitle,
+                notificationBody,
+                {
+                  type: 'mention',
+                  channelId: newMessage.channel_id,
+                  messageId: newMessage.id,
+                  serverId: serverId
+                }
               );
+            } else {
+              console.log('[Notifications] No mention detected, skipping notification');
             }
           } catch (error) {
             console.error('[Notifications] Error processing message notification:', error);

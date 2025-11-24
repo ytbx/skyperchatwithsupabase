@@ -67,6 +67,13 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         });
     };
 
+    // Cleanup peer connections without stopping local media
+    const cleanupPeerConnections = useCallback(() => {
+        peerManagers.current.forEach(manager => manager.cleanup());
+        peerManagers.current.clear();
+        setParticipants([]);
+    }, []);
+
     // Leave channel
     const leaveChannel = useCallback(async () => {
         if (!user) return;
@@ -92,9 +99,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             cameraStreamRef.current = null;
         }
 
-        // Close all peer connections
-        peerManagers.current.forEach(manager => manager.cleanup());
-        peerManagers.current.clear();
+        cleanupPeerConnections();
 
         if (activeChannelId && isConnected) {
             await supabase
@@ -105,12 +110,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
 
         setIsConnected(false);
-        setParticipants([]);
         setActiveChannelId(null);
         setIsScreenSharing(false);
         setIsCameraEnabled(false);
         // We keep mute/deafen state as user preference
-    }, [activeChannelId, user, isConnected]);
+    }, [activeChannelId, user, isConnected, cleanupPeerConnections]);
 
     // Join channel
     const joinChannel = useCallback(async (channelId: number) => {
@@ -316,13 +320,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const fetchParticipants = async () => {
-        if (!activeChannelId) return;
-
+    const fetchParticipants = async (channelId: number) => {
         const { data } = await supabase
             .from('voice_channel_users')
             .select('*, profile:profiles(*)')
-            .eq('channel_id', activeChannelId)
+            .eq('channel_id', channelId)
             .order('joined_at', { ascending: true });
 
         if (data) {
@@ -343,18 +345,28 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     // Subscribe to channel changes and signals
     useEffect(() => {
-        if (!activeChannelId || !user || !isConnected) return;
+        if (!user) return;
 
-        const channel = supabase.channel(`voice_${activeChannelId}`)
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'voice_channel_users',
-                filter: `channel_id=eq.${activeChannelId}`
-            }, (payload) => {
-                // Handle participant list updates
-                fetchParticipants();
-            })
+        // Subscription for the active channel (if any)
+        let channelSub: any = null;
+        if (activeChannelId) {
+            channelSub = supabase.channel(`voice_${activeChannelId}`)
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'voice_channel_users',
+                    filter: `channel_id=eq.${activeChannelId}`
+                }, (payload) => {
+                    // Handle participant list updates
+                    fetchParticipants(activeChannelId);
+                })
+                .subscribe();
+
+            fetchParticipants(activeChannelId);
+        }
+
+        // Subscription for signals (always active)
+        const signalSub = supabase.channel(`signals_${user.id}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
@@ -365,12 +377,49 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             })
             .subscribe();
 
-        fetchParticipants();
+        // Subscription for user movement (remote moves)
+        const userSub = supabase.channel(`user_voice_${user.id}`)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'voice_channel_users',
+                filter: `user_id=eq.${user.id}`
+            }, async (payload) => {
+                const newChannelId = payload.new.channel_id;
+                const oldChannelId = payload.old.channel_id;
+
+                if (newChannelId !== activeChannelId) {
+                    console.log('[VoiceChannelContext] Remote move detected:', oldChannelId, '->', newChannelId);
+
+                    // Cleanup old connections
+                    cleanupPeerConnections();
+
+                    // Update state
+                    setActiveChannelId(newChannelId);
+                    setIsConnected(true);
+
+                    // Connect to new channel peers
+                    const { data: existingUsers } = await supabase
+                        .from('voice_channel_users')
+                        .select('*, profile:profiles(*)')
+                        .eq('channel_id', newChannelId)
+                        .neq('user_id', user.id);
+
+                    if (existingUsers) {
+                        existingUsers.forEach(participant => {
+                            initiateConnection(participant.user_id, newChannelId);
+                        });
+                    }
+                }
+            })
+            .subscribe();
 
         return () => {
-            channel.unsubscribe();
+            if (channelSub) channelSub.unsubscribe();
+            signalSub.unsubscribe();
+            userSub.unsubscribe();
         };
-    }, [activeChannelId, user, isConnected]);
+    }, [activeChannelId, user, isConnected, cleanupPeerConnections]);
 
     // Handle mute toggle
     useEffect(() => {

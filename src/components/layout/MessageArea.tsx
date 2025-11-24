@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Hash, Send, Paperclip, Smile, Plus, Gift, Image, Sticker } from 'lucide-react';
+import { Hash, Send, Paperclip, Smile, Plus, Gift, Image, Sticker, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChannelMessage, Channel, Profile } from '@/lib/types';
@@ -102,8 +102,13 @@ export function MessageArea({ channelId }: MessageAreaProps) {
       .channel(`messages_${channelId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'channel_messages', filter: `channel_id=eq.${channelId}` },
+        { event: '*', schema: 'public', table: 'channel_messages', filter: `channel_id=eq.${channelId}` },
         async (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as { id: number }).id;
+            setMessages((prev) => prev.filter(m => m.id !== deletedId));
+            return;
+          }
           const newMessage = payload.new as ChannelMessage;
           // Load sender profile
           const { data: senderData } = await supabase
@@ -210,6 +215,23 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     } finally {
       setSending(false);
       setIsUploading(false);
+    }
+  }
+
+  async function deleteMessage(messageId: number) {
+    try {
+      const { error } = await supabase
+        .from('channel_messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      // Optimistic update
+      setMessages((prev) => prev.filter(m => m.id !== messageId));
+    } catch (error) {
+      console.error('Delete message error:', error);
+      toast.error('Mesaj silinirken bir hata oluştu');
     }
   }
 
@@ -333,7 +355,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                       </span>
                     </div>
                     {group.messages.map((message, msgIndex) => (
-                      <div key={message.id} className={msgIndex > 0 ? 'mt-0.5' : ''}>
+                      <div key={message.id} className={`${msgIndex > 0 ? 'mt-0.5' : ''} group relative pr-8`}>
                         <div className="text-gray-100 text-sm leading-relaxed break-words">
                           {message.message}
                         </div>
@@ -344,6 +366,16 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                             fileType={message.file_type}
                             fileSize={message.file_size}
                           />
+                        )}
+                        {/* Delete button */}
+                        {message.sender_id === user?.id && (
+                          <button
+                            onClick={() => deleteMessage(message.id)}
+                            className="absolute top-0 right-0 p-1 bg-gray-700 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 hover:text-white text-gray-400"
+                            title="Mesajı sil"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         )}
                       </div>
                     ))}

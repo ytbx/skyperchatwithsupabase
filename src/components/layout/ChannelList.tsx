@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -178,6 +178,46 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   useEffect(() => {
     loadVoiceParticipants();
   }, [voiceChannels]);
+
+  const canMoveMembers = server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS);
+
+  const handleDragStart = (e: React.DragEvent, userId: string, currentChannelId: number) => {
+    if (!canMoveMembers) return;
+    e.dataTransfer.setData('userId', userId);
+    e.dataTransfer.setData('currentChannelId', currentChannelId.toString());
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!canMoveMembers) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetChannelId: number) => {
+    e.preventDefault();
+    if (!canMoveMembers) return;
+
+    const userId = e.dataTransfer.getData('userId');
+    const currentChannelId = parseInt(e.dataTransfer.getData('currentChannelId'));
+
+    if (!userId || isNaN(currentChannelId)) return;
+    if (currentChannelId === targetChannelId) return;
+
+    try {
+      const { error } = await supabase.rpc('move_voice_user', {
+        p_target_channel_id: targetChannelId,
+        p_target_user_id: userId
+      });
+
+      if (error) {
+        console.error('Error moving user:', error);
+        alert('Kullanıcı taşınırken bir hata oluştu: ' + error.message);
+      }
+    } catch (err) {
+      console.error('Error moving user:', err);
+    }
+  };
 
   async function loadServerAndChannels() {
     if (!serverId) return;
@@ -435,7 +475,11 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
           {voiceChannelsExpanded && (
             <div className="mt-0.5 space-y-0.5">
               {voiceChannels.map((channel) => (
-                <div key={channel.id}>
+                <div
+                  key={channel.id}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, channel.id)}
+                >
                   <button
                     onClick={() => joinChannel(channel.id)}
                     className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
@@ -460,7 +504,12 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
 
                   {/* Voice Participants */}
                   {voiceParticipants[channel.id]?.map((participant) => (
-                    <div key={participant.id} className="ml-8 mr-2 py-1 flex items-center gap-2 group cursor-pointer hover:bg-gray-800/50 rounded px-1">
+                    <div
+                      key={participant.id}
+                      className={`ml-8 mr-2 py-1 flex items-center gap-2 group rounded px-1 ${canMoveMembers ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:bg-gray-800/50`}
+                      draggable={canMoveMembers}
+                      onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
+                    >
                       <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
                         {participant.profile?.profile_image_url ? (
                           <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
@@ -470,9 +519,15 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                           </span>
                         )}
                       </div>
-                      <span className={`text-sm truncate ${activeChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
-                        {participant.profile?.username}
-                      </span>
+                      <div className="flex-1 min-w-0 flex items-center justify-between">
+                        <span className={`text-sm truncate ${activeChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
+                          {participant.profile?.username}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {participant.is_muted && <MicOff className="w-3 h-3 text-red-500" />}
+                          {participant.is_deafened && <Headphones className="w-3 h-3 text-red-500" />}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
