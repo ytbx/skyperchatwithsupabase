@@ -262,7 +262,14 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     // Handle incoming signals
     const handleSignal = async (payload: any) => {
-        const { from_user_id, signal_type, payload: signalPayload } = payload;
+        const { from_user_id, signal_type, payload: signalPayload, channel_id } = payload;
+
+        // CRITICAL FIX: Ignore signals that don't belong to the active channel
+        // This prevents VoiceChannelContext from processing direct call signals or signals for other channels
+        if (!activeChannelId || channel_id !== activeChannelId) {
+            // console.log('[VoiceChannelContext] Ignoring signal for different channel/context:', channel_id, 'Active:', activeChannelId);
+            return;
+        }
 
         let manager = peerManagers.current.get(from_user_id);
 
