@@ -124,52 +124,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [hasPermission]);
 
   /**
-   * Add notification
+   * Add notification to local state and show browser notification
+   * (Does NOT save to DB - that is handled by the sender)
    */
-  const addNotification = useCallback(async (
-    type: Notification['type'],
-    title: string,
-    body: string,
-    data?: any
+  const addNotification = useCallback((
+    notification: Notification
   ) => {
-    if (!currentUserId) return;
-
-    // Create local notification
-    const notification: Notification = {
-      id: `${Date.now()}-${Math.random()}`,
-      type,
-      title,
-      body,
-      timestamp: new Date(),
-      read: false,
-      data,
-    };
-
     setNotifications((prev) => [notification, ...prev].slice(0, 100)); // Keep last 100
-
-    // Create persistent notification in database
-    try {
-      await supabase
-        .from('notifications')
-        .insert({
-          user_id: currentUserId,
-          type,
-          title,
-          message: body,
-          metadata: data
-        });
-    } catch (error) {
-      console.error('[Notifications] Failed to save to database:', error);
-    }
 
     // Play sound
     playNotificationSound();
 
     // Show browser notification
-    showBrowserNotification(title, body, data);
+    showBrowserNotification(notification.title, notification.body, notification.data);
 
-    console.log('[Notifications] Added:', type, title);
-  }, [currentUserId, playNotificationSound, showBrowserNotification]);
+    console.log('[Notifications] Received:', notification.type, notification.title);
+  }, [playNotificationSound, showBrowserNotification]);
 
   /**
    * Mark notification as read
@@ -206,12 +176,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
    */
   const createTestNotification = useCallback(() => {
     console.log('[Notifications] 🔧 Creating test notification');
-    addNotification(
-      'system',
-      'Test Bildirimi',
-      'Bu bir test bildirimidir - bildirim sistemi çalışıyorsa görünecektir',
-      { type: 'test' }
-    );
+    addNotification({
+      id: `test-${Date.now()}`,
+      type: 'system',
+      title: 'Test Bildirimi',
+      body: 'Bu bir test bildirimidir',
+      timestamp: new Date(),
+      read: false,
+      data: { type: 'test' }
+    });
   }, [addNotification]);
 
   /**
@@ -223,281 +196,86 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   /**
-   * Check if should notify (don't notify if user is viewing the channel or chatting with the sender)
-   */
-  const shouldNotify = useCallback((channelId?: string, senderId?: string) => {
-    // Don't notify if user is viewing the channel where message was sent
-    if (currentView && currentView.type === 'channel' && currentView.id === channelId) {
-      console.log('[Notifications] Skipping - user is viewing this channel');
-      return false;
-    }
-
-    // Don't notify if user is chatting with this person (DM)
-    if (senderId && activeContactId === senderId) {
-      console.log('[Notifications] Skipping - user is chatting with this person:', senderId);
-      return false;
-    }
-
-    return true;
-  }, [currentView, activeContactId]);
-
-  /**
-   * Subscribe to new channel messages
+   * Subscribe to my notifications
    */
   useEffect(() => {
     if (!currentUserId) return;
 
-    console.log('[Notifications] Setting up channel_messages subscription for user:', currentUserId);
+    console.log('[Notifications] Setting up notifications subscription for user:', currentUserId);
 
     const channel = supabase
-      .channel('notifications-messages')
+      .channel('my-notifications')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'channel_messages',
+          table: 'notifications',
+          filter: `user_id=eq.${currentUserId}`,
         },
-        async (payload) => {
-          console.log('[Notifications] Received channel_messages INSERT:', payload);
+        (payload) => {
+          console.log('[Notifications] Received notification INSERT:', payload);
+          const newNotification = payload.new as any;
 
-          const newMessage = payload.new as any;
+          // Convert DB record to local Notification object
+          const notification: Notification = {
+            id: newNotification.id,
+            type: newNotification.type,
+            title: newNotification.title,
+            body: newNotification.message, // DB column is 'message', local is 'body'
+            timestamp: new Date(newNotification.created_at),
+            read: false,
+            data: newNotification.metadata
+          };
 
-          // Don't notify for own messages
-          if (newMessage.sender_id === currentUserId) {
-            console.log('[Notifications] Skipping own message:', newMessage.id);
-            return;
-          }
-
-          // Check if should notify
-          if (!shouldNotify(newMessage.channel_id)) {
-            console.log('[Notifications] Skipping notification (user is viewing channel):', newMessage.channel_id);
-            return;
-          }
-
-          // Get sender profile information
-          try {
-            const { data: senderProfile, error: profileError } = await supabase
-              .from('profiles')
-              .select('username')
-              .eq('id', newMessage.sender_id)
-              .maybeSingle();
-
-            if (profileError) {
-              console.error('[Notifications] Profile fetch error:', profileError);
-              return;
-            }
-
-            const senderName = senderProfile?.username || 'Birisi';
-
-            // Check for mentions
-            let shouldTriggerNotification = false;
-            let notificationTitle = '';
-            let notificationBody = '';
-
-            // 1. Check for @everyone
-            if (newMessage.message?.includes('@everyone')) {
-              console.log('[Notifications] @everyone mention detected');
-              shouldTriggerNotification = true;
-              notificationTitle = `Everyone (${senderName})`;
-              notificationBody = `${senderName}: ${newMessage.message}`;
-            }
-
-            // 2. Check for user mention (@username)
-            // We need to fetch current user's username to check this properly if we want to support @username text
-            // But usually mentions are stored as <@uuid> or similar in rich text, or just plain text @username
-            // The user requested "@isim" so we check for @CurrentUsername
-            if (!shouldTriggerNotification) {
-              const { data: currentUserProfile } = await supabase
-                .from('profiles')
-                .select('username')
-                .eq('id', currentUserId)
-                .single();
-
-              if (currentUserProfile?.username && newMessage.message?.includes(`@${currentUserProfile.username}`)) {
-                console.log('[Notifications] User mention detected (@username)');
-                shouldTriggerNotification = true;
-                notificationTitle = 'Sizden bahsedildi';
-                notificationBody = `${senderName} sizden bahsetti: ${newMessage.message}`;
-              }
-            }
-
-            // 3. Check for role mentions
-            if (!shouldTriggerNotification) {
-              // Get channel's server
-              const { data: channelData } = await supabase
-                .from('channels')
-                .select('server_id')
-                .eq('id', newMessage.channel_id)
-                .single();
-
-              if (channelData) {
-                // Get user's roles in this server
-                const { data: userRoles } = await supabase
-                  .from('server_user_roles')
-                  .select(`
-                    role_id,
-                    server_roles (
-                      name
-                    )
-                  `)
-                  .eq('user_id', currentUserId)
-                  .eq('server_id', channelData.server_id);
-
-                if (userRoles && userRoles.length > 0) {
-                  for (const userRole of userRoles) {
-                    const roleName = (userRole.server_roles as any)?.name;
-                    if (roleName && newMessage.message?.includes(`@${roleName}`)) {
-                      console.log(`[Notifications] Role mention detected (@${roleName})`);
-                      shouldTriggerNotification = true;
-                      notificationTitle = `@${roleName}`;
-                      notificationBody = `${senderName} rolünüzden bahsetti: ${newMessage.message}`;
-                      break; // Stop checking other roles if one matches
-                    }
-                  }
-                }
-              }
-            }
-
-            if (shouldTriggerNotification) {
-              // Fetch server_id if not already fetched
-              let serverId = undefined;
-              const { data: channelData } = await supabase
-                .from('channels')
-                .select('server_id')
-                .eq('id', newMessage.channel_id)
-                .single();
-
-              if (channelData) {
-                serverId = channelData.server_id;
-              }
-
-              addNotification(
-                'message',
-                notificationTitle,
-                notificationBody,
-                {
-                  type: 'mention',
-                  channelId: newMessage.channel_id,
-                  messageId: newMessage.id,
-                  serverId: serverId
-                }
-              );
-            } else {
-              console.log('[Notifications] No mention detected, skipping notification');
-            }
-          } catch (error) {
-            console.error('[Notifications] Error processing message notification:', error);
-          }
+          addNotification(notification);
         }
       )
       .subscribe((status) => {
-        console.log('[Notifications] Channel messages subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('[Notifications] ✅ Channel messages subscription active');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[Notifications] ❌ Channel messages subscription failed');
-        }
+        console.log('[Notifications] Subscription status:', status);
       });
 
     return () => {
-      console.log('[Notifications] Cleaning up channel messages subscription');
-      supabase.removeChannel(channel);
-    };
-  }, [currentUserId, shouldNotify, addNotification]);
-
-  /**
-   * Subscribe to direct messages (chats table)
-   */
-  useEffect(() => {
-    if (!currentUserId) return;
-
-    const channel = supabase
-      .channel('notifications-dms')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chats',
-          filter: `receiver_id=eq.${currentUserId}`,
-        },
-        async (payload) => {
-          const dm = payload.new as any;
-
-          // Check if should notify
-          if (!shouldNotify(undefined, dm.sender_id)) return;
-
-          // Get sender profile information
-          const { data: senderProfile } = await supabase
-            .from('profiles')
-            .select('username')
-            .eq('id', dm.sender_id)
-            .maybeSingle();
-
-          const senderName = senderProfile?.username || 'Birisi';
-
-          addNotification(
-            'message',
-            'Yeni Direkt Mesaj',
-            `${senderName}: ${dm.message?.substring(0, 50) || 'Yeni mesaj'}${dm.message?.length > 50 ? '...' : ''}`,
-            { type: 'dm', senderId: dm.sender_id, messageId: dm.id }
-          );
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentUserId, shouldNotify, addNotification]);
-
-  /**
-   * Subscribe to incoming calls
-   */
-  useEffect(() => {
-    if (!currentUserId) return;
-
-    const channel = supabase
-      .channel('notifications-calls')
-      .on(
-        'broadcast',
-        { event: 'webrtc-signal' },
-        async (payload) => {
-          const signal = payload.payload as any;
-
-          // Check if this is an incoming call signal for us
-          if (signal.type === 'call:outgoing' && signal.to === currentUserId) {
-            // Get caller profile information
-            const { data: callerProfile } = await supabase
-              .from('profiles')
-              .select('username')
-              .eq('id', signal.from)
-              .maybeSingle();
-
-            const callerName = callerProfile?.username || 'Birisi';
-            const callType = signal.callType || 'voice';
-
-            addNotification(
-              'call',
-              'Gelen Arama',
-              `${callerName} seni ${callType === 'video' ? 'görüntülü' : 'sesli'} arıyor`,
-              {
-                type: 'call',
-                callerId: signal.from,
-                callerName,
-                callType
-              }
-            );
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
+      console.log('[Notifications] Cleaning up subscription');
       supabase.removeChannel(channel);
     };
   }, [currentUserId, addNotification]);
+
+  /**
+   * Load initial notifications
+   */
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const loadNotifications = async () => {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.error('[Notifications] Error loading notifications:', error);
+        return;
+      }
+
+      if (data) {
+        const loadedNotifications: Notification[] = data.map(n => ({
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          body: n.message,
+          timestamp: new Date(n.created_at),
+          read: n.is_read || false, // Handle potential schema difference if is_read exists
+          data: n.metadata
+        }));
+        setNotifications(loadedNotifications);
+      }
+    };
+
+    loadNotifications();
+  }, [currentUserId]);
 
   /**
    * Initialize

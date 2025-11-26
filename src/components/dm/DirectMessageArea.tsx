@@ -22,7 +22,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   contactName,
   contactProfileImageUrl
 }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { setActiveChat } = useNotifications();
   const { initiateCall, callStatus } = useCall();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -310,6 +310,19 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
         .single();
 
       if (error) throw error;
+
+      // Send notification to receiver (Sender-side generation)
+      await supabase.from('notifications').insert({
+        user_id: contactId,
+        type: 'message',
+        title: 'Yeni Direkt Mesaj',
+        message: `${profile?.username || 'Birisi'}: ${newMessage.trim() || (fileData ? 'Dosya gönderdi' : 'Mesaj')}`,
+        metadata: {
+          type: 'dm',
+          senderId: user.id,
+          messageId: data.id
+        }
+      });
 
       setMessages(prev => [...prev, data]);
       setNewMessage('');

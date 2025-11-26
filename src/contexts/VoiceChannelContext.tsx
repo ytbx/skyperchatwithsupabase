@@ -55,11 +55,17 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const screenStreamRef = useRef<MediaStream | null>(null);
     const cameraStreamRef = useRef<MediaStream | null>(null);
 
+    const activeChannelIdRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        activeChannelIdRef.current = activeChannelId;
+    }, [activeChannelId]);
+
     const sendSignal = async (toUserId: string, type: string, payload: any) => {
-        if (!user || !activeChannelId) return;
+        if (!user || !activeChannelIdRef.current) return;
 
         await supabase.from('webrtc_signals').insert({
-            channel_id: activeChannelId,
+            channel_id: activeChannelIdRef.current,
             from_user_id: user.id,
             to_user_id: toUserId,
             signal_type: type,
@@ -101,11 +107,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
         cleanupPeerConnections();
 
-        if (activeChannelId && isConnected) {
+        if (activeChannelIdRef.current && isConnected) {
             await supabase
                 .from('voice_channel_users')
                 .delete()
-                .eq('channel_id', activeChannelId)
+                .eq('channel_id', activeChannelIdRef.current)
                 .eq('user_id', user.id);
         }
 
@@ -114,7 +120,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         setIsScreenSharing(false);
         setIsCameraEnabled(false);
         // We keep mute/deafen state as user preference
-    }, [activeChannelId, user, isConnected, cleanupPeerConnections]);
+    }, [user, isConnected, cleanupPeerConnections]);
 
     // Join channel
     const joinChannel = useCallback(async (channelId: number) => {
@@ -130,8 +136,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        if (activeChannelId) {
-            if (activeChannelId === channelId) {
+        if (activeChannelIdRef.current) {
+            if (activeChannelIdRef.current === channelId) {
                 console.log('[VoiceChannelContext] Already in this channel.');
                 return;
             }
@@ -186,7 +192,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             console.error('[VoiceChannelContext] Error joining voice channel:', error);
             await leaveChannel();
         }
-    }, [activeChannelId, activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel]);
+    }, [activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel]);
 
     // Initialize WebRTC connection with a peer
     const initiateConnection = async (peerId: string, channelId: number) => {
@@ -265,9 +271,9 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         const { from_user_id, signal_type, payload: signalPayload, channel_id } = payload;
 
         // CRITICAL FIX: Ignore signals that don't belong to the active channel
-        // This prevents VoiceChannelContext from processing direct call signals or signals for other channels
-        if (!activeChannelId || channel_id !== activeChannelId) {
-            // console.log('[VoiceChannelContext] Ignoring signal for different channel/context:', channel_id, 'Active:', activeChannelId);
+        // Use ref to avoid stale closure issues
+        if (!activeChannelIdRef.current || channel_id !== activeChannelIdRef.current) {
+            // console.log('[VoiceChannelContext] Ignoring signal for different channel/context:', channel_id, 'Active:', activeChannelIdRef.current);
             return;
         }
 
@@ -350,27 +356,37 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    // Subscribe to channel changes and signals
+    // Subscription for channel participants (depends on activeChannelId)
+    useEffect(() => {
+        if (!user || !activeChannelId) return;
+
+        console.log('[VoiceChannelContext] Subscribing to channel updates:', activeChannelId);
+
+        const channelSub = supabase.channel(`voice_${activeChannelId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'voice_channel_users',
+                filter: `channel_id=eq.${activeChannelId}`
+            }, (payload) => {
+                // Handle participant list updates
+                fetchParticipants(activeChannelId);
+            })
+            .subscribe();
+
+        fetchParticipants(activeChannelId);
+
+        return () => {
+            console.log('[VoiceChannelContext] Unsubscribing from channel updates');
+            channelSub.unsubscribe();
+        };
+    }, [activeChannelId, user]);
+
+    // Subscription for signals and user movement (STABLE - depends only on user)
     useEffect(() => {
         if (!user) return;
 
-        // Subscription for the active channel (if any)
-        let channelSub: any = null;
-        if (activeChannelId) {
-            channelSub = supabase.channel(`voice_${activeChannelId}`)
-                .on('postgres_changes', {
-                    event: '*',
-                    schema: 'public',
-                    table: 'voice_channel_users',
-                    filter: `channel_id=eq.${activeChannelId}`
-                }, (payload) => {
-                    // Handle participant list updates
-                    fetchParticipants(activeChannelId);
-                })
-                .subscribe();
-
-            fetchParticipants(activeChannelId);
-        }
+        console.log('[VoiceChannelContext] Setting up stable signal subscription for user:', user.id);
 
         // Subscription for signals (always active)
         const signalSub = supabase.channel(`signals_${user.id}`)
@@ -395,7 +411,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 const newChannelId = payload.new.channel_id;
                 const oldChannelId = payload.old.channel_id;
 
-                if (newChannelId !== activeChannelId) {
+                // Use ref for current active channel to check if we need to update
+                if (newChannelId !== activeChannelIdRef.current) {
                     console.log('[VoiceChannelContext] Remote move detected:', oldChannelId, '->', newChannelId);
 
                     // Cleanup old connections
@@ -422,11 +439,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             .subscribe();
 
         return () => {
-            if (channelSub) channelSub.unsubscribe();
+            console.log('[VoiceChannelContext] Cleaning up signal subscriptions');
             signalSub.unsubscribe();
             userSub.unsubscribe();
         };
-    }, [activeChannelId, user, isConnected, cleanupPeerConnections]);
+    }, [user, cleanupPeerConnections]);
 
     // Handle mute toggle
     useEffect(() => {
