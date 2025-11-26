@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MonitorUp, Users, Maximize2, Minimize2, MicOff, Headphones } from 'lucide-react';
+import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2 } from 'lucide-react';
 
 interface VoiceParticipant {
     user_id: string;
@@ -26,6 +26,7 @@ interface VoiceChannelViewProps {
 export function VoiceChannelView({ channelId, channelName, participants, onStartScreenShare }: VoiceChannelViewProps) {
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
+    const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
 
     // Get participants with camera or screen share
     const cameraParticipants = participants.filter(p => p.is_video_enabled && p.cameraStream);
@@ -35,52 +36,44 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     useEffect(() => {
         // Update camera streams
         cameraParticipants.forEach(participant => {
-            const video = videoRefs.current.get(`camera-${participant.user_id}`);
+            const videoId = `camera-${participant.user_id}`;
+            const video = videoRefs.current.get(videoId);
             if (video && participant.cameraStream && video.srcObject !== participant.cameraStream) {
                 video.srcObject = participant.cameraStream;
+                video.volume = volumes.get(videoId) ?? 1.0;
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
 
         // Update screen share streams
         screenSharingParticipants.forEach(participant => {
-            const video = videoRefs.current.get(`screen-${participant.user_id}`);
+            const videoId = `screen-${participant.user_id}`;
+            const video = videoRefs.current.get(videoId);
             if (video && participant.screenStream && video.srcObject !== participant.screenStream) {
                 video.srcObject = participant.screenStream;
+                video.volume = volumes.get(videoId) ?? 1.0;
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
-    }, [cameraParticipants, screenSharingParticipants]);
+    }, [cameraParticipants, screenSharingParticipants, volumes]);
 
-    // Fullscreen toggle function
-    const toggleFullscreen = async (videoId: string) => {
+
+
+    const handleVolumeChange = (videoId: string, volume: number) => {
         const video = videoRefs.current.get(videoId);
-        if (!video) return;
-
-        try {
-            if (!document.fullscreenElement) {
-                await video.requestFullscreen();
-                setFullscreenVideoId(videoId);
-            } else {
-                await document.exitFullscreen();
-                setFullscreenVideoId(null);
-            }
-        } catch (error) {
-            console.error('Error toggling fullscreen:', error);
+        if (video) {
+            video.volume = volume;
         }
+        setVolumes(new Map(volumes.set(videoId, volume)));
     };
 
-    // Listen for fullscreen changes (e.g., ESC key)
-    useEffect(() => {
-        const handleFullscreenChange = () => {
-            if (!document.fullscreenElement) {
-                setFullscreenVideoId(null);
-            }
-        };
+    const openFullscreen = (videoId: string) => {
+        setFullscreenVideoId(videoId);
+    };
 
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
-        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    }, []);
+    const closeFullscreen = () => {
+        setFullscreenVideoId(null);
+    };
 
     const hasAnyStreams = cameraParticipants.length > 0 || screenSharingParticipants.length > 0;
 
@@ -126,7 +119,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         {/* Camera streams */}
                         {cameraParticipants.map((participant) => {
                             const videoId = `camera-${participant.user_id}`;
-                            const isFullscreen = fullscreenVideoId === videoId;
+                            const currentVolume = volumes.get(videoId) ?? 1.0;
 
                             return (
                                 <div
@@ -138,6 +131,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         ref={(el) => {
                                             if (el) {
                                                 videoRefs.current.set(videoId, el);
+                                                el.volume = currentVolume;
                                             } else {
                                                 videoRefs.current.delete(videoId);
                                             }
@@ -148,18 +142,34 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         style={{ maxHeight: '400px' }}
                                     />
 
-                                    {/* Fullscreen button */}
-                                    <button
-                                        onClick={() => toggleFullscreen(videoId)}
-                                        className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                        title="Tam ekran"
-                                    >
-                                        {isFullscreen ? (
-                                            <Minimize2 className="w-5 h-5 text-white" />
-                                        ) : (
+                                    {/* Controls overlay */}
+                                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {/* Volume control */}
+                                        <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
+                                            <Volume2 className="w-4 h-4 text-white" />
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.1"
+                                                value={currentVolume}
+                                                onChange={(e) => handleVolumeChange(videoId, parseFloat(e.target.value))}
+                                                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                                style={{
+                                                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
+                                                }}
+                                            />
+                                            <span className="text-xs text-white w-8">{Math.round(currentVolume * 100)}%</span>
+                                        </div>
+                                        {/* Fullscreen button */}
+                                        <button
+                                            onClick={() => openFullscreen(videoId)}
+                                            className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                            title="Tam ekran"
+                                        >
                                             <Maximize2 className="w-5 h-5 text-white" />
-                                        )}
-                                    </button>
+                                        </button>
+                                    </div>
 
                                     {/* User info overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
@@ -196,7 +206,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         {/* Screen share streams */}
                         {screenSharingParticipants.map((participant) => {
                             const videoId = `screen-${participant.user_id}`;
-                            const isFullscreen = fullscreenVideoId === videoId;
+                            const currentVolume = volumes.get(videoId) ?? 1.0;
 
                             return (
                                 <div
@@ -208,6 +218,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         ref={(el) => {
                                             if (el) {
                                                 videoRefs.current.set(videoId, el);
+                                                el.volume = currentVolume;
                                             } else {
                                                 videoRefs.current.delete(videoId);
                                             }
@@ -218,18 +229,34 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         style={{ maxHeight: '400px' }}
                                     />
 
-                                    {/* Fullscreen button */}
-                                    <button
-                                        onClick={() => toggleFullscreen(videoId)}
-                                        className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                        title="Tam ekran"
-                                    >
-                                        {isFullscreen ? (
-                                            <Minimize2 className="w-5 h-5 text-white" />
-                                        ) : (
+                                    {/* Controls overlay */}
+                                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {/* Volume control */}
+                                        <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
+                                            <Volume2 className="w-4 h-4 text-white" />
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.1"
+                                                value={currentVolume}
+                                                onChange={(e) => handleVolumeChange(videoId, parseFloat(e.target.value))}
+                                                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                                style={{
+                                                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
+                                                }}
+                                            />
+                                            <span className="text-xs text-white w-8">{Math.round(currentVolume * 100)}%</span>
+                                        </div>
+                                        {/* Fullscreen button */}
+                                        <button
+                                            onClick={() => openFullscreen(videoId)}
+                                            className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                            title="Tam ekran"
+                                        >
                                             <Maximize2 className="w-5 h-5 text-white" />
-                                        )}
-                                    </button>
+                                        </button>
+                                    </div>
 
                                     {/* User info overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
@@ -262,14 +289,112 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                 )}
             </div>
 
+            {/* Fullscreen Modal */}
+            {fullscreenVideoId && (() => {
+                const participant = [...cameraParticipants, ...screenSharingParticipants].find(p =>
+                    fullscreenVideoId === `camera-${p.user_id}` || fullscreenVideoId === `screen-${p.user_id}`
+                );
+                const isCamera = fullscreenVideoId.startsWith('camera-');
+                const stream = isCamera ? participant?.cameraStream : participant?.screenStream;
+                const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
+
+                return (
+                    <div
+                        className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-8"
+                        onClick={closeFullscreen}
+                    >
+                        <div
+                            className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <video
+                                ref={(el) => {
+                                    if (el && stream) {
+                                        el.srcObject = stream;
+                                        el.volume = currentVolume;
+                                        el.play().catch(e => console.error('Error playing video:', e));
+                                    }
+                                }}
+                                autoPlay
+                                playsInline
+                                className="w-full h-full object-contain"
+                            />
+
+                            {/* Close button */}
+                            <button
+                                onClick={closeFullscreen}
+                                className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
+                                title="Kapat"
+                            >
+                                <X className="w-6 h-6 text-white" />
+                            </button>
+
+                            {/* Volume control */}
+                            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
+                                <Volume2 className="w-5 h-5 text-white" />
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    value={currentVolume}
+                                    onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
+                                    className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                    style={{
+                                        background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
+                                    }}
+                                />
+                                <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
+                            </div>
+
+                            {/* User info */}
+                            <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
+                                        {participant?.profile?.profile_image_url ? (
+                                            <img
+                                                src={participant.profile.profile_image_url}
+                                                alt=""
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : (
+                                            <span className="text-sm text-white font-semibold">
+                                                {participant?.profile?.username?.charAt(0).toUpperCase()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-medium text-white">
+                                            {participant?.profile?.username}
+                                        </p>
+                                        <p className="text-xs text-gray-300">
+                                            {isCamera ? 'Kamera' : 'Ekran paylaşımı'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             <style>{`
-                video:fullscreen {
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: 100vw !important;
-                    max-height: 100vh !important;
-                    object-fit: contain;
-                    background: #000;
+                input[type="range"]::-webkit-slider-thumb {
+                    appearance: none;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: #3b82f6;
+                    cursor: pointer;
+                    border: 2px solid white;
+                }
+                input[type="range"]::-moz-range-thumb {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: #3b82f6;
+                    cursor: pointer;
+                    border: 2px solid white;
                 }
             `}</style>
         </div>

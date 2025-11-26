@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useCall } from '@/contexts/CallContext';
 import { CallControls } from './CallControls';
-import { User, Wifi, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
+import { User, Wifi, WifiOff, Maximize2, X, Volume2 } from 'lucide-react';
 
 interface ActiveCallOverlayProps {
     contactName: string;
@@ -28,20 +28,42 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
 
     const [callDuration, setCallDuration] = useState(0);
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
+    const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
 
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteCameraVideoRef = useRef<HTMLVideoElement | null>(null);
 
     // Helper to set video stream
-    const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null) => {
+    const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null, videoId?: string) => {
         if (el && stream) {
             if (el.srcObject !== stream) {
                 console.log('[ActiveCallOverlay] Setting stream to video element');
                 el.srcObject = stream;
+                if (videoId) {
+                    el.volume = volumes.get(videoId) ?? 1.0;
+                }
                 el.play().catch(e => console.error('Error playing video:', e));
             }
         }
+    };
+
+    const handleVolumeChange = (videoId: string, volume: number) => {
+        const videoRefs = [remoteScreenVideoRef, localScreenVideoRef, remoteCameraVideoRef];
+        videoRefs.forEach(ref => {
+            if (ref.current) {
+                ref.current.volume = volume;
+            }
+        });
+        setVolumes(new Map(volumes.set(videoId, volume)));
+    };
+
+    const openFullscreen = (videoId: string) => {
+        setFullscreenVideoId(videoId);
+    };
+
+    const closeFullscreen = () => {
+        setFullscreenVideoId(null);
     };
 
     // Call duration timer
@@ -63,35 +85,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // Fullscreen toggle function
-    const toggleFullscreen = async (videoId: string, videoRef: React.RefObject<HTMLVideoElement>) => {
-        const video = videoRef.current;
-        if (!video) return;
 
-        try {
-            if (!document.fullscreenElement) {
-                await video.requestFullscreen();
-                setFullscreenVideoId(videoId);
-            } else {
-                await document.exitFullscreen();
-                setFullscreenVideoId(null);
-            }
-        } catch (error) {
-            console.error('Error toggling fullscreen:', error);
-        }
-    };
-
-    // Listen for fullscreen changes (e.g., ESC key)
-    useEffect(() => {
-        const handleFullscreenChange = () => {
-            if (!document.fullscreenElement) {
-                setFullscreenVideoId(null);
-            }
-        };
-
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
-        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    }, []);
 
     if (callStatus !== 'active' && callStatus !== 'connecting') {
         return null;
@@ -152,25 +146,38 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                                 <video
                                     ref={(el) => {
                                         remoteScreenVideoRef.current = el;
-                                        setVideoStream(el, remoteScreenStream);
+                                        setVideoStream(el, remoteScreenStream, 'remote-screen');
                                     }}
                                     autoPlay
                                     playsInline
                                     className="w-full h-full object-contain bg-gray-900"
                                 />
 
-                                {/* Fullscreen button */}
-                                <button
-                                    onClick={() => toggleFullscreen('remote-screen', remoteScreenVideoRef)}
-                                    className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                    title="Tam ekran"
-                                >
-                                    {fullscreenVideoId === 'remote-screen' ? (
-                                        <Minimize2 className="w-5 h-5 text-white" />
-                                    ) : (
+                                {/* Controls overlay */}
+                                <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                    {/* Volume control */}
+                                    <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
+                                        <Volume2 className="w-4 h-4 text-white" />
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.1"
+                                            value={volumes.get('remote-screen') ?? 1.0}
+                                            onChange={(e) => handleVolumeChange('remote-screen', parseFloat(e.target.value))}
+                                            className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                        <span className="text-xs text-white w-8">{Math.round((volumes.get('remote-screen') ?? 1.0) * 100)}%</span>
+                                    </div>
+                                    {/* Fullscreen button */}
+                                    <button
+                                        onClick={() => openFullscreen('remote-screen')}
+                                        className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                        title="Tam ekran"
+                                    >
                                         <Maximize2 className="w-5 h-5 text-white" />
-                                    )}
-                                </button>
+                                    </button>
+                                </div>
 
                                 <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
                                     {contactName}
@@ -186,7 +193,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                                 <video
                                     ref={(el) => {
                                         localScreenVideoRef.current = el;
-                                        setVideoStream(el, screenStream);
+                                        setVideoStream(el, screenStream, 'local-screen');
                                     }}
                                     autoPlay
                                     playsInline
@@ -194,18 +201,17 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                                     className="w-full h-full object-contain bg-gray-900"
                                 />
 
-                                {/* Fullscreen button */}
-                                <button
-                                    onClick={() => toggleFullscreen('local-screen', localScreenVideoRef)}
-                                    className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                    title="Tam ekran"
-                                >
-                                    {fullscreenVideoId === 'local-screen' ? (
-                                        <Minimize2 className="w-5 h-5 text-white" />
-                                    ) : (
+                                {/* Controls overlay */}
+                                <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                    {/* Fullscreen button */}
+                                    <button
+                                        onClick={() => openFullscreen('local-screen')}
+                                        className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                        title="Tam ekran"
+                                    >
                                         <Maximize2 className="w-5 h-5 text-white" />
-                                    )}
-                                </button>
+                                    </button>
+                                </div>
 
                                 <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
                                     Sizin Ekranınız
@@ -223,25 +229,38 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                                         <video
                                             ref={(el) => {
                                                 remoteCameraVideoRef.current = el;
-                                                setVideoStream(el, remoteStream);
+                                                setVideoStream(el, remoteStream, 'remote-camera');
                                             }}
                                             autoPlay
                                             playsInline
                                             className="w-full h-full object-contain bg-gray-900"
                                         />
 
-                                        {/* Fullscreen button */}
-                                        <button
-                                            onClick={() => toggleFullscreen('remote-camera', remoteCameraVideoRef)}
-                                            className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                            title="Tam ekran"
-                                        >
-                                            {fullscreenVideoId === 'remote-camera' ? (
-                                                <Minimize2 className="w-5 h-5 text-white" />
-                                            ) : (
+                                        {/* Controls overlay */}
+                                        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                            {/* Volume control */}
+                                            <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
+                                                <Volume2 className="w-4 h-4 text-white" />
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="1"
+                                                    step="0.1"
+                                                    value={volumes.get('remote-camera') ?? 1.0}
+                                                    onChange={(e) => handleVolumeChange('remote-camera', parseFloat(e.target.value))}
+                                                    className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                                />
+                                                <span className="text-xs text-white w-8">{Math.round((volumes.get('remote-camera') ?? 1.0) * 100)}%</span>
+                                            </div>
+                                            {/* Fullscreen button */}
+                                            <button
+                                                onClick={() => openFullscreen('remote-camera')}
+                                                className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                                title="Tam ekran"
+                                            >
                                                 <Maximize2 className="w-5 h-5 text-white" />
-                                            )}
-                                        </button>
+                                            </button>
+                                        </div>
                                     </>
                                 ) : (
                                     // Audio-only avatar
@@ -291,18 +310,104 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                 />
             </div>
 
+            {/* Fullscreen Modal */}
+            {fullscreenVideoId && (() => {
+                let stream: MediaStream | null = null;
+                let label = '';
+                let currentVolume = 1.0;
+
+                if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
+                    stream = remoteScreenStream;
+                    label = `${contactName} - Ekran paylaşımı`;
+                    currentVolume = volumes.get('remote-screen') ?? 1.0;
+                } else if (fullscreenVideoId === 'local-screen' && screenStream) {
+                    stream = screenStream;
+                    label = 'Sizin ekranınız';
+                    currentVolume = volumes.get('local-screen') ?? 1.0;
+                } else if (fullscreenVideoId === 'remote-camera' && remoteStream) {
+                    stream = remoteStream;
+                    label = `${contactName} - Kamera`;
+                    currentVolume = volumes.get('remote-camera') ?? 1.0;
+                }
+
+                return (
+                    <div
+                        className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8"
+                        onClick={closeFullscreen}
+                    >
+                        <div
+                            className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <video
+                                ref={(el) => {
+                                    if (el && stream) {
+                                        el.srcObject = stream;
+                                        el.volume = currentVolume;
+                                        el.muted = fullscreenVideoId === 'local-screen';
+                                        el.play().catch(e => console.error('Error playing video:', e));
+                                    }
+                                }}
+                                autoPlay
+                                playsInline
+                                className="w-full h-full object-contain"
+                            />
+
+                            {/* Close button */}
+                            <button
+                                onClick={closeFullscreen}
+                                className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
+                                title="Kapat"
+                            >
+                                <X className="w-6 h-6 text-white" />
+                            </button>
+
+                            {/* Volume control (not for local screen) */}
+                            {fullscreenVideoId !== 'local-screen' && (
+                                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
+                                    <Volume2 className="w-5 h-5 text-white" />
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.1"
+                                        value={currentVolume}
+                                        onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
+                                        className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                    <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
+                                </div>
+                            )}
+
+                            {/* Label */}
+                            <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
+                                <p className="text-sm font-medium text-white">{label}</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             <style>{`
                 .mirror {
                     transform: scaleX(-1);
                 }
-                
-                video:fullscreen {
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: 100vw !important;
-                    max-height: 100vh !important;
-                    object-fit: contain;
-                    background: #000;
+                input[type="range"]::-webkit-slider-thumb {
+                    appearance: none;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: #3b82f6;
+                    cursor: pointer;
+                    border: 2px solid white;
+                }
+                input[type="range"]::-moz-range-thumb {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: #3b82f6;
+                    cursor: pointer;
+                    border: 2px solid white;
                 }
             `}</style>
         </div>
