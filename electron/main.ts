@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, session } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer } from 'electron';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
@@ -20,16 +20,6 @@ function createWindow() {
         },
     });
 
-    // Permission handler for media access
-    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-        const allowedPermissions = ['media', 'display-capture', 'mediaKeySystem'];
-        if (allowedPermissions.includes(permission)) {
-            callback(true);
-        } else {
-            callback(false);
-        }
-    });
-
     // IPC handler for screen sharing
     ipcMain.handle('get-desktop-sources', async () => {
         const sources = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 150, height: 150 } });
@@ -46,12 +36,11 @@ function createWindow() {
 
     // Auto-update logic
     if (!isDev) {
-        autoUpdater.checkForUpdatesAndNotify();
-
-        // Check for updates every 30 minutes
-        setInterval(() => {
+        try {
             autoUpdater.checkForUpdatesAndNotify();
-        }, 30 * 60 * 1000);
+        } catch (e) {
+            console.error('Failed to check for updates:', e);
+        }
     }
 }
 
