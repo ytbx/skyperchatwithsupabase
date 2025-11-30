@@ -137,7 +137,7 @@ export function ServerList({
       {/* Download Desktop App Button - Only visible in web version */}
       {!isElectron && (
         <a
-          href="/OvoxSetup.exe"
+          href="OvoxSetup.exe"
           download="OvoxSetup.exe"
           className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-gpu duration-normal hover:bg-green-500 hover:shadow-glow-sm group"
           title="Masaüstü Uygulamasını İndir"
