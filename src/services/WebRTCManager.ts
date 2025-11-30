@@ -261,27 +261,14 @@ export class WebRTCManager {
         try {
             this.screenStream = screenStream;
 
-            // Replace video track with screen share track
+            // Always add screen share as a NEW track (don't replace camera)
+            // This is more reliable than replaceTrack for renegotiation
             if (this.peerConnection) {
                 const videoTrack = screenStream.getVideoTracks()[0];
-                const sender = this.peerConnection
-                    .getSenders()
-                    .find(s => s.track?.kind === 'video');
 
-                if (sender) {
-                    console.log('[WebRTCManager] Found existing video sender, replacing track');
-                    await sender.replaceTrack(videoTrack);
-                    console.log('[WebRTCManager] Video track replaced with screen share');
-
-                    // Manually trigger renegotiation since replaceTrack doesn't always fire onnegotiationneeded
-                    console.log('[WebRTCManager] Manually triggering renegotiation for screen share (replaceTrack)');
-                    this.onNegotiationNeededCallback?.();
-                } else {
-                    console.log('[WebRTCManager] No video sender found, adding new track');
-                    this.peerConnection.addTrack(videoTrack, screenStream);
-                    console.log('[WebRTCManager] Screen share track added');
-                    // addTrack will automatically trigger onnegotiationneeded, so no manual trigger needed here
-                }
+                console.log('[WebRTCManager] Adding screen share track as new track');
+                this.peerConnection.addTrack(videoTrack, screenStream);
+                console.log('[WebRTCManager] Screen share track added');
 
                 // Handle screen share stop
                 videoTrack.onended = () => {
@@ -310,33 +297,23 @@ export class WebRTCManager {
 
         if (!this.peerConnection) return;
 
-        const sender = this.peerConnection
-            .getSenders()
-            .find(s => s.track?.kind === 'video');
+        // Find and remove the screen share sender
+        // Since we added it as a separate track, we need to remove it
+        const senders = this.peerConnection.getSenders();
+        const screenSender = senders.find(s => {
+            // Screen share tracks typically have labels like "screen", "window", etc.
+            const label = s.track?.label?.toLowerCase() || '';
+            return s.track?.kind === 'video' &&
+                (label.includes('screen') || label.includes('window') || label.includes('monitor') || label.includes('display'));
+        });
 
-        if (!sender) {
-            console.log('[WebRTCManager] No video sender found to stop');
-            return;
-        }
-
-        // Restore camera track if available, otherwise stop sending video
-        if (this.localStream) {
-            const videoTrack = this.localStream.getVideoTracks()[0];
-            if (videoTrack) {
-                console.log('[WebRTCManager] Restoring camera track');
-                await sender.replaceTrack(videoTrack);
-            } else {
-                console.log('[WebRTCManager] No camera track to restore, stopping video transmission');
-                await sender.replaceTrack(null);
-            }
+        if (screenSender) {
+            console.log('[WebRTCManager] Removing screen share sender');
+            this.peerConnection.removeTrack(screenSender);
+            console.log('[WebRTCManager] Screen share sender removed');
         } else {
-            console.log('[WebRTCManager] No local stream, stopping video transmission');
-            await sender.replaceTrack(null);
+            console.log('[WebRTCManager] No screen share sender found to remove');
         }
-
-        // Manually trigger renegotiation to ensure peer knows about the change
-        console.log('[WebRTCManager] Manually triggering renegotiation after stopping screen share');
-        this.onNegotiationNeededCallback?.();
     }
 
     /**
