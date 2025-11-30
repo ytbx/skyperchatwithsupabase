@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { DirectCall } from '@/lib/types';
@@ -55,6 +55,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+
+    // Refs for tracking state inside callbacks
+    const remoteScreenStreamIdRef = useRef<string | null>(null);
+    const isRemoteScreenSharingRef = useRef(false);
 
     /**
      * Initiate a call to a contact
@@ -114,8 +118,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     await signaling.sendOffer(offer);
                 },
                 (screenStream) => {
-                    console.log('[CallContext] Remote screen stream received');
-                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                    console.log('[CallContext] Remote screen stream candidate received', screenStream.id);
+                    // Check if this stream matches the expected screen share ID
+                    if (remoteScreenStreamIdRef.current && screenStream.id === remoteScreenStreamIdRef.current) {
+                        console.log('[CallContext] Confirmed screen share stream by ID');
+                        setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                    } else if (isRemoteScreenSharingRef.current && !remoteScreenStreamIdRef.current) {
+                        // Fallback: If we know remote is sharing but don't have an ID (legacy/race), assume this is it
+                        console.log('[CallContext] Fallback: Assuming screen share due to active state');
+                        setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                    } else {
+                        console.log('[CallContext] Stream ID mismatch or not sharing. Expected:', remoteScreenStreamIdRef.current, 'Got:', screenStream.id);
+                    }
                 }
             );
 
@@ -154,8 +168,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const answer = await webrtcManager.createAnswer();
                     await signaling.sendAnswer(answer);
                 } else if (signal.signal_type === 'screen-share-started') {
-                    console.log('[CallContext] Peer started screen sharing');
+                    console.log('[CallContext] Peer started screen sharing', signal.payload);
                     setIsRemoteScreenSharing(true);
+                    isRemoteScreenSharingRef.current = true;
+
+                    if (signal.payload && (signal.payload as any).stream_id) {
+                        remoteScreenStreamIdRef.current = (signal.payload as any).stream_id;
+                        console.log('[CallContext] Expecting screen stream ID:', (signal.payload as any).stream_id);
+                    }
+
                     // Force update remote stream to ensure UI updates
                     const currentRemoteStream = webrtcManager.getRemoteStream();
                     if (currentRemoteStream) {
@@ -165,7 +186,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 } else if (signal.signal_type === 'screen-share-stopped') {
                     console.log('[CallContext] Peer stopped screen sharing');
                     setIsRemoteScreenSharing(false);
+                    isRemoteScreenSharingRef.current = false;
+                    remoteScreenStreamIdRef.current = null;
                     setRemoteScreenStream(null); // Clear the screen stream
+
                     // Force update remote stream to ensure UI updates
                     const currentRemoteStream = webrtcManager.getRemoteStream();
                     if (currentRemoteStream) {
@@ -291,8 +315,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 await signaling.sendOffer(offer);
                             },
                             (screenStream) => {
-                                console.log('[CallContext] Remote screen stream received (callee)');
-                                setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                console.log('[CallContext] Remote screen stream candidate received (callee)', screenStream.id);
+                                // Check if this stream matches the expected screen share ID
+                                if (remoteScreenStreamIdRef.current && screenStream.id === remoteScreenStreamIdRef.current) {
+                                    console.log('[CallContext] Confirmed screen share stream by ID');
+                                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                } else if (isRemoteScreenSharingRef.current && !remoteScreenStreamIdRef.current) {
+                                    // Fallback
+                                    console.log('[CallContext] Fallback: Assuming screen share due to active state');
+                                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                } else {
+                                    console.log('[CallContext] Stream ID mismatch or not sharing. Expected:', remoteScreenStreamIdRef.current, 'Got:', screenStream.id);
+                                }
                             }
                         );
 
@@ -314,8 +348,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     } else if (signal.signal_type === 'ice-candidate') {
                         await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
                     } else if (signal.signal_type === 'screen-share-started') {
-                        console.log('[CallContext] Peer started screen sharing');
+                        console.log('[CallContext] Peer started screen sharing', signal.payload);
                         setIsRemoteScreenSharing(true);
+                        isRemoteScreenSharingRef.current = true;
+
+                        if (signal.payload && (signal.payload as any).stream_id) {
+                            remoteScreenStreamIdRef.current = (signal.payload as any).stream_id;
+                            console.log('[CallContext] Expecting screen stream ID:', (signal.payload as any).stream_id);
+                        }
+
                         // Force update remote stream to ensure UI updates
                         const currentRemoteStream = webrtcManager.getRemoteStream();
                         if (currentRemoteStream) {
@@ -325,7 +366,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     } else if (signal.signal_type === 'screen-share-stopped') {
                         console.log('[CallContext] Peer stopped screen sharing');
                         setIsRemoteScreenSharing(false);
+                        isRemoteScreenSharingRef.current = false;
+                        remoteScreenStreamIdRef.current = null;
                         setRemoteScreenStream(null); // Clear the screen stream
+
                         // Force update remote stream to ensure UI updates
                         const currentRemoteStream = webrtcManager.getRemoteStream();
                         if (currentRemoteStream) {
@@ -508,18 +552,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
      */
     const startScreenShareWithStream = async (stream: MediaStream) => {
         try {
-            await webrtcManager.startScreenShare(stream);
+            const startedStream = await webrtcManager.startScreenShare(stream);
             setIsScreenSharing(true);
-            setScreenStream(stream);
+            setScreenStream(startedStream);
 
             // Handle stream stop (user clicks "Stop sharing" in browser UI)
-            stream.getVideoTracks()[0].onended = () => {
+            startedStream.getVideoTracks()[0].onended = () => {
                 toggleScreenShare();
             };
 
             // Notify peer that screen sharing started
             if (signalingService) {
-                await signalingService.sendScreenShareStarted();
+                // Send the stream ID so the receiver knows which stream is the screen share
+                await signalingService.sendScreenShareStarted(startedStream.id);
             }
 
             console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');

@@ -221,8 +221,11 @@ export class SignalingService {
     /**
      * Send screen share started signal to peer
      */
-    async sendScreenShareStarted() {
-        console.log('[SignalingService] Sending screen share started signal');
+    /**
+     * Send screen share started signal to peer
+     */
+    async sendScreenShareStarted(streamId?: string) {
+        console.log('[SignalingService] Sending screen share started signal', streamId);
 
         const { error } = await supabase
             .from('webrtc_signals')
@@ -231,7 +234,7 @@ export class SignalingService {
                 from_user_id: this.userId,
                 to_user_id: this.peerId,
                 signal_type: 'screen-share-started',
-                payload: {}
+                payload: { stream_id: streamId }
             });
 
         if (error) {
