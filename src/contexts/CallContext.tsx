@@ -165,6 +165,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 } else if (signal.signal_type === 'screen-share-stopped') {
                     console.log('[CallContext] Peer stopped screen sharing');
                     setIsRemoteScreenSharing(false);
+                    setRemoteScreenStream(null); // Clear the screen stream
                     // Force update remote stream to ensure UI updates
                     const currentRemoteStream = webrtcManager.getRemoteStream();
                     if (currentRemoteStream) {
@@ -324,6 +325,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     } else if (signal.signal_type === 'screen-share-stopped') {
                         console.log('[CallContext] Peer stopped screen sharing');
                         setIsRemoteScreenSharing(false);
+                        setRemoteScreenStream(null); // Clear the screen stream
                         // Force update remote stream to ensure UI updates
                         const currentRemoteStream = webrtcManager.getRemoteStream();
                         if (currentRemoteStream) {
