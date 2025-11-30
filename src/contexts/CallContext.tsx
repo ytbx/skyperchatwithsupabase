@@ -515,12 +515,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 toggleScreenShare();
             };
 
-            // Notify peer that screen sharing started
+            // Manually create and send offer (same as voice channels for reliability)
             if (signalingService) {
+                const offer = await webrtcManager.createOffer();
+                await signalingService.sendOffer(offer);
+                console.log('[CallContext] Screen sharing started, offer sent to peer');
+
+                // Notify peer that screen sharing started
                 await signalingService.sendScreenShareStarted();
             }
-
-            console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');
         } catch (error) {
             console.error('[CallContext] Error starting screen share with stream:', error);
         }
@@ -537,12 +540,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 setIsScreenSharing(false);
                 setScreenStream(null);
 
-                // Notify peer that screen sharing stopped
+                // Manually create and send offer (same as voice channels for reliability)
                 if (signalingService) {
+                    const offer = await webrtcManager.createOffer();
+                    await signalingService.sendOffer(offer);
+                    console.log('[CallContext] Screen sharing stopped, offer sent to peer');
+
+                    // Notify peer that screen sharing stopped
                     await signalingService.sendScreenShareStopped();
                 }
-
-                console.log('[CallContext] Screen sharing stopped, renegotiation will be triggered automatically');
             } else {
                 // Check if Electron
                 const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
