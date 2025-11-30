@@ -574,6 +574,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
      */
     const startScreenShareWithStream = async (stream: MediaStream) => {
         try {
+            // CRITICAL: Notify peer FIRST, before starting screen share
+            // This ensures isRemoteScreenSharing is set to true BEFORE renegotiation offer arrives
+            if (signalingService) {
+                console.log('[CallContext] Sending screen-share-started signal with stream ID:', stream.id);
+                await signalingService.sendScreenShareStarted(stream.id);
+            }
+
+            // Now start screen share (this will trigger renegotiation)
             const startedStream = await webrtcManager.startScreenShare(stream);
             setIsScreenSharing(true);
             setScreenStream(startedStream);
@@ -583,13 +591,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 toggleScreenShare();
             };
 
-            // Notify peer that screen sharing started
-            if (signalingService) {
-                // Send the stream ID so the receiver knows which stream is the screen share
-                await signalingService.sendScreenShareStarted(startedStream.id);
-            }
-
-            console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');
+            console.log('[CallContext] Screen sharing started, renegotiation triggered');
         } catch (error) {
             console.error('[CallContext] Error starting screen share with stream:', error);
         }
