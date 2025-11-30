@@ -293,6 +293,11 @@ export class WebRTCManager {
                     console.log('[WebRTCManager] Screen share stopped by user');
                     this.stopScreenShare();
                 };
+
+                // Manually trigger renegotiation to ensure peer knows about the new track
+                // This is critical for voice calls where no video track existed before
+                console.log('[WebRTCManager] Manually triggering renegotiation for screen share');
+                this.onNegotiationNeededCallback?.();
             }
 
             return screenStream;

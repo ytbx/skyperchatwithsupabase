@@ -220,11 +220,11 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                         </div>
                     )}
 
-                    {/* Remote Camera (only if no screen shares) */}
-                    {(!isRemoteScreenSharing && !isScreenSharing) && (
+                    {/* Remote Camera - Show as main if no screen shares, or as PIP if screen sharing */}
+                    {(!isRemoteScreenSharing && !isScreenSharing && remoteStream) && (
                         <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
                             <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800 group">
-                                {showVideo && remoteStream ? (
+                                {showVideo ? (
                                     <>
                                         <video
                                             ref={(el) => {
@@ -276,6 +276,26 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                         </div>
                     )}
                 </div>
+
+                {/* Remote Camera PIP - Show when screen sharing is active and remote has camera */}
+                {(isRemoteScreenSharing || isScreenSharing) && remoteStream && showVideo && (
+                    <div className="absolute bottom-4 left-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-700 shadow-xl">
+                        <video
+                            ref={(el) => {
+                                if (el && remoteStream && el.srcObject !== remoteStream) {
+                                    el.srcObject = remoteStream;
+                                    el.play().catch(e => console.error('Error playing PIP video:', e));
+                                }
+                            }}
+                            autoPlay
+                            playsInline
+                            className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-1 left-1 bg-black/50 px-2 py-0.5 rounded text-xs text-white">
+                            {contactName}
+                        </div>
+                    </div>
+                )}
 
                 {/* Local Video Thumbnail (PIP) - Hide when screen sharing OR camera is off */}
                 {localStream && showVideo && !isScreenSharing && !isCameraOff && (

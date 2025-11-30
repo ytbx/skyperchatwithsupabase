@@ -119,16 +119,27 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 },
                 (screenStream) => {
                     console.log('[CallContext] Remote screen stream candidate received', screenStream.id);
-                    // Check if this stream matches the expected screen share ID
-                    if (remoteScreenStreamIdRef.current && screenStream.id === remoteScreenStreamIdRef.current) {
-                        console.log('[CallContext] Confirmed screen share stream by ID');
-                        setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
-                    } else if (isRemoteScreenSharingRef.current && !remoteScreenStreamIdRef.current) {
-                        // Fallback: If we know remote is sharing but don't have an ID (legacy/race), assume this is it
-                        console.log('[CallContext] Fallback: Assuming screen share due to active state');
-                        setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                    console.log('[CallContext] isRemoteScreenSharing:', isRemoteScreenSharingRef.current, 'expectedStreamId:', remoteScreenStreamIdRef.current);
+
+                    // If we're expecting a screen share, accept it
+                    if (isRemoteScreenSharingRef.current) {
+                        // If we have an expected ID, verify it matches
+                        if (remoteScreenStreamIdRef.current) {
+                            if (screenStream.id === remoteScreenStreamIdRef.current) {
+                                console.log('[CallContext] ✓ Confirmed screen share stream by ID match');
+                                setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                            } else {
+                                console.log('[CallContext] ⚠ Stream ID mismatch but accepting anyway. Expected:', remoteScreenStreamIdRef.current, 'Got:', screenStream.id);
+                                // Accept it anyway since we know they're sharing
+                                setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                            }
+                        } else {
+                            // No expected ID yet, but we know they're sharing - accept it
+                            console.log('[CallContext] ✓ Accepting screen share (no ID received yet)');
+                            setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                        }
                     } else {
-                        console.log('[CallContext] Stream ID mismatch or not sharing. Expected:', remoteScreenStreamIdRef.current, 'Got:', screenStream.id);
+                        console.log('[CallContext] ✗ Rejecting stream - not expecting screen share');
                     }
                 }
             );
@@ -316,16 +327,27 @@ export function CallProvider({ children }: { children: ReactNode }) {
                             },
                             (screenStream) => {
                                 console.log('[CallContext] Remote screen stream candidate received (callee)', screenStream.id);
-                                // Check if this stream matches the expected screen share ID
-                                if (remoteScreenStreamIdRef.current && screenStream.id === remoteScreenStreamIdRef.current) {
-                                    console.log('[CallContext] Confirmed screen share stream by ID');
-                                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
-                                } else if (isRemoteScreenSharingRef.current && !remoteScreenStreamIdRef.current) {
-                                    // Fallback
-                                    console.log('[CallContext] Fallback: Assuming screen share due to active state');
-                                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                console.log('[CallContext] isRemoteScreenSharing:', isRemoteScreenSharingRef.current, 'expectedStreamId:', remoteScreenStreamIdRef.current);
+
+                                // If we're expecting a screen share, accept it
+                                if (isRemoteScreenSharingRef.current) {
+                                    // If we have an expected ID, verify it matches
+                                    if (remoteScreenStreamIdRef.current) {
+                                        if (screenStream.id === remoteScreenStreamIdRef.current) {
+                                            console.log('[CallContext] ✓ Confirmed screen share stream by ID match');
+                                            setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                        } else {
+                                            console.log('[CallContext] ⚠ Stream ID mismatch but accepting anyway. Expected:', remoteScreenStreamIdRef.current, 'Got:', screenStream.id);
+                                            // Accept it anyway since we know they're sharing
+                                            setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                        }
+                                    } else {
+                                        // No expected ID yet, but we know they're sharing - accept it
+                                        console.log('[CallContext] ✓ Accepting screen share (no ID received yet)');
+                                        setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                    }
                                 } else {
-                                    console.log('[CallContext] Stream ID mismatch or not sharing. Expected:', remoteScreenStreamIdRef.current, 'Got:', screenStream.id);
+                                    console.log('[CallContext] ✗ Rejecting stream - not expecting screen share');
                                 }
                             }
                         );
