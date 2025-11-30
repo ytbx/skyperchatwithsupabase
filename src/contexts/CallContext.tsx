@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { DirectCall } from '@/lib/types';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { SignalingService } from '@/services/SignalingService';
+import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -53,6 +54,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
+    const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
 
     /**
      * Initiate a call to a contact
@@ -500,6 +502,31 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }, [isCameraOff, webrtcManager]);
 
     /**
+     * Start screen sharing with a specific stream
+     */
+    const startScreenShareWithStream = async (stream: MediaStream) => {
+        try {
+            await webrtcManager.startScreenShare(stream);
+            setIsScreenSharing(true);
+            setScreenStream(stream);
+
+            // Handle stream stop (user clicks "Stop sharing" in browser UI)
+            stream.getVideoTracks()[0].onended = () => {
+                toggleScreenShare();
+            };
+
+            // Notify peer that screen sharing started
+            if (signalingService) {
+                await signalingService.sendScreenShareStarted();
+            }
+
+            console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');
+        } catch (error) {
+            console.error('[CallContext] Error starting screen share with stream:', error);
+        }
+    };
+
+    /**
      * Toggle screen sharing
      */
     const toggleScreenShare = useCallback(async () => {
@@ -517,32 +544,46 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
                 console.log('[CallContext] Screen sharing stopped, renegotiation will be triggered automatically');
             } else {
-                // Start screen sharing
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: false
-                });
+                // Check if Electron
+                const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
 
-                await webrtcManager.startScreenShare(stream);
-                setIsScreenSharing(true);
-                setScreenStream(stream);
-
-                // Handle stream stop (user clicks "Stop sharing" in browser UI)
-                stream.getVideoTracks()[0].onended = () => {
-                    toggleScreenShare();
-                };
-
-                // Notify peer that screen sharing started
-                if (signalingService) {
-                    await signalingService.sendScreenShareStarted();
+                if (isElectron) {
+                    setIsScreenShareModalOpen(true);
+                } else {
+                    // Web implementation
+                    const stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: false
+                    });
+                    await startScreenShareWithStream(stream);
                 }
-
-                console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');
             }
         } catch (error) {
             console.error('[CallContext] Error toggling screen share:', error);
         }
     }, [isScreenSharing, webrtcManager, signalingService]);
+
+    const handleScreenShareSelect = async (sourceId: string) => {
+        setIsScreenShareModalOpen(false);
+        try {
+            const stream = await (navigator.mediaDevices as any).getUserMedia({
+                audio: false,
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: sourceId,
+                        minWidth: 1280,
+                        maxWidth: 1280,
+                        minHeight: 720,
+                        maxHeight: 720
+                    }
+                }
+            });
+            await startScreenShareWithStream(stream);
+        } catch (e) {
+            console.error('Error getting electron screen stream:', e);
+        }
+    };
 
     // Subscribe to incoming calls and call status updates
     useEffect(() => {
@@ -737,6 +778,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return (
         <CallContext.Provider value={value}>
             {children}
+            <ScreenSharePickerModal
+                isOpen={isScreenShareModalOpen}
+                onClose={() => setIsScreenShareModalOpen(false)}
+                onSelect={handleScreenShareSelect}
+            />
         </CallContext.Provider>
     );
 }

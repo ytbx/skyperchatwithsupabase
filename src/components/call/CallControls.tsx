@@ -28,8 +28,8 @@ export const CallControls: React.FC<CallControlsProps> = ({
             <button
                 onClick={onMicToggle}
                 className={`p-4 rounded-full transition-all ${isMicMuted
-                        ? 'bg-red-600 hover:bg-red-700'
-                        : 'bg-gray-700 hover:bg-gray-600'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-gray-700 hover:bg-gray-600'
                     }`}
                 title={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
             >
@@ -45,8 +45,8 @@ export const CallControls: React.FC<CallControlsProps> = ({
                 <button
                     onClick={onCameraToggle}
                     className={`p-4 rounded-full transition-all ${isCameraOff
-                            ? 'bg-red-600 hover:bg-red-700'
-                            : 'bg-gray-700 hover:bg-gray-600'
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-gray-700 hover:bg-gray-600'
                         }`}
                     title={isCameraOff ? 'Turn on camera' : 'Turn off camera'}
                 >
@@ -62,8 +62,8 @@ export const CallControls: React.FC<CallControlsProps> = ({
             <button
                 onClick={onScreenShareToggle}
                 className={`p-4 rounded-full transition-all ${isScreenSharing
-                        ? 'bg-blue-600 hover:bg-blue-700'
-                        : 'bg-gray-700 hover:bg-gray-600'
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-gray-700 hover:bg-gray-600'
                     }`}
                 title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
             >

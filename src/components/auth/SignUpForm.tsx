@@ -36,7 +36,7 @@ export function SignUpForm({ onToggle }: { onToggle: () => void }) {
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-gray-700 rounded-lg p-8 shadow-card">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">SkyperChat</h1>
+          <h1 className="text-3xl font-bold text-white mb-2">Ovox</h1>
           <p className="text-neutral-600">Hesap oluştur</p>
         </div>
 

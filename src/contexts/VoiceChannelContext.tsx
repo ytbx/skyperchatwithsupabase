@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { useCall } from './CallContext';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
+import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 
 interface VoiceParticipant {
     user_id: string;
@@ -48,6 +49,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isCameraEnabled, setIsCameraEnabled] = useState(false);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
@@ -479,6 +481,33 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isDeafened, activeChannelId, user, isConnected]);
 
+    // Start screen share with a specific stream
+    const startScreenShareWithStream = async (screenStream: MediaStream) => {
+        screenStreamRef.current = screenStream;
+
+        screenStream.getVideoTracks()[0].onended = () => {
+            toggleScreenShare();
+        };
+
+        for (const [peerId, manager] of peerManagers.current.entries()) {
+            await manager.startScreenShare(screenStream);
+            const offer = await manager.createOffer();
+            await sendSignal(peerId, 'offer', offer);
+        }
+
+        await supabase
+            .from('voice_channel_users')
+            .update({ is_screen_sharing: true })
+            .eq('channel_id', activeChannelId!)
+            .eq('user_id', user!.id);
+
+        setParticipants(prev => prev.map(p =>
+            p.user_id === user!.id ? { ...p, screenStream: screenStream } : p
+        ));
+
+        setIsScreenSharing(true);
+    };
+
     // Toggle screen share
     const toggleScreenShare = useCallback(async () => {
         if (!user || !activeChannelId || !isConnected) return;
@@ -510,40 +539,47 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
                 setIsScreenSharing(false);
             } else {
-                // Start screen sharing
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: false
-                });
+                // Check if Electron
+                const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
 
-                screenStreamRef.current = screenStream;
-
-                screenStream.getVideoTracks()[0].onended = () => {
-                    toggleScreenShare();
-                };
-
-                for (const [peerId, manager] of peerManagers.current.entries()) {
-                    await manager.startScreenShare(screenStream);
-                    const offer = await manager.createOffer();
-                    await sendSignal(peerId, 'offer', offer);
+                if (isElectron) {
+                    setIsScreenShareModalOpen(true);
+                } else {
+                    // Web implementation
+                    const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: false
+                    });
+                    await startScreenShareWithStream(screenStream);
                 }
-
-                await supabase
-                    .from('voice_channel_users')
-                    .update({ is_screen_sharing: true })
-                    .eq('channel_id', activeChannelId)
-                    .eq('user_id', user.id);
-
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === user.id ? { ...p, screenStream: screenStream } : p
-                ));
-
-                setIsScreenSharing(true);
             }
         } catch (error) {
             console.error('Error toggling screen share:', error);
         }
     }, [isScreenSharing, user, activeChannelId, isConnected]);
+
+    // Handle screen share selection from modal
+    const handleScreenShareSelect = async (sourceId: string) => {
+        setIsScreenShareModalOpen(false);
+        try {
+            const stream = await (navigator.mediaDevices as any).getUserMedia({
+                audio: false,
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: sourceId,
+                        minWidth: 1280,
+                        maxWidth: 1280,
+                        minHeight: 720,
+                        maxHeight: 720
+                    }
+                }
+            });
+            await startScreenShareWithStream(stream);
+        } catch (e) {
+            console.error('Error getting electron screen stream:', e);
+        }
+    };
 
     // Toggle camera
     const toggleCamera = useCallback(async () => {
@@ -626,6 +662,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     return (
         <VoiceChannelContext.Provider value={value}>
             {children}
+            <ScreenSharePickerModal
+                isOpen={isScreenShareModalOpen}
+                onClose={() => setIsScreenShareModalOpen(false)}
+                onSelect={handleScreenShareSelect}
+            />
         </VoiceChannelContext.Provider>
     );
 }

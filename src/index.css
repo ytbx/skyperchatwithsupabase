@@ -13,7 +13,7 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
-    
+
     /* Discord renk paleti */
     --discord-green: #3ba55d;
     --discord-green-hover: #2d7d46;
@@ -40,13 +40,13 @@
   .voice-container {
     display: grid;
     grid-template-rows: auto 1fr;
-    grid-template-areas: 
+    grid-template-areas:
       "header"
       "content";
     height: 100vh;
     overflow: hidden;
   }
-  
+
   .voice-content {
     grid-area: content;
     display: flex;
@@ -55,26 +55,26 @@
     max-width: 100%;
     padding: clamp(1rem, 4vw, 2rem);
   }
-  
+
   .voice-users-grid {
     display: grid;
     gap: 1rem;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   }
-  
+
   @media (max-width: 640px) {
     .voice-users-grid {
       grid-template-columns: 1fr;
     }
   }
-  
+
   .voice-controls {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
     align-items: center;
   }
-  
+
   @media (max-width: 640px) {
     .voice-controls {
       flex-direction: column;
@@ -131,7 +131,7 @@
   .voice-fade-in {
     animation: voiceFadeIn 0.4s ease-out;
   }
-  
+
   .voice-slide-up {
     animation: voiceSlideUp 0.3s ease-out;
   }
@@ -200,6 +200,7 @@
     opacity: 0;
     transform: translateY(20px) scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -211,6 +212,7 @@
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -220,7 +222,7 @@
 /* Modern CSS Grid for Responsive Layout */
 .voice-layout {
   display: grid;
-  grid-template-areas: 
+  grid-template-areas:
     "voice-overlay"
     "voice-main";
   grid-template-rows: auto 1fr;
@@ -439,16 +441,16 @@ img {
   .voice-vertical-layout {
     gap: 1rem;
   }
-  
+
   .voice-users-grid-compact {
     grid-template-columns: repeat(2, 1fr);
     max-height: 6rem;
   }
-  
+
   .voice-control-buttons {
     gap: 0.5rem;
   }
-  
+
   .voice-button {
     width: 44px !important;
     height: 44px !important;
@@ -460,7 +462,7 @@ img {
   }
 
   /* Buton etiketlerini mobil için optimize et */
-  .voice-control-buttons + div {
+  .voice-control-buttons+div {
     font-size: 0.625rem;
     line-height: 1.2;
   }
@@ -483,7 +485,7 @@ img {
   .voice-button {
     transition: none;
   }
-  
+
   .voice-fade-in,
   .voice-slide-up {
     animation: none;
@@ -545,20 +547,20 @@ img {
   .voice-top-empty {
     min-height: 80px;
   }
-  
+
   .voice-controls-center {
     padding: 1.5rem 0.5rem;
   }
-  
+
   .voice-control-buttons-center {
     gap: 0.75rem;
   }
-  
+
   .voice-control-buttons-center .voice-button {
     width: 44px !important;
     height: 44px !important;
   }
-  
+
   .voice-bottom-controls {
     padding: 0.75rem 1rem;
   }
@@ -568,7 +570,7 @@ img {
   .voice-top-empty {
     min-height: 120px;
   }
-  
+
   .voice-control-buttons-center {
     gap: 1.5rem;
   }
@@ -578,7 +580,7 @@ img {
   .voice-top-empty {
     min-height: 150px;
   }
-  
+
   .voice-control-buttons-center {
     gap: 2rem;
   }

@@ -1,8 +1,10 @@
 {
-  "name": "react_repo",
+  "name": "ovox",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "description": "A modern voice and text chat application",
+  "author": "Yusuf",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "pnpm install --prefer-offline && vite",
     "build": "pnpm install --prefer-offline && rm -rf node_modules/.vite-temp && tsc -b && vite build",
@@ -10,7 +12,29 @@
     "lint": "pnpm install --prefer-offline && eslint .",
     "preview": "pnpm install --prefer-offline && vite preview",
     "install-deps": "pnpm install --prefer-offline",
-    "clean": "rm -rf node_modules .pnpm-store pnpm-lock.yaml && pnpm store prune"
+    "clean": "rm -rf node_modules .pnpm-store pnpm-lock.yaml && pnpm store prune",
+    "electron:dev": "concurrently \"pnpm dev\" \"wait-on tcp:5173 && tsc -p electron/tsconfig.json && electron .\"",
+    "electron:build": "tsc -p electron/tsconfig.json && vite build && electron-builder"
+  },
+  "build": {
+    "appId": "com.ovox.app",
+    "productName": "Ovox",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "yusuf",
+      "repo": "ovox"
+    }
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -48,6 +72,8 @@
     "clsx": "^2.1.1",
     "cmdk": "1.0.0",
     "date-fns": "^3.0.0",
+    "electron-is-dev": "^3.0.1",
+    "electron-updater": "^6.6.2",
     "embla-carousel-react": "^8.5.2",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.364.0",
@@ -74,6 +100,10 @@
     "@types/react-router-dom": "^5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "10.4.20",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.4",
+    "electron-builder": "^26.0.12",
     "eslint": "^9.15.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
@@ -86,6 +116,7 @@
     "typescript-eslint": "^8.15.0",
     "util": "^0.12.5",
     "vite": "^6.0.1",
-    "vite-plugin-source-identifier": "1.1.2"
+    "vite-plugin-source-identifier": "1.1.2",
+    "wait-on": "^9.0.3"
   }
 }

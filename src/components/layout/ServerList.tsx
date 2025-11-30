@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Home, Settings, Users, Search } from 'lucide-react';
+import { Plus, Home, Settings, Users, Search, Download } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Server } from '@/lib/types';
@@ -14,17 +14,23 @@ interface ServerListProps {
   onSearch: () => void; // Global search action
 }
 
-export function ServerList({ 
-  selectedServerId, 
-  currentView, 
-  onSelectServer, 
-  onViewChange, 
-  onAddAction, 
+export function ServerList({
+  selectedServerId,
+  currentView,
+  onSelectServer,
+  onViewChange,
+  onAddAction,
   onSettings,
   onSearch
 }: ServerListProps) {
   const [servers, setServers] = useState<Server[]>([]);
   const { user } = useAuth();
+  const [isElectron, setIsElectron] = useState(false);
+
+  // Check if running in Electron
+  useEffect(() => {
+    setIsElectron(typeof window !== 'undefined' && !!(window as any).electron);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -72,11 +78,10 @@ export function ServerList({
       {/* Friends Button */}
       <button
         onClick={() => onViewChange('friends')}
-        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg hover:bg-primary-500 hover:shadow-glow ${
-          currentView === 'friends'
-            ? 'bg-primary-500 rounded-lg shadow-glow-sm'
-            : 'bg-gray-800'
-        }`}
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg hover:bg-primary-500 hover:shadow-glow ${currentView === 'friends'
+          ? 'bg-primary-500 rounded-lg shadow-glow-sm'
+          : 'bg-gray-800'
+          }`}
         title="Arkadaşlar"
       >
         <Users className={`w-6 h-6 ${currentView === 'friends' ? 'text-white' : 'text-neutral-600'}`} />
@@ -89,18 +94,17 @@ export function ServerList({
         <button
           key={server.id}
           onClick={() => onSelectServer(server.id)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg ${
-            selectedServerId === server.id && currentView === 'servers'
-              ? 'bg-primary-500 rounded-lg shadow-glow-sm'
-              : 'bg-gray-800 hover:bg-gray-700'
-          }`}
+          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden ${selectedServerId === server.id && currentView === 'servers'
+            ? 'bg-primary-500 rounded-lg shadow-glow-sm'
+            : 'bg-gray-800 hover:bg-gray-700'
+            }`}
           title={server.name}
         >
           {server.server_image_url ? (
             <img
               src={server.server_image_url}
               alt={server.name}
-              className="w-full h-full rounded-full object-cover"
+              className="w-full h-full object-cover"
             />
           ) : (
             <span className="text-lg font-bold text-white">
@@ -129,6 +133,18 @@ export function ServerList({
       >
         <Search className="w-5 h-5 text-gray-400 group-hover:text-white" />
       </button>
+
+      {/* Download Desktop App Button - Only visible in web version */}
+      {!isElectron && (
+        <a
+          href="/OvoxSetup.exe"
+          download="OvoxSetup.exe"
+          className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-gpu duration-normal hover:bg-green-500 hover:shadow-glow-sm group"
+          title="Masaüstü Uygulamasını İndir"
+        >
+          <Download className="w-5 h-5 text-gray-400 group-hover:text-white" />
+        </a>
+      )}
 
       {/* Settings Button */}
       <button

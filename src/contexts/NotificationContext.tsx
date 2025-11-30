@@ -237,7 +237,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     return () => {
       console.log('[Notifications] Cleaning up subscription');
-      supabase.removeChannel(channel);
+      channel.unsubscribe();
     };
   }, [currentUserId, addNotification]);
 
@@ -293,20 +293,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       console.log('[Notifications] Initialized for user:', user.id);
-
-      // Add debug methods to window for testing
-      (window as any).debugNotifications = {
-        testNotification: createTestNotification,
-        getNotifications: () => notifications,
-        getStatus: () => ({ userId: currentUserId, count: notifications.length, hasPermission }),
-        clearAll: clearAll,
-      };
-
-      console.log('[Notifications] Debug methods added to window.debugNotifications');
     };
 
     initialize();
-  }, [notifications, currentUserId, createTestNotification, clearAll]);
+  }, []); // ✅ Empty dependency array - only run once on mount
+
+  // Add debug methods separately without notifications dependency
+  useEffect(() => {
+    (window as any).debugNotifications = {
+      testNotification: createTestNotification,
+      getNotifications: () => notifications,
+      getStatus: () => ({ userId: currentUserId, count: notifications.length, hasPermission }),
+      clearAll: clearAll,
+    };
+
+    console.log('[Notifications] Debug methods updated');
+  }, [currentUserId, hasPermission, createTestNotification, clearAll]); // ✅ Removed notifications dependency
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 

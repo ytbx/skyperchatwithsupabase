@@ -170,16 +170,27 @@ export const FriendsList: React.FC<FriendsListProps> = ({
         }
       });
 
+      // Get current friends to filter out
+      const { data: friendships } = await supabase
+        .from('friends')
+        .select('requester_id, requested_id')
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
+
+      const friendIds = new Set();
+      (friendships || []).forEach(friendship => {
+        if (friendship.requester_id === user.id) {
+          friendIds.add(friendship.requested_id);
+        } else {
+          friendIds.add(friendship.requester_id);
+        }
+      });
+
       // Filter out current user, existing friends, and users with pending requests
       const filteredUsers = (users || []).filter(profile => {
         if (profile.id === user.id) return false;
-
-        // Check if already friends
-        if (friends.some(friend => friend.id === profile.id)) return false;
-
-        // Check if there's a pending request
+        if (friendIds.has(profile.id)) return false;
         if (pendingUserIds.has(profile.id)) return false;
-
         return true;
       });
 
@@ -189,7 +200,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     } finally {
       setSearchingUsers(false);
     }
-  }, [user, friends]); // Added dependencies
+  }, [user]); // ✅ Removed friends dependency - fetch friends in the function instead
 
   // Debounced search
   useEffect(() => {
