@@ -7,6 +7,7 @@ export class WebRTCManager {
     private localStream: MediaStream | null = null;
     private remoteStream: MediaStream | null = null;
     private screenStream: MediaStream | null = null;
+    private screenAudioSender: RTCRtpSender | null = null;
 
     // ICE servers configuration (using free STUN servers)
     private iceServers: RTCConfiguration = {
@@ -20,6 +21,7 @@ export class WebRTCManager {
     // Callbacks
     private onRemoteStreamCallback?: (stream: MediaStream) => void;
     private onRemoteScreenCallback?: (stream: MediaStream) => void;
+    private onRemoteCameraCallback?: (stream: MediaStream) => void;
     private onICECandidateCallback?: (candidate: RTCIceCandidateInit) => void;
     private onConnectionStateChangeCallback?: (state: RTCPeerConnectionState) => void;
     private onNegotiationNeededCallback?: () => void;
@@ -39,6 +41,7 @@ export class WebRTCManager {
 
         this.onRemoteStreamCallback = onRemoteStream;
         this.onRemoteScreenCallback = onRemoteScreen;
+        this.onRemoteCameraCallback = onRemoteCamera;
         this.onICECandidateCallback = onICECandidate;
         this.onConnectionStateChangeCallback = onConnectionStateChange;
         this.onNegotiationNeededCallback = onNegotiationNeeded;
@@ -84,6 +87,10 @@ export class WebRTCManager {
                 // Also treat as screen share for compatibility with current UI logic
                 const screenStream = new MediaStream([event.track]);
                 this.onRemoteScreenCallback?.(screenStream);
+
+                // Also treat as camera stream
+                const cameraStream = new MediaStream([event.track]);
+                this.onRemoteCameraCallback?.(cameraStream);
             }
         };
 
@@ -277,33 +284,37 @@ export class WebRTCManager {
         try {
             this.screenStream = screenStream;
 
-            // Replace video track with screen share track
             if (this.peerConnection) {
-                const videoTrack = screenStream.getVideoTracks()[0];
+                // Find existing video sender
                 const sender = this.peerConnection
                     .getSenders()
                     .find(s => s.track?.kind === 'video');
 
+                // If there's an existing video track (camera), remove it first
+                // We use removeTrack/addTrack instead of replaceTrack to force full renegotiation
+                // This is more robust for switching between camera (low res) and screen (high res)
                 if (sender) {
-                    console.log('[WebRTCManager] Found existing video sender, replacing track');
-                    await sender.replaceTrack(videoTrack);
-                    console.log('[WebRTCManager] Video track replaced with screen share');
-
-                    // Manually trigger renegotiation since replaceTrack doesn't always fire onnegotiationneeded
-                    console.log('[WebRTCManager] Manually triggering renegotiation for screen share (replaceTrack)');
-                    this.onNegotiationNeededCallback?.();
-                } else {
-                    console.log('[WebRTCManager] No video sender found, adding new track');
-                    this.peerConnection.addTrack(videoTrack, screenStream);
-                    console.log('[WebRTCManager] Screen share track added');
-                    // addTrack will automatically trigger onnegotiationneeded, so no manual trigger needed here
+                    console.log('[WebRTCManager] Removing existing video track before adding screen share');
+                    this.peerConnection.removeTrack(sender);
                 }
+
+                // Add the screen share video track
+                const videoTrack = screenStream.getVideoTracks()[0];
+                console.log('[WebRTCManager] Adding screen share video track');
+                this.peerConnection.addTrack(videoTrack, screenStream);
 
                 // Handle screen share stop
                 videoTrack.onended = () => {
                     console.log('[WebRTCManager] Screen share stopped by user');
                     this.stopScreenShare();
                 };
+
+                // Handle audio track (system audio)
+                const audioTrack = screenStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    console.log('[WebRTCManager] Adding screen audio track');
+                    this.screenAudioSender = this.peerConnection.addTrack(audioTrack, screenStream);
+                }
             }
 
             return screenStream;
@@ -326,33 +337,35 @@ export class WebRTCManager {
 
         if (!this.peerConnection) return;
 
+        // Remove screen video sender
         const sender = this.peerConnection
             .getSenders()
             .find(s => s.track?.kind === 'video');
 
-        if (!sender) {
-            console.log('[WebRTCManager] No video sender found to stop');
-            return;
+        if (sender) {
+            console.log('[WebRTCManager] Removing screen share video track');
+            this.peerConnection.removeTrack(sender);
         }
 
-        // Restore camera track if available, otherwise stop sending video
+        // Remove screen audio track if exists
+        if (this.screenAudioSender) {
+            console.log('[WebRTCManager] Removing screen audio track');
+            try {
+                this.peerConnection.removeTrack(this.screenAudioSender);
+            } catch (e) {
+                console.error('[WebRTCManager] Error removing screen audio track:', e);
+            }
+            this.screenAudioSender = null;
+        }
+
+        // Restore camera track if available
         if (this.localStream) {
             const videoTrack = this.localStream.getVideoTracks()[0];
             if (videoTrack) {
                 console.log('[WebRTCManager] Restoring camera track');
-                await sender.replaceTrack(videoTrack);
-            } else {
-                console.log('[WebRTCManager] No camera track to restore, stopping video transmission');
-                await sender.replaceTrack(null);
+                this.peerConnection.addTrack(videoTrack, this.localStream);
             }
-        } else {
-            console.log('[WebRTCManager] No local stream, stopping video transmission');
-            await sender.replaceTrack(null);
         }
-
-        // Manually trigger renegotiation to ensure peer knows about the change
-        console.log('[WebRTCManager] Manually triggering renegotiation after stopping screen share');
-        this.onNegotiationNeededCallback?.();
     }
 
     /**

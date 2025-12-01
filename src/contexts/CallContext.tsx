@@ -568,11 +568,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing, webrtcManager, signalingService]);
 
-    const handleScreenShareSelect = async (sourceId: string) => {
+    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
             const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: false,
+                audio: withAudio ? {
+                    mandatory: {
+                        chromeMediaSource: 'desktop'
+                    }
+                } : false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',

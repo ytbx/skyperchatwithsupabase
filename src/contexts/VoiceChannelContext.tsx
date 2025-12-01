@@ -559,11 +559,15 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     }, [isScreenSharing, user, activeChannelId, isConnected]);
 
     // Handle screen share selection from modal
-    const handleScreenShareSelect = async (sourceId: string) => {
+    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
             const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: false,
+                audio: withAudio ? {
+                    mandatory: {
+                        chromeMediaSource: 'desktop'
+                    }
+                } : false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',

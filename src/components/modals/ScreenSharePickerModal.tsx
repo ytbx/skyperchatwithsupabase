@@ -5,12 +5,13 @@ import { DesktopCapturerSource } from '@/types/electron';
 interface ScreenSharePickerModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (sourceId: string) => void;
+    onSelect: (sourceId: string, withAudio: boolean) => void;
 }
 
 export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenSharePickerModalProps) {
     const [sources, setSources] = useState<DesktopCapturerSource[]>([]);
     const [activeTab, setActiveTab] = useState<'screen' | 'window'>('screen');
+    const [withAudio, setWithAudio] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -88,7 +89,7 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                             {filteredSources.map((source) => (
                                 <button
                                     key={source.id}
-                                    onClick={() => onSelect(source.id)}
+                                    onClick={() => onSelect(source.id, withAudio)}
                                     className="group flex flex-col gap-2 p-3 rounded-xl bg-gray-800 hover:bg-gray-700 transition-all hover:scale-[1.02] border border-transparent hover:border-primary-500/50"
                                 >
                                     <div className="relative aspect-video w-full bg-black rounded-lg overflow-hidden">
@@ -113,7 +114,22 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-gray-800 flex justify-end">
+                <div className="p-6 border-t border-gray-800 flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${withAudio ? 'bg-primary-500 border-primary-500' : 'border-gray-600 group-hover:border-gray-500'}`}>
+                            {withAudio && <Monitor className="w-3 h-3 text-white" />}
+                        </div>
+                        <input
+                            type="checkbox"
+                            checked={withAudio}
+                            onChange={(e) => setWithAudio(e.target.checked)}
+                            className="hidden"
+                        />
+                        <span className="text-gray-300 group-hover:text-white transition-colors select-none">
+                            Sistem sesini paylaş
+                        </span>
+                    </label>
+
                     <button
                         onClick={onClose}
                         className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
