@@ -315,9 +315,6 @@ export class WebRTCManager {
                     console.log('[WebRTCManager] Adding screen audio track');
                     this.screenAudioSender = this.peerConnection.addTrack(audioTrack, screenStream);
                 }
-
-                // Renegotiation will be triggered automatically via onnegotiationneeded
-                console.log('[WebRTCManager] Screen share tracks added, waiting for negotiation event');
             }
 
             return screenStream;
@@ -369,9 +366,6 @@ export class WebRTCManager {
                 this.peerConnection.addTrack(videoTrack, this.localStream);
             }
         }
-
-        // Renegotiation will be triggered automatically via onnegotiationneeded
-        console.log('[WebRTCManager] Screen share stopped, waiting for negotiation event');
     }
 
     /**
@@ -386,20 +380,6 @@ export class WebRTCManager {
      */
     getRemoteStream(): MediaStream | null {
         return this.remoteStream;
-    }
-
-    /**
-     * Get peer connection
-     */
-    getPeerConnection(): RTCPeerConnection | null {
-        return this.peerConnection;
-    }
-
-    /**
-     * Set negotiation needed callback
-     */
-    onNegotiationNeeded(callback: () => void) {
-        this.onNegotiationNeededCallback = callback;
     }
 
     /**

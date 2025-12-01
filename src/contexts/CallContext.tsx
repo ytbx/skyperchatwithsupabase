@@ -5,7 +5,6 @@ import { DirectCall } from '@/lib/types';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { SignalingService } from '@/services/SignalingService';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
-import ringtoneSound from '@/assets/sounds/ringtone.mp3';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -60,7 +59,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     // Initialize ringtone
     useEffect(() => {
-        ringtoneRef.current = new Audio(ringtoneSound);
+        ringtoneRef.current = new Audio('/sounds/ringtone.mp3');
         ringtoneRef.current.loop = true;
         return () => {
             if (ringtoneRef.current) {
@@ -149,22 +148,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
             // Add local stream
             webrtcManager.addLocalStream(stream);
-
-            // Handle negotiation needed (for renegotiation during screen share)
-            webrtcManager.onNegotiationNeeded(async () => {
-                console.log('[CallContext] Negotiation needed - creating new offer');
-                if (webrtcManager.getPeerConnection()?.signalingState !== 'stable') {
-                    console.log('[CallContext] Skipping negotiation - signaling state is not stable:', webrtcManager.getPeerConnection()?.signalingState);
-                    return;
-                }
-                try {
-                    const offer = await webrtcManager.createOffer();
-                    await signaling.sendOffer(offer);
-                    console.log('[CallContext] Renegotiation offer sent');
-                } catch (e) {
-                    console.error('[CallContext] Error during renegotiation:', e);
-                }
-            });
 
             // Queue for ICE candidates that arrive before answer
             const pendingIceCandidates: RTCIceCandidateInit[] = [];
@@ -341,22 +324,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
                         // Add local stream
                         webrtcManager.addLocalStream(stream);
-
-                        // Handle negotiation needed (for renegotiation during screen share)
-                        webrtcManager.onNegotiationNeeded(async () => {
-                            console.log('[CallContext] Negotiation needed (callee) - creating new offer');
-                            if (webrtcManager.getPeerConnection()?.signalingState !== 'stable') {
-                                console.log('[CallContext] Skipping negotiation - signaling state is not stable:', webrtcManager.getPeerConnection()?.signalingState);
-                                return;
-                            }
-                            try {
-                                const offer = await webrtcManager.createOffer();
-                                await signaling.sendOffer(offer);
-                                console.log('[CallContext] Renegotiation offer sent (callee)');
-                            } catch (e) {
-                                console.error('[CallContext] Error during renegotiation (callee):', e);
-                            }
-                        });
 
                         // Set remote description (offer)
                         await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);

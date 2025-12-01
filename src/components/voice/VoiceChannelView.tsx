@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2 } from 'lucide-react';
-import { useVoiceActivity } from '@/hooks/useVoiceActivity';
 
 interface VoiceParticipant {
     user_id: string;
@@ -123,15 +122,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         {cameraParticipants.map((participant) => {
                             const videoId = `camera-${participant.user_id}`;
                             const currentVolume = volumes.get(videoId) ?? 1.0;
-                            const isSpeaking = useVoiceActivity(participant.stream);
 
                             return (
                                 <div
                                     key={videoId}
-                                    className={`relative bg-gray-800 rounded-lg overflow-hidden group transition-all ${isSpeaking
-                                            ? 'ring-4 ring-green-500 shadow-xl shadow-green-500/30'
-                                            : ''
-                                        }`}
+                                    className="relative bg-gray-800 rounded-lg overflow-hidden group"
                                     style={{ maxHeight: '400px' }}
                                 >
                                     <video
@@ -214,15 +209,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         {screenSharingParticipants.map((participant) => {
                             const videoId = `screen-${participant.user_id}`;
                             const currentVolume = volumes.get(videoId) ?? 1.0;
-                            const isSpeaking = useVoiceActivity(participant.stream);
 
                             return (
                                 <div
                                     key={videoId}
-                                    className={`relative bg-gray-800 rounded-lg overflow-hidden group transition-all ${isSpeaking
-                                            ? 'ring-4 ring-green-500 shadow-xl shadow-green-500/30'
-                                            : ''
-                                        }`}
+                                    className="relative bg-gray-800 rounded-lg overflow-hidden group"
                                     style={{ maxHeight: '400px' }}
                                 >
                                     <video

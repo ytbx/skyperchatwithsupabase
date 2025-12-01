@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useCall } from '@/contexts/CallContext';
 import { CallControls } from './CallControls';
 import { User, Wifi, WifiOff, Maximize2, X, Volume2 } from 'lucide-react';
-import { useVoiceActivity } from '@/hooks/useVoiceActivity';
 
 interface ActiveCallOverlayProps {
     contactName: string;
@@ -34,10 +33,6 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteCameraVideoRef = useRef<HTMLVideoElement | null>(null);
-
-    // Voice activity detection
-    const isRemoteSpeaking = useVoiceActivity(remoteStream);
-    const isLocalSpeaking = useVoiceActivity(localStream);
 
     // Helper to set video stream
     const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null, videoId?: string) => {
@@ -147,10 +142,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                     {/* Remote Screen Share */}
                     {(isRemoteScreenSharing && remoteScreenStream) && (
                         <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className={`relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border group transition-all ${isRemoteSpeaking
-                                    ? 'border-green-500 ring-4 ring-green-500/50 shadow-green-500/30'
-                                    : 'border-gray-800'
-                                }`}>
+                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800 group">
                                 <video
                                     ref={(el) => {
                                         remoteScreenVideoRef.current = el;
@@ -231,10 +223,7 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
                     {/* Remote Camera (only if no screen shares) */}
                     {(!isRemoteScreenSharing && !isScreenSharing) && (
                         <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className={`relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border group transition-all ${isRemoteSpeaking
-                                    ? 'border-green-500 ring-4 ring-green-500/50 shadow-green-500/30'
-                                    : 'border-gray-800'
-                                }`}>
+                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800 group">
                                 {showVideo && remoteStream ? (
                                     <>
                                         <video
