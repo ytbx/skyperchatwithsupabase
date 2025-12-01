@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember, PERMISSIONS, ServerRole, ChannelPermission } from '@/lib/types';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
+import { VoiceParticipantItem } from './VoiceParticipantItem';
 
 interface ChannelListProps {
   serverId: string | null;
@@ -506,33 +507,23 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                   </button>
 
                   {/* Voice Participants */}
-                  {voiceParticipants[channel.id]?.map((participant) => (
-                    <div
-                      key={participant.id}
-                      className={`ml-8 mr-2 py-1 flex items-center gap-2 group rounded px-1 ${canMoveMembers ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:bg-gray-800/50`}
-                      draggable={canMoveMembers}
-                      onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
-                    >
-                      <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
-                        {participant.profile?.profile_image_url ? (
-                          <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-xs text-white">
-                            {participant.profile?.username?.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0 flex items-center justify-between">
-                        <span className={`text-sm truncate ${activeChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
-                          {participant.profile?.username}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {participant.is_muted && <MicOff className="w-3 h-3 text-red-500" />}
-                          {participant.is_deafened && <Headphones className="w-3 h-3 text-red-500" />}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                  {voiceParticipants[channel.id]?.map((participant) => {
+                    // Find the participant's stream from activeParticipants
+                    const activeParticipant = activeParticipants.find(p => p.user_id === participant.user_id);
+
+                    return (
+                      <VoiceParticipantItem
+                        key={participant.id}
+                        participant={participant}
+                        activeParticipantStream={activeParticipant?.stream}
+                        isCurrentUser={participant.user_id === user?.id}
+                        isActiveChannel={activeChannelId === channel.id}
+                        canMove={canMoveMembers}
+                        onDragStart={handleDragStart}
+                        channelId={channel.id}
+                      />
+                    );
+                  })}
                 </div>
               ))}
             </div>
