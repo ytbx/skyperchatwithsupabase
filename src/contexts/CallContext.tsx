@@ -5,6 +5,7 @@ import { DirectCall } from '@/lib/types';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { SignalingService } from '@/services/SignalingService';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
+import ringtoneSound from '@/assets/sounds/ringtone.mp3';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -59,7 +60,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     // Initialize ringtone
     useEffect(() => {
-        ringtoneRef.current = new Audio('/sounds/ringtone.mp3');
+        ringtoneRef.current = new Audio(ringtoneSound);
         ringtoneRef.current.loop = true;
         return () => {
             if (ringtoneRef.current) {

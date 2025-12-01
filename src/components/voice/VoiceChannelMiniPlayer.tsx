@@ -1,6 +1,7 @@
 import React from 'react';
 import { Mic, MicOff, Headphones, PhoneOff, Maximize2, Volume2 } from 'lucide-react';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
+import { useVoiceActivity } from '@/hooks/useVoiceActivity';
 
 interface VoiceChannelMiniPlayerProps {
     onMaximize: () => void;
@@ -16,6 +17,10 @@ export function VoiceChannelMiniPlayer({ onMaximize }: VoiceChannelMiniPlayerPro
         toggleDeafen,
         participants
     } = useVoiceChannel();
+
+    // Voice activity detection for local user
+    const localParticipant = participants.find(p => p.user_id === (window as any).currentUserId);
+    const isLocalSpeaking = useVoiceActivity(localParticipant?.stream);
 
     if (!activeChannelId) return null;
 
@@ -48,17 +53,26 @@ export function VoiceChannelMiniPlayer({ onMaximize }: VoiceChannelMiniPlayerPro
                         {participants.length} kişi bağlı
                     </div>
                     <div className="flex -space-x-2">
-                        {participants.slice(0, 3).map(p => (
-                            <div key={p.user_id} className="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-900 overflow-hidden">
-                                {p.profile?.profile_image_url ? (
-                                    <img src={p.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-[10px] text-white">
-                                        {p.profile?.username?.charAt(0).toUpperCase()}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                        {participants.slice(0, 3).map(p => {
+                            const isSpeaking = useVoiceActivity(p.stream);
+                            return (
+                                <div
+                                    key={p.user_id}
+                                    className={`w-6 h-6 rounded-full border-2 overflow-hidden transition-all ${isSpeaking
+                                            ? 'border-green-500 ring-2 ring-green-500/50 shadow-lg shadow-green-500/30'
+                                            : 'border-gray-900 bg-gray-700'
+                                        }`}
+                                >
+                                    {p.profile?.profile_image_url ? (
+                                        <img src={p.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-[10px] text-white bg-gray-700">
+                                            {p.profile?.username?.charAt(0).toUpperCase()}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                         {participants.length > 3 && (
                             <div className="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-900 flex items-center justify-center text-[10px] text-gray-400">
                                 +{participants.length - 3}
