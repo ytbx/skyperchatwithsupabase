@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { DirectCall } from '@/lib/types';
@@ -55,6 +55,33 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+    const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+
+    // Initialize ringtone
+    useEffect(() => {
+        ringtoneRef.current = new Audio('/sounds/ringtone.mp3');
+        ringtoneRef.current.loop = true;
+        return () => {
+            if (ringtoneRef.current) {
+                ringtoneRef.current.pause();
+                ringtoneRef.current = null;
+            }
+        };
+    }, []);
+
+    // Handle ringtone playback
+    useEffect(() => {
+        if (!ringtoneRef.current) return;
+
+        const shouldPlay = callStatus === 'ringing_incoming' || callStatus === 'ringing_outgoing';
+
+        if (shouldPlay) {
+            ringtoneRef.current.play().catch(e => console.error('Error playing ringtone:', e));
+        } else {
+            ringtoneRef.current.pause();
+            ringtoneRef.current.currentTime = 0;
+        }
+    }, [callStatus]);
 
     /**
      * Initiate a call to a contact

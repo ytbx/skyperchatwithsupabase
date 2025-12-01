@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2 } from 'lucide-react';
 
 interface VoiceParticipant {
@@ -24,6 +25,7 @@ interface VoiceChannelViewProps {
 }
 
 export function VoiceChannelView({ channelId, channelName, participants, onStartScreenShare }: VoiceChannelViewProps) {
+    const { user } = useAuth();
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
     const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
@@ -225,6 +227,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         }}
                                         autoPlay
                                         playsInline
+                                        muted={participant.user_id === user?.id} // Mute if local user
                                         className="w-full h-auto object-contain bg-black"
                                         style={{ maxHeight: '400px' }}
                                     />

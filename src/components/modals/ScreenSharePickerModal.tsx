@@ -114,8 +114,8 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-gray-800 flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer group">
+                <div className="p-4 border-t border-gray-800 flex items-center justify-between bg-gray-900/50">
+                    <label className="flex items-center gap-2 cursor-pointer group select-none">
                         <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${withAudio ? 'bg-primary-500 border-primary-500' : 'border-gray-600 group-hover:border-gray-500'}`}>
                             {withAudio && <Monitor className="w-3 h-3 text-white" />}
                         </div>
@@ -125,14 +125,14 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                             onChange={(e) => setWithAudio(e.target.checked)}
                             className="hidden"
                         />
-                        <span className="text-gray-300 group-hover:text-white transition-colors select-none">
+                        <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
                             Sistem sesini paylaş
                         </span>
                     </label>
 
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                        className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
                     >
                         İptal
                     </button>
