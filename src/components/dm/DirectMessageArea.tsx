@@ -507,7 +507,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
       {/* Active Call Overlay */}
       {(callStatus === 'active' || callStatus === 'connecting') && (
-        <ActiveCallOverlay contactName={contactName} />
+        <ActiveCallOverlay />
       )}
 
       {/* Search Bar */}

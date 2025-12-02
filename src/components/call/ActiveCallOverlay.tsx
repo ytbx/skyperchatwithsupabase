@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useCall } from '@/contexts/CallContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { CallControls } from './CallControls';
-import { User, Wifi, WifiOff, Maximize2, X, Volume2 } from 'lucide-react';
+import { User, Wifi, WifiOff, Maximize2, X, Volume2, MicOff } from 'lucide-react';
 
-interface ActiveCallOverlayProps {
-    contactName: string;
-}
-
-export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactName }) => {
+export const ActiveCallOverlay: React.FC = () => {
+    const { user } = useAuth();
     const {
         callStatus,
         localStream,
@@ -29,10 +28,137 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
     const [callDuration, setCallDuration] = useState(0);
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
     const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
+    const [contactName, setContactName] = useState<string>('');
+    const [contactProfileImageUrl, setContactProfileImageUrl] = useState<string | null>(null);
+    const [localProfileImageUrl, setLocalProfileImageUrl] = useState<string | null>(null);
+    const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
+    const [isLocalSpeaking, setIsLocalSpeaking] = useState(false);
+    const [remoteMicMuted, setRemoteMicMuted] = useState(false);
 
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteCameraVideoRef = useRef<HTMLVideoElement | null>(null);
+    const remoteAudioContextRef = useRef<AudioContext | null>(null);
+    const localAudioContextRef = useRef<AudioContext | null>(null);
+    const remoteAnalyserRef = useRef<AnalyserNode | null>(null);
+    const localAnalyserRef = useRef<AnalyserNode | null>(null);
+
+    // Fetch contact name and profile images from activeCall
+    useEffect(() => {
+        const fetchContactInfo = async () => {
+            if (!activeCall || !user) return;
+
+            // Determine who the other person is
+            const contactId = activeCall.caller_id === user.id ? activeCall.callee_id : activeCall.caller_id;
+
+            // Fetch their profile
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('username, profile_image_url')
+                .eq('id', contactId)
+                .single();
+
+            if (profile) {
+                setContactName(profile.username || 'Unknown User');
+                setContactProfileImageUrl(profile.profile_image_url);
+            }
+
+            // Fetch local user's profile image
+            const { data: localProfile } = await supabase
+                .from('profiles')
+                .select('profile_image_url')
+                .eq('id', user.id)
+                .single();
+
+            if (localProfile) {
+                setLocalProfileImageUrl(localProfile.profile_image_url);
+            }
+        };
+
+        fetchContactInfo();
+    }, [activeCall, user]);
+
+    // Voice activity detection for remote stream
+    useEffect(() => {
+        if (!remoteStream) return;
+
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(remoteStream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+
+        remoteAudioContextRef.current = audioContext;
+        remoteAnalyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let animationFrame: number;
+
+        const detectVoice = () => {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            setIsRemoteSpeaking(average > 20); // Threshold for voice detection
+            animationFrame = requestAnimationFrame(detectVoice);
+        };
+
+        detectVoice();
+
+        // Check if remote audio track is muted
+        const audioTrack = remoteStream.getAudioTracks()[0];
+        if (audioTrack) {
+            setRemoteMicMuted(!audioTrack.enabled);
+        }
+
+        return () => {
+            cancelAnimationFrame(animationFrame);
+            audioContext.close();
+        };
+    }, [remoteStream]);
+
+    // Voice activity detection for local stream
+    useEffect(() => {
+        if (!localStream) return;
+
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(localStream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+
+        localAudioContextRef.current = audioContext;
+        localAnalyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let animationFrame: number;
+
+        const detectVoice = () => {
+            if (!isMicMuted) {
+                analyser.getByteFrequencyData(dataArray);
+                const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                setIsLocalSpeaking(average > 20);
+            } else {
+                setIsLocalSpeaking(false);
+            }
+            animationFrame = requestAnimationFrame(detectVoice);
+        };
+
+        detectVoice();
+
+        return () => {
+            cancelAnimationFrame(animationFrame);
+            audioContext.close();
+        };
+    }, [localStream, isMicMuted]);
+
+    // Debug: Log when remoteScreenStream changes
+    useEffect(() => {
+        console.log('[ActiveCallOverlay] ========== REMOTE SCREEN STREAM CHANGED ==========');
+        console.log('[ActiveCallOverlay] isRemoteScreenSharing:', isRemoteScreenSharing);
+        console.log('[ActiveCallOverlay] remoteScreenStream:', remoteScreenStream);
+        if (remoteScreenStream) {
+            console.log('[ActiveCallOverlay] Remote screen tracks:', remoteScreenStream.getTracks().map(t => `${t.kind}: ${t.label} (${t.readyState})`));
+        }
+    }, [remoteScreenStream, isRemoteScreenSharing]);
 
     // Helper to set video stream
     const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null, videoId?: string) => {
@@ -92,10 +218,10 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
     }
 
     const isVideoCall = activeCall?.call_type === 'video';
-    const showVideo = (isVideoCall && !isCameraOff) || isRemoteScreenSharing || isScreenSharing;
 
-    // Determine layout mode
-    const isBidirectionalScreenShare = isScreenSharing && screenStream && isRemoteScreenSharing && remoteScreenStream;
+    // Separate video display logic for each participant
+    const showRemoteVideo = (isVideoCall && remoteStream) || isRemoteScreenSharing;
+    const showLocalVideo = (isVideoCall && !isCameraOff) || isScreenSharing;
 
     return (
         <div className="relative w-full h-1/2 bg-gray-900 border-b border-gray-700 z-10 flex flex-col">
@@ -136,164 +262,153 @@ export const ActiveCallOverlay: React.FC<ActiveCallOverlayProps> = ({ contactNam
 
             {/* Video/Audio Display Area */}
             <div className="flex-1 relative bg-gray-950">
-                {/* GlobalAudio handles the audio playback now */}
-
-                <div className="w-full h-full flex items-center justify-center p-4 gap-4">
-                    {/* Remote Screen Share */}
-                    {(isRemoteScreenSharing && remoteScreenStream) && (
-                        <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800 group">
-                                <video
-                                    ref={(el) => {
-                                        remoteScreenVideoRef.current = el;
-                                        setVideoStream(el, remoteScreenStream, 'remote-screen');
-                                    }}
-                                    autoPlay
-                                    playsInline
-                                    className="w-full h-full object-contain bg-gray-900"
-                                />
-
-                                {/* Controls overlay */}
-                                <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                    {/* Volume control */}
-                                    <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
-                                        <Volume2 className="w-4 h-4 text-white" />
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="1"
-                                            step="0.1"
-                                            value={volumes.get('remote-screen') ?? 1.0}
-                                            onChange={(e) => handleVolumeChange('remote-screen', parseFloat(e.target.value))}
-                                            className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <span className="text-xs text-white w-8">{Math.round((volumes.get('remote-screen') ?? 1.0) * 100)}%</span>
-                                    </div>
+                <div className="w-full h-full flex items-center justify-center p-6 gap-6">
+                    {/* Remote Participant Box */}
+                    <div className="flex-1 max-w-[45%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
+                        <div className={`relative w-full aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl overflow-hidden shadow-2xl transition-all duration-300 ${isRemoteSpeaking ? 'ring-4 ring-green-500 shadow-green-500/50' : 'border-2 border-gray-700'
+                            }`}>
+                            {/* Remote Screen Share or Camera */}
+                            {isRemoteScreenSharing && remoteScreenStream ? (
+                                <>
+                                    <video
+                                        ref={(el) => {
+                                            remoteScreenVideoRef.current = el;
+                                            setVideoStream(el, remoteScreenStream, 'remote-screen');
+                                        }}
+                                        autoPlay
+                                        playsInline
+                                        className="w-full h-full object-contain bg-black"
+                                    />
                                     {/* Fullscreen button */}
                                     <button
                                         onClick={() => openFullscreen('remote-screen')}
-                                        className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                        className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
                                         title="Tam ekran"
                                     >
-                                        <Maximize2 className="w-5 h-5 text-white" />
+                                        <Maximize2 className="w-4 h-4 text-white" />
                                     </button>
+                                </>
+                            ) : showRemoteVideo && remoteStream ? (
+                                <>
+                                    <video
+                                        ref={(el) => {
+                                            remoteCameraVideoRef.current = el;
+                                            setVideoStream(el, remoteStream, 'remote-camera');
+                                        }}
+                                        autoPlay
+                                        playsInline
+                                        className="w-full h-full object-cover"
+                                    />
+                                    {/* Fullscreen button */}
+                                    <button
+                                        onClick={() => openFullscreen('remote-camera')}
+                                        className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
+                                        title="Tam ekran"
+                                    >
+                                        <Maximize2 className="w-4 h-4 text-white" />
+                                    </button>
+                                </>
+                            ) : (
+                                // Avatar/Initial
+                                <div className="w-full h-full flex flex-col items-center justify-center">
+                                    {contactProfileImageUrl ? (
+                                        <img
+                                            src={contactProfileImageUrl}
+                                            alt={contactName}
+                                            className="w-32 h-32 rounded-full object-cover border-4 border-gray-700"
+                                        />
+                                    ) : (
+                                        <div className="w-32 h-32 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center border-4 border-gray-700">
+                                            <span className="text-5xl font-bold text-white">
+                                                {contactName.charAt(0).toUpperCase()}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <p className="text-white text-xl font-semibold mt-4">{contactName}</p>
                                 </div>
+                            )}
 
-                                <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
-                                    {contactName}
+                            {/* Mic Muted Indicator */}
+                            {remoteMicMuted && (
+                                <div className="absolute bottom-3 right-3 bg-red-600 rounded-full p-2 shadow-lg">
+                                    <MicOff size={16} className="text-white" />
                                 </div>
+                            )}
+
+                            {/* Name Label */}
+                            <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+                                <p className="text-white text-sm font-medium">{contactName}</p>
                             </div>
                         </div>
-                    )}
+                    </div>
 
-                    {/* Local Screen Share */}
-                    {(isScreenSharing && screenStream) && (
-                        <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-gray-800 group">
-                                <video
-                                    ref={(el) => {
-                                        localScreenVideoRef.current = el;
-                                        setVideoStream(el, screenStream, 'local-screen');
-                                    }}
-                                    autoPlay
-                                    playsInline
-                                    muted
-                                    className="w-full h-full object-contain bg-gray-900"
-                                />
-
-                                {/* Controls overlay */}
-                                <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    {/* Local Participant Box */}
+                    <div className="flex-1 max-w-[45%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
+                        <div className={`relative w-full aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl overflow-hidden shadow-2xl transition-all duration-300 ${isLocalSpeaking ? 'ring-4 ring-green-500 shadow-green-500/50' : 'border-2 border-gray-700'
+                            }`}>
+                            {/* Local Screen Share or Camera */}
+                            {isScreenSharing && screenStream ? (
+                                <>
+                                    <video
+                                        ref={(el) => {
+                                            localScreenVideoRef.current = el;
+                                            setVideoStream(el, screenStream, 'local-screen');
+                                        }}
+                                        autoPlay
+                                        playsInline
+                                        muted
+                                        className="w-full h-full object-contain bg-black"
+                                    />
                                     {/* Fullscreen button */}
                                     <button
                                         onClick={() => openFullscreen('local-screen')}
-                                        className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
+                                        className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
                                         title="Tam ekran"
                                     >
-                                        <Maximize2 className="w-5 h-5 text-white" />
+                                        <Maximize2 className="w-4 h-4 text-white" />
                                     </button>
-                                </div>
-
-                                <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
-                                    Sizin Ekranınız
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Remote Camera (only if no screen shares) */}
-                    {(!isRemoteScreenSharing && !isScreenSharing) && (
-                        <div className="flex-1 max-w-[50%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-gray-800 group">
-                                {showVideo && remoteStream ? (
-                                    <>
-                                        <video
-                                            ref={(el) => {
-                                                remoteCameraVideoRef.current = el;
-                                                setVideoStream(el, remoteStream, 'remote-camera');
-                                            }}
-                                            autoPlay
-                                            playsInline
-                                            className="w-full h-full object-contain bg-gray-900"
+                                </>
+                            ) : showLocalVideo && localStream && !isCameraOff ? (
+                                <video
+                                    ref={(el) => setVideoStream(el, localStream)}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    className="w-full h-full object-cover mirror"
+                                />
+                            ) : (
+                                // Avatar/Initial
+                                <div className="w-full h-full flex flex-col items-center justify-center">
+                                    {localProfileImageUrl ? (
+                                        <img
+                                            src={localProfileImageUrl}
+                                            alt="You"
+                                            className="w-32 h-32 rounded-full object-cover border-4 border-gray-700"
                                         />
-
-                                        {/* Controls overlay */}
-                                        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                            {/* Volume control */}
-                                            <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
-                                                <Volume2 className="w-4 h-4 text-white" />
-                                                <input
-                                                    type="range"
-                                                    min="0"
-                                                    max="1"
-                                                    step="0.1"
-                                                    value={volumes.get('remote-camera') ?? 1.0}
-                                                    onChange={(e) => handleVolumeChange('remote-camera', parseFloat(e.target.value))}
-                                                    className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                                />
-                                                <span className="text-xs text-white w-8">{Math.round((volumes.get('remote-camera') ?? 1.0) * 100)}%</span>
-                                            </div>
-                                            {/* Fullscreen button */}
-                                            <button
-                                                onClick={() => openFullscreen('remote-camera')}
-                                                className="p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors"
-                                                title="Tam ekran"
-                                            >
-                                                <Maximize2 className="w-5 h-5 text-white" />
-                                            </button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    // Audio-only avatar
-                                    <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900">
-                                        <div className="w-32 h-32 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center mb-4">
+                                    ) : (
+                                        <div className="w-32 h-32 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center border-4 border-gray-700">
                                             <User size={48} className="text-white" />
                                         </div>
-                                        <p className="text-white text-lg font-medium">{contactName}</p>
-                                        <p className="text-gray-400 text-sm">Voice call</p>
-                                    </div>
-                                )}
+                                    )}
+                                    <p className="text-white text-xl font-semibold mt-4">Siz</p>
+                                </div>
+                            )}
+
+                            {/* Mic Muted Indicator */}
+                            {isMicMuted && (
+                                <div className="absolute bottom-3 right-3 bg-red-600 rounded-full p-2 shadow-lg">
+                                    <MicOff size={16} className="text-white" />
+                                </div>
+                            )}
+
+                            {/* Name Label */}
+                            <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+                                <p className="text-white text-sm font-medium">Siz</p>
                             </div>
                         </div>
-                    )}
+                    </div>
                 </div>
 
-                {/* Local Video Thumbnail (PIP) - Hide when screen sharing OR camera is off */}
-                {localStream && showVideo && !isScreenSharing && !isCameraOff && (
-                    <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-700 shadow-xl">
-                        <video
-                            ref={(el) => setVideoStream(el, localStream)}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="w-full h-full object-cover mirror"
-                        />
-                        {isMicMuted && (
-                            <div className="absolute top-2 right-2 bg-red-600 rounded-full p-1">
-                                <User size={12} className="text-white" />
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
 
             {/* Call Controls */}

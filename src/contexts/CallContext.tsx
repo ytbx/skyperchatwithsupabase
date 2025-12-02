@@ -59,7 +59,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     // Initialize ringtone
     useEffect(() => {
-        ringtoneRef.current = new Audio('/sounds/ringtone.mp3');
+        ringtoneRef.current = new Audio('sounds/ringtone.mp3');
         ringtoneRef.current.loop = true;
         return () => {
             if (ringtoneRef.current) {
@@ -141,8 +141,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     await signaling.sendOffer(offer);
                 },
                 (screenStream) => {
-                    console.log('[CallContext] Remote screen stream received');
-                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                    console.log('[CallContext] ========== REMOTE SCREEN STREAM RECEIVED (CALLER) ==========');
+                    console.log('[CallContext] Screen stream tracks:', screenStream.getTracks().map(t => `${t.kind}: ${t.label}`));
+                    const newStream = new MediaStream(screenStream.getTracks());
+                    setRemoteScreenStream(newStream);
+                    // Automatically set the flag when we receive a screen stream
+                    // This ensures UI updates even if the signal arrives late
+                    console.log('[CallContext] Setting isRemoteScreenSharing to TRUE');
+                    setIsRemoteScreenSharing(true);
+                    console.log('[CallContext] ✓ Remote screen stream set successfully');
                 }
             );
 
@@ -181,12 +188,33 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const answer = await webrtcManager.createAnswer();
                     await signaling.sendAnswer(answer);
                 } else if (signal.signal_type === 'screen-share-started') {
-                    console.log('[CallContext] Peer started screen sharing');
+                    console.log('[CallContext] ========== PEER STARTED SCREEN SHARING ==========');
                     setIsRemoteScreenSharing(true);
-                    // Force update remote stream to ensure UI updates
+
+                    // Get the remote video track from WebRTC
+                    const remoteVideoTrack = webrtcManager.getRemoteVideoTrack();
+                    if (remoteVideoTrack) {
+                        console.log('[CallContext] Found remote video track, creating screen stream');
+                        const screenStream = new MediaStream([remoteVideoTrack]);
+                        setRemoteScreenStream(screenStream);
+                        console.log('[CallContext] ✓ Remote screen stream set successfully');
+                    } else {
+                        console.warn('[CallContext] ⚠ No remote video track found for screen share');
+                        // Try to get from current remote stream as fallback
+                        const currentRemoteStream = webrtcManager.getRemoteStream();
+                        if (currentRemoteStream) {
+                            const videoTrack = currentRemoteStream.getVideoTracks()[0];
+                            if (videoTrack) {
+                                console.log('[CallContext] Using video track from remote stream');
+                                setRemoteScreenStream(new MediaStream([videoTrack]));
+                            }
+                        }
+                    }
+
+                    // Also force update remote stream to ensure UI updates
                     const currentRemoteStream = webrtcManager.getRemoteStream();
                     if (currentRemoteStream) {
-                        console.log('[CallContext] Force updating remote stream for screen share start');
+                        console.log('[CallContext] Force updating remote stream for UI refresh');
                         setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
                     }
                 } else if (signal.signal_type === 'screen-share-stopped') {
@@ -317,8 +345,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 await signaling.sendOffer(offer);
                             },
                             (screenStream) => {
-                                console.log('[CallContext] Remote screen stream received (callee)');
-                                setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
+                                console.log('[CallContext] ========== REMOTE SCREEN STREAM RECEIVED (CALLEE) ==========');
+                                console.log('[CallContext] Screen stream tracks:', screenStream.getTracks().map(t => `${t.kind}: ${t.label}`));
+                                const newStream = new MediaStream(screenStream.getTracks());
+                                setRemoteScreenStream(newStream);
+                                // Automatically set the flag when we receive a screen stream
+                                console.log('[CallContext] Setting isRemoteScreenSharing to TRUE');
+                                setIsRemoteScreenSharing(true);
+                                console.log('[CallContext] ✓ Remote screen stream set successfully');
                             }
                         );
 
@@ -340,18 +374,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     } else if (signal.signal_type === 'ice-candidate') {
                         await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
                     } else if (signal.signal_type === 'screen-share-started') {
-                        console.log('[CallContext] Peer started screen sharing');
+                        console.log('[CallContext] ========== PEER STARTED SCREEN SHARING (CALLEE) ==========');
                         setIsRemoteScreenSharing(true);
-                        // Force update remote stream to ensure UI updates
-                        const currentRemoteStream = webrtcManager.getRemoteStream();
-                        const remoteVideoTrack = webrtcManager.getRemoteVideoTrack();
 
+                        // Get the remote video track from WebRTC
+                        const remoteVideoTrack = webrtcManager.getRemoteVideoTrack();
                         if (remoteVideoTrack) {
-                            console.log('[CallContext] Found remote video track, updating remote screen stream');
-                            setRemoteScreenStream(new MediaStream([remoteVideoTrack]));
-                        } else if (currentRemoteStream) {
-                            console.log('[CallContext] Force updating remote stream for screen share start (fallback)');
-                            setRemoteScreenStream(new MediaStream(currentRemoteStream.getTracks()));
+                            console.log('[CallContext] Found remote video track, creating screen stream');
+                            const screenStream = new MediaStream([remoteVideoTrack]);
+                            setRemoteScreenStream(screenStream);
+                            console.log('[CallContext] ✓ Remote screen stream set successfully');
+                        } else {
+                            console.warn('[CallContext] ⚠ No remote video track found for screen share');
+                            // Try to get from current remote stream as fallback
+                            const currentRemoteStream = webrtcManager.getRemoteStream();
+                            if (currentRemoteStream) {
+                                const videoTrack = currentRemoteStream.getVideoTracks()[0];
+                                if (videoTrack) {
+                                    console.log('[CallContext] Using video track from remote stream');
+                                    setRemoteScreenStream(new MediaStream([videoTrack]));
+                                }
+                            }
+                        }
+
+                        // Also force update remote stream to ensure UI updates
+                        const currentRemoteStream = webrtcManager.getRemoteStream();
+                        if (currentRemoteStream) {
+                            console.log('[CallContext] Force updating remote stream for UI refresh');
+                            setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
                         }
                     } else if (signal.signal_type === 'screen-share-stopped') {
                         console.log('[CallContext] Peer stopped screen sharing');
@@ -538,6 +588,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
      */
     const startScreenShareWithStream = async (stream: MediaStream) => {
         try {
+            console.log('[CallContext] ========== STARTING SCREEN SHARE ==========');
+            console.log('[CallContext] Screen stream tracks:', stream.getTracks().map(t => `${t.kind}: ${t.label}`));
             await webrtcManager.startScreenShare(stream);
             setIsScreenSharing(true);
             setScreenStream(stream);
@@ -547,14 +599,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 toggleScreenShare();
             };
 
-            // Notify peer that screen sharing started
+            // IMPORTANT: First do renegotiation to establish the video track
+            // THEN notify peer that screen sharing started
             if (signalingService) {
+                console.log('[CallContext] Step 1: Creating and sending renegotiation offer...');
+                const offer = await webrtcManager.createOffer();
+                console.log('[CallContext] Offer created:', offer.type);
+                await signalingService.sendOffer(offer);
+                console.log('[CallContext] ✓ Offer sent successfully');
+
+                // Wait a bit for the offer/answer to complete
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                console.log('[CallContext] Step 2: Sending screen-share-started signal...');
                 await signalingService.sendScreenShareStarted();
+                console.log('[CallContext] ✓ Screen-share-started signal sent');
             }
 
-            console.log('[CallContext] Screen sharing started, renegotiation will be triggered automatically');
+            console.log('[CallContext] ========== SCREEN SHARE STARTED SUCCESSFULLY ==========');
         } catch (error) {
-            console.error('[CallContext] Error starting screen share with stream:', error);
+            console.error('[CallContext] ✗ Error starting screen share with stream:', error);
         }
     };
 
@@ -572,9 +636,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 // Notify peer that screen sharing stopped
                 if (signalingService) {
                     await signalingService.sendScreenShareStopped();
+
+                    // Manual renegotiation to ensure video track is removed/restored
+                    console.log('[CallContext] Triggering manual renegotiation for screen share stop');
+                    const offer = await webrtcManager.createOffer();
+                    await signalingService.sendOffer(offer);
                 }
 
-                console.log('[CallContext] Screen sharing stopped, renegotiation will be triggered automatically');
+                console.log('[CallContext] Screen sharing stopped, manual renegotiation triggered');
             } else {
                 // Check if Electron
                 const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
@@ -607,7 +676,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: sourceId
+                        chromeMediaSourceId: sourceId,
+                        minWidth: 1280,
+                        maxWidth: 1280,
+                        minHeight: 720,
+                        maxHeight: 720
                     }
                 }
             });

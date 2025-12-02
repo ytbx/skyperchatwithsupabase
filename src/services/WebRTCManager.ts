@@ -58,19 +58,25 @@ export class WebRTCManager {
 
         // Handle remote stream
         this.peerConnection.ontrack = (event) => {
-            console.log('[WebRTCManager] Received remote track', event.track.kind);
+            console.log('[WebRTCManager] ========== RECEIVED REMOTE TRACK ==========');
+            console.log('[WebRTCManager] Track kind:', event.track.kind);
+            console.log('[WebRTCManager] Track label:', event.track.label);
+            console.log('[WebRTCManager] Track id:', event.track.id);
+            console.log('[WebRTCManager] Track enabled:', event.track.enabled);
+            console.log('[WebRTCManager] Track readyState:', event.track.readyState);
 
             if (event.track.kind === 'audio') {
                 // Audio track - for voice
+                console.log('[WebRTCManager] Processing audio track');
                 if (!this.remoteStream) {
                     this.remoteStream = new MediaStream();
                 }
                 this.remoteStream.addTrack(event.track);
                 this.onRemoteStreamCallback?.(this.remoteStream);
+                console.log('[WebRTCManager] ✓ Audio track added to remote stream');
             } else if (event.track.kind === 'video') {
                 // Video track - could be camera or screen share
-                // For now, we'll add it to remoteStream (for camera) AND trigger screen callback
-                // The UI will decide which one to show based on state
+                console.log('[WebRTCManager] Processing video track');
 
                 if (!this.remoteStream) {
                     this.remoteStream = new MediaStream();
@@ -79,18 +85,24 @@ export class WebRTCManager {
                 // Check if we already have a video track
                 const existingVideoTrack = this.remoteStream.getVideoTracks()[0];
                 if (existingVideoTrack) {
+                    console.log('[WebRTCManager] Removing existing video track');
                     this.remoteStream.removeTrack(existingVideoTrack);
                 }
                 this.remoteStream.addTrack(event.track);
+                console.log('[WebRTCManager] ✓ Video track added to remote stream');
                 this.onRemoteStreamCallback?.(this.remoteStream);
 
                 // Also treat as screen share for compatibility with current UI logic
                 const screenStream = new MediaStream([event.track]);
+                console.log('[WebRTCManager] ✓ Calling onRemoteScreenCallback');
                 this.onRemoteScreenCallback?.(screenStream);
 
                 // Also treat as camera stream
                 const cameraStream = new MediaStream([event.track]);
+                console.log('[WebRTCManager] ✓ Calling onRemoteCameraCallback');
                 this.onRemoteCameraCallback?.(cameraStream);
+
+                console.log('[WebRTCManager] ========== VIDEO TRACK PROCESSING COMPLETE ==========');
             }
         };
 
@@ -301,7 +313,14 @@ export class WebRTCManager {
                 // Add the screen share video track
                 const videoTrack = screenStream.getVideoTracks()[0];
                 console.log('[WebRTCManager] Adding screen share video track');
-                this.peerConnection.addTrack(videoTrack, screenStream);
+                const newSender = this.peerConnection.addTrack(videoTrack, screenStream);
+
+                // Ensure transceiver direction is correct
+                const transceiver = this.peerConnection.getTransceivers().find(t => t.sender === newSender);
+                if (transceiver) {
+                    console.log('[WebRTCManager] Setting screen video transceiver direction to sendrecv');
+                    transceiver.direction = 'sendrecv';
+                }
 
                 // Handle screen share stop
                 videoTrack.onended = () => {
@@ -314,6 +333,12 @@ export class WebRTCManager {
                 if (audioTrack) {
                     console.log('[WebRTCManager] Adding screen audio track');
                     this.screenAudioSender = this.peerConnection.addTrack(audioTrack, screenStream);
+
+                    const audioTransceiver = this.peerConnection.getTransceivers().find(t => t.sender === this.screenAudioSender);
+                    if (audioTransceiver) {
+                        console.log('[WebRTCManager] Setting screen audio transceiver direction to sendrecv');
+                        audioTransceiver.direction = 'sendrecv';
+                    }
                 }
             }
 
