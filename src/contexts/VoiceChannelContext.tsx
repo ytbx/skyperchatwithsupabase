@@ -347,9 +347,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 // Merge existing streams with new data
                 return data.map((p: any) => {
                     const existing = prev.find(prevP => prevP.user_id === p.user_id);
+                    // If this is the local user, use the local stream
+                    const stream = p.user_id === user?.id ? localStreamRef.current : existing?.stream;
                     return {
                         ...p,
-                        stream: existing?.stream,
+                        stream: stream,
                         screenStream: existing?.screenStream,
                         cameraStream: existing?.cameraStream
                     };
@@ -446,6 +448,15 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             userSub.unsubscribe();
         };
     }, [user, cleanupPeerConnections]);
+
+    // Update local user's stream in participants when localStream changes
+    useEffect(() => {
+        if (localStream && user && activeChannelId) {
+            setParticipants(prev => prev.map(p =>
+                p.user_id === user.id ? { ...p, stream: localStream } : p
+            ));
+        }
+    }, [localStream, user, activeChannelId]);
 
     // Handle mute toggle
     useEffect(() => {

@@ -30,9 +30,77 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
     const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
 
+    // Track speaking state for each participant
+    const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
+    const analyserRefs = useRef<Map<string, { context: AudioContext; analyser: AnalyserNode; animationFrame: number }>>(new Map());
+
     // Get participants with camera or screen share
     const cameraParticipants = participants.filter(p => p.is_video_enabled && p.cameraStream);
     const screenSharingParticipants = participants.filter(p => p.is_screen_sharing && p.screenStream);
+
+    // Voice activity detection for each participant
+    useEffect(() => {
+        // Clean up old analysers for participants who left
+        const currentUserIds = new Set(participants.map(p => p.user_id));
+        analyserRefs.current.forEach((analyserData, userId) => {
+            if (!currentUserIds.has(userId)) {
+                cancelAnimationFrame(analyserData.animationFrame);
+                analyserData.context.close();
+                analyserRefs.current.delete(userId);
+            }
+        });
+
+        // Set up analysers for each participant with a stream
+        participants.forEach(participant => {
+            if (!participant.stream || analyserRefs.current.has(participant.user_id)) return;
+
+            try {
+                const audioContext = new AudioContext();
+                const analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(participant.stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                const detectVoice = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    const isSpeaking = average > 20; // Threshold for voice detection
+
+                    setSpeakingUsers(prev => {
+                        const newSet = new Set(prev);
+                        if (isSpeaking) {
+                            newSet.add(participant.user_id);
+                        } else {
+                            newSet.delete(participant.user_id);
+                        }
+                        return newSet;
+                    });
+
+                    const animationFrame = requestAnimationFrame(detectVoice);
+                    const analyserData = analyserRefs.current.get(participant.user_id);
+                    if (analyserData) {
+                        analyserData.animationFrame = animationFrame;
+                    }
+                };
+
+                const animationFrame = requestAnimationFrame(detectVoice);
+                analyserRefs.current.set(participant.user_id, { context: audioContext, analyser, animationFrame });
+            } catch (error) {
+                console.error('[VoiceChannelView] Error setting up voice detection:', error);
+            }
+        });
+
+        return () => {
+            // Cleanup all analysers on unmount
+            analyserRefs.current.forEach(analyserData => {
+                cancelAnimationFrame(analyserData.animationFrame);
+                analyserData.context.close();
+            });
+            analyserRefs.current.clear();
+        };
+    }, [participants]);
 
     // Update video elements when streams change
     useEffect(() => {
@@ -176,7 +244,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     {/* User info overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
+                                            <div className={`w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden transition-all duration-200 ${speakingUsers.has(participant.user_id)
+                                                ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                                                : ''
+                                                }`}>
                                                 {participant.profile?.profile_image_url ? (
                                                     <img
                                                         src={participant.profile.profile_image_url}
@@ -264,7 +335,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     {/* User info overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center overflow-hidden">
+                                            <div className={`w-6 h-6 rounded-full bg-green-600 flex items-center justify-center overflow-hidden transition-all duration-200 ${speakingUsers.has(participant.user_id)
+                                                ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                                                : ''
+                                                }`}>
                                                 {participant.profile?.profile_image_url ? (
                                                     <img
                                                         src={participant.profile.profile_image_url}
@@ -353,7 +427,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                             {/* User info */}
                             <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
                                 <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
+                                    <div className={`w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden transition-all duration-200 ${participant && speakingUsers.has(participant.user_id)
+                                            ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                                            : ''
+                                        }`}>
                                         {participant?.profile?.profile_image_url ? (
                                             <img
                                                 src={participant.profile.profile_image_url}

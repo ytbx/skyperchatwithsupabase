@@ -46,6 +46,10 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
     participants: activeParticipants
   } = useVoiceChannel();
 
+  // Track speaking state for each participant
+  const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
+  const analyserRefs = useRef<Map<string, { context: AudioContext; analyser: AnalyserNode; animationFrame: number }>>(new Map());
+
   // Use ref to avoid stale closure in realtime subscription
   const voiceChannelsRef = useRef<Channel[]>([]);
 
@@ -66,6 +70,73 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
       }
     });
   }, [activeParticipants, user]);
+
+  // Voice activity detection for each participant
+  useEffect(() => {
+    // Clean up old analysers for participants who left
+    const currentUserIds = new Set(activeParticipants.map(p => p.user_id));
+    analyserRefs.current.forEach((analyserData, userId) => {
+      if (!currentUserIds.has(userId)) {
+        cancelAnimationFrame(analyserData.animationFrame);
+        analyserData.context.close();
+        analyserRefs.current.delete(userId);
+      }
+    });
+
+    // Set up analysers for each participant with a stream
+    activeParticipants.forEach(participant => {
+      if (!participant.stream || analyserRefs.current.has(participant.user_id)) return;
+
+      console.log('[ChannelList] Setting up voice detection for user:', participant.user_id, 'Has stream:', !!participant.stream);
+
+      try {
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(participant.stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        const detectVoice = () => {
+          analyser.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          const isSpeaking = average > 20; // Threshold for voice detection
+
+          setSpeakingUsers(prev => {
+            const newSet = new Set(prev);
+            if (isSpeaking) {
+              newSet.add(participant.user_id);
+            } else {
+              newSet.delete(participant.user_id);
+            }
+            return newSet;
+          });
+
+          const animationFrame = requestAnimationFrame(detectVoice);
+          const analyserData = analyserRefs.current.get(participant.user_id);
+          if (analyserData) {
+            analyserData.animationFrame = animationFrame;
+          }
+        };
+
+        const animationFrame = requestAnimationFrame(detectVoice);
+        analyserRefs.current.set(participant.user_id, { context: audioContext, analyser, animationFrame });
+        console.log('[ChannelList] ✓ Voice detection setup complete for:', participant.user_id);
+      } catch (error) {
+        console.error('[ChannelList] Error setting up voice detection:', error);
+      }
+    });
+
+    return () => {
+      // Cleanup all analysers on unmount
+      analyserRefs.current.forEach(analyserData => {
+        cancelAnimationFrame(analyserData.animationFrame);
+        analyserData.context.close();
+      });
+      analyserRefs.current.clear();
+    };
+  }, [activeParticipants]);
 
   useEffect(() => {
     if (!serverId) {
@@ -513,7 +584,10 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                       draggable={canMoveMembers}
                       onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
                     >
-                      <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
+                      <div className={`w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden transition-all duration-200 ${speakingUsers.has(participant.user_id)
+                          ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                          : ''
+                        }`}>
                         {participant.profile?.profile_image_url ? (
                           <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
                         ) : (

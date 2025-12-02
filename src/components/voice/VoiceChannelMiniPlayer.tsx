@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Mic, MicOff, Headphones, PhoneOff, Maximize2, Volume2 } from 'lucide-react';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 
@@ -16,6 +16,77 @@ export function VoiceChannelMiniPlayer({ onMaximize }: VoiceChannelMiniPlayerPro
         toggleDeafen,
         participants
     } = useVoiceChannel();
+
+    // Track speaking state for each participant
+    const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
+    const analyserRefs = useRef<Map<string, { context: AudioContext; analyser: AnalyserNode; animationFrame: number }>>(new Map());
+
+    // Voice activity detection for each participant
+    useEffect(() => {
+        // Clean up old analysers for participants who left
+        const currentUserIds = new Set(participants.map(p => p.user_id));
+        analyserRefs.current.forEach((analyserData, userId) => {
+            if (!currentUserIds.has(userId)) {
+                cancelAnimationFrame(analyserData.animationFrame);
+                analyserData.context.close();
+                analyserRefs.current.delete(userId);
+            }
+        });
+
+        // Set up analysers for each participant with a stream
+        participants.forEach(participant => {
+            if (!participant.stream || analyserRefs.current.has(participant.user_id)) return;
+
+            console.log('[VoiceChannelMiniPlayer] Setting up voice detection for user:', participant.user_id, 'Has stream:', !!participant.stream);
+
+            try {
+                const audioContext = new AudioContext();
+                const analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(participant.stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                const detectVoice = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    const isSpeaking = average > 20; // Threshold for voice detection
+
+                    setSpeakingUsers(prev => {
+                        const newSet = new Set(prev);
+                        if (isSpeaking) {
+                            newSet.add(participant.user_id);
+                        } else {
+                            newSet.delete(participant.user_id);
+                        }
+                        return newSet;
+                    });
+
+                    const animationFrame = requestAnimationFrame(detectVoice);
+                    const analyserData = analyserRefs.current.get(participant.user_id);
+                    if (analyserData) {
+                        analyserData.animationFrame = animationFrame;
+                    }
+                };
+
+                const animationFrame = requestAnimationFrame(detectVoice);
+                analyserRefs.current.set(participant.user_id, { context: audioContext, analyser, animationFrame });
+                console.log('[VoiceChannelMiniPlayer] ✓ Voice detection setup complete for:', participant.user_id);
+            } catch (error) {
+                console.error('[VoiceChannelMiniPlayer] Error setting up voice detection:', error);
+            }
+        });
+
+        return () => {
+            // Cleanup all analysers on unmount
+            analyserRefs.current.forEach(analyserData => {
+                cancelAnimationFrame(analyserData.animationFrame);
+                analyserData.context.close();
+            });
+            analyserRefs.current.clear();
+        };
+    }, [participants]);
 
     if (!activeChannelId) return null;
 
@@ -48,17 +119,26 @@ export function VoiceChannelMiniPlayer({ onMaximize }: VoiceChannelMiniPlayerPro
                         {participants.length} kişi bağlı
                     </div>
                     <div className="flex -space-x-2">
-                        {participants.slice(0, 3).map(p => (
-                            <div key={p.user_id} className="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-900 overflow-hidden">
-                                {p.profile?.profile_image_url ? (
-                                    <img src={p.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-[10px] text-white">
-                                        {p.profile?.username?.charAt(0).toUpperCase()}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                        {participants.slice(0, 3).map(p => {
+                            const isSpeaking = speakingUsers.has(p.user_id);
+                            return (
+                                <div
+                                    key={p.user_id}
+                                    className={`w-6 h-6 rounded-full bg-gray-700 overflow-hidden transition-all duration-200 ${isSpeaking
+                                        ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                                        : 'border-2 border-gray-900'
+                                        }`}
+                                >
+                                    {p.profile?.profile_image_url ? (
+                                        <img src={p.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-[10px] text-white">
+                                            {p.profile?.username?.charAt(0).toUpperCase()}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                         {participants.length > 3 && (
                             <div className="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-900 flex items-center justify-center text-[10px] text-gray-400">
                                 +{participants.length - 3}
