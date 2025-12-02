@@ -422,6 +422,7 @@ export const ActiveCallOverlay: React.FC = () => {
                     onScreenShareToggle={toggleScreenShare}
                     onEndCall={endCall}
                     showCamera={isVideoCall}
+                    showScreenShare={true}
                 />
             </div>
 

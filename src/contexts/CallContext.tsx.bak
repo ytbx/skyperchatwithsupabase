@@ -751,86 +751,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     table: 'direct_calls',
                     filter: `caller_id=eq.${user.id}`
                 },
-                async (payload) => {
+                (payload) => {
                     const call = payload.new as DirectCall;
-                    console.log('[CallContext] ========== CALL STATUS UPDATED (AS CALLER) ==========');
-                    console.log('[CallContext] New status:', call.status);
-                    console.log('[CallContext] Call ID:', call.id);
-                    console.log('[CallContext] Active call ID:', activeCall?.id);
+                    console.log('[CallContext] Call status updated (as caller):', call.status);
 
-                    // Handle call acceptance - caller needs to initiate WebRTC connection
-                    if (call.status === 'active' && activeCall?.id === call.id) {
-                        console.log('[CallContext] ✓ Call accepted by callee, initiating WebRTC connection...');
+                    // Handle call acceptance
+                    if (call.status === 'active') {
+                        console.log('[CallContext] Call accepted by callee');
                         setCallStatus('connecting');
                         setActiveCall(call);
-
-                        // Initialize signaling if not already done
-                        if (!signalingService) {
-                            console.log('[CallContext] Creating signaling service for caller');
-                            const signaling = new SignalingService(call.id, user.id, call.callee_id);
-                            setSignalingService(signaling);
-
-                            // Create peer connection
-                            webrtcManager.createPeerConnection(
-                                (remoteStream) => {
-                                    console.log('[CallContext] ✓ Remote stream received from callee');
-                                    setRemoteStream(new MediaStream(remoteStream.getTracks()));
-                                },
-                                async (candidate) => {
-                                    await signaling.sendICECandidate(candidate);
-                                },
-                                (state) => {
-                                    console.log('[CallContext] Connection state:', state);
-                                    setConnectionState(state);
-                                    if (state === 'connected') {
-                                        console.log('[CallContext] ✓ Setting callStatus to ACTIVE');
-                                        setCallStatus('active');
-                                    }
-                                },
-                                async () => {
-                                    console.log('[CallContext] Renegotiation needed');
-                                    const offer = await webrtcManager.createOffer();
-                                    await signaling.sendOffer(offer);
-                                },
-                                (screenStream) => {
-                                    console.log('[CallContext] ✓ Remote screen stream received');
-                                    setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
-                                    setIsRemoteScreenSharing(true);
-                                }
-                            );
-
-                            // Add local stream
-                            if (localStream) {
-                                console.log('[CallContext] Adding local stream to peer connection');
-                                webrtcManager.addLocalStream(localStream);
-                            }
-
-                            // Initialize signaling and create offer
-                            signaling.initialize(async (signal) => {
-                                if (signal.signal_type === 'answer') {
-                                    console.log('[CallContext] ✓ Received answer from callee');
-                                    await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
-                                } else if (signal.signal_type === 'ice-candidate') {
-                                    await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
-                                } else if (signal.signal_type === 'screen-share-started') {
-                                    console.log('[CallContext] Callee started screen sharing');
-                                    setIsRemoteScreenSharing(true);
-                                } else if (signal.signal_type === 'screen-share-stopped') {
-                                    console.log('[CallContext] Callee stopped screen sharing');
-                                    setIsRemoteScreenSharing(false);
-                                } else if (signal.signal_type === 'call-ended') {
-                                    console.log('[CallContext] Callee ended the call');
-                                    await endCall();
-                                }
-                            });
-
-                            // Create and send offer
-                            console.log('[CallContext] Creating offer...');
-                            const offer = await webrtcManager.createOffer();
-                            console.log('[CallContext] Sending offer to callee...');
-                            await signaling.sendOffer(offer);
-                            console.log('[CallContext] ✓ Offer sent successfully');
-                        }
                     }
                 }
             )
