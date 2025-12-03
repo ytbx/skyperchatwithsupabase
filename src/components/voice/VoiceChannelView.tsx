@@ -428,8 +428,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                             <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
                                 <div className="flex items-center gap-2">
                                     <div className={`w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden transition-all duration-200 ${participant && speakingUsers.has(participant.user_id)
-                                            ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
-                                            : ''
+                                        ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                                        : ''
                                         }`}>
                                         {participant?.profile?.profile_image_url ? (
                                             <img

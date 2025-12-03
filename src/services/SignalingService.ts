@@ -11,6 +11,8 @@ export class SignalingService {
     private peerId: string;
     private channel: any;
     private onSignalCallback?: (signal: CallSignal) => void;
+    private isInitialized: boolean = false;
+    private processedSignalIds: Set<string> = new Set();
 
     constructor(callId: string, userId: string, peerId: string) {
         this.callId = callId;
@@ -21,7 +23,12 @@ export class SignalingService {
     /**
      * Initialize Supabase Realtime channel for this call
      */
-    async initialize(onSignal: (signal: CallSignal) => void) {
+    async initialize(onSignal: (signal: CallSignal) => void): Promise<void> {
+        if (this.isInitialized) {
+            console.log('[SignalingService] Already initialized, skipping...');
+            return;
+        }
+
         this.onSignalCallback = onSignal;
 
         // If channel already exists, clean it up first to avoid duplicates
@@ -44,12 +51,17 @@ export class SignalingService {
         if (!fetchError && historicalSignals) {
             console.log('[SignalingService] Processing', historicalSignals.length, 'historical signals');
             for (const signal of historicalSignals) {
-                this.onSignalCallback?.(signal as CallSignal);
+                const signalId = (signal as any).id;
+                // Avoid processing duplicate signals
+                if (!this.processedSignalIds.has(signalId)) {
+                    this.processedSignalIds.add(signalId);
+                    await this.onSignalCallback?.(signal as CallSignal);
+                }
             }
         }
 
         // Create unique channel for this call
-        const channelName = `direct_call_${this.callId}`;
+        const channelName = `direct_call_${this.callId}_${Date.now()}`;
 
         this.channel = supabase.channel(channelName);
 
@@ -63,21 +75,40 @@ export class SignalingService {
                     table: 'webrtc_signals',
                     filter: `call_id=eq.${this.callId}`
                 },
-                (payload: any) => {
+                async (payload: any) => {
                     const signal = payload.new as CallSignal;
+                    const signalId = (signal as any).id;
 
-                    // Only process signals meant for us
-                    if (signal.to_user_id === this.userId && signal.from_user_id === this.peerId) {
+                    // Only process signals meant for us and not already processed
+                    if (signal.to_user_id === this.userId &&
+                        signal.from_user_id === this.peerId &&
+                        !this.processedSignalIds.has(signalId)) {
                         console.log('[SignalingService] Received realtime signal:', signal.signal_type);
-                        this.onSignalCallback?.(signal);
+                        this.processedSignalIds.add(signalId);
+                        await this.onSignalCallback?.(signal);
                     }
                 }
-            )
-            .subscribe((status: any) => {
-                console.log('[SignalingService] Channel status:', status);
-            });
+            );
 
-        return this.channel;
+        // Wait for channel to be subscribed before continuing
+        await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('[SignalingService] Channel subscription timeout'));
+            }, 10000); // 10 second timeout
+
+            this.channel.subscribe((status: string) => {
+                console.log('[SignalingService] Channel subscription status:', status);
+                if (status === 'SUBSCRIBED') {
+                    clearTimeout(timeout);
+                    this.isInitialized = true;
+                    console.log('[SignalingService] ✓ Channel successfully subscribed and ready');
+                    resolve();
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    clearTimeout(timeout);
+                    reject(new Error(`[SignalingService] Channel subscription failed with status: ${status}`));
+                }
+            });
+        });
     }
 
     /**
@@ -267,6 +298,9 @@ export class SignalingService {
      */
     async cleanup() {
         console.log('[SignalingService] Cleaning up');
+
+        this.isInitialized = false;
+        this.processedSignalIds.clear();
 
         if (this.channel) {
             await this.channel.unsubscribe();

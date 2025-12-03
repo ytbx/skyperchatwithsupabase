@@ -310,8 +310,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
             // Wait for offer before creating peer connection
             let peerConnectionCreated = false;
 
-            // Don't await - this is a callback-based subscription
-            signaling.initialize(async (signal) => {
+            // Initialize signaling for incoming signals
+            await signaling.initialize(async (signal) => {
                 try {
                     console.log('[CallContext] Received signal:', signal.signal_type);
 
@@ -524,8 +524,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         console.log('[CallContext] ✓ Call-ended signal sent successfully');
                     }
 
-                    // Wait a bit to ensure signal is delivered before cleanup
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    // Wait to ensure signal is delivered before cleanup (increased for Electron)
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (signalError) {
                     console.error('[CallContext] ✗ Error sending termination signal:', signalError);
                 }
@@ -608,8 +608,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 await signalingService.sendOffer(offer);
                 console.log('[CallContext] ✓ Offer sent successfully');
 
-                // Wait a bit for the offer/answer to complete
-                await new Promise(resolve => setTimeout(resolve, 500));
+                // Wait for the offer/answer to complete (increased for Electron)
+                await new Promise(resolve => setTimeout(resolve, 800));
 
                 console.log('[CallContext] Step 2: Sending screen-share-started signal...');
                 await signalingService.sendScreenShareStarted();
@@ -706,7 +706,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     table: 'direct_calls',
                     filter: `callee_id=eq.${user.id}`
                 },
-                (payload) => {
+                async (payload) => {
                     const call = payload.new as DirectCall;
                     console.log('[CallContext] Incoming call:', call);
 
@@ -726,7 +726,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         setSignalingService(signaling);
 
                         // Listen for call cancellation
-                        signaling.initialize(async (signal) => {
+                        await signaling.initialize(async (signal) => {
                             if (signal.signal_type === 'call-cancelled') {
                                 console.log('[CallContext] ========== RECEIVED CALL-CANCELLED SIGNAL (INCOMING) ==========');
                                 console.log('[CallContext] Caller cancelled the call before we answered');
@@ -805,8 +805,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 webrtcManager.addLocalStream(localStream);
                             }
 
-                            // Initialize signaling and create offer
-                            signaling.initialize(async (signal) => {
+                            // Initialize signaling and handle incoming signals
+                            await signaling.initialize(async (signal) => {
                                 if (signal.signal_type === 'answer') {
                                     console.log('[CallContext] ✓ Received answer from callee');
                                     await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
@@ -876,7 +876,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     table: 'direct_calls',
                     filter: `callee_id=eq.${user.id}`
                 },
-                (payload) => {
+                async (payload) => {
                     const call = payload.new as DirectCall;
                     console.log('[CallContext] Call status updated (as callee):', call.status, 'Call ID:', call.id, 'Active Call ID:', activeCall?.id);
 

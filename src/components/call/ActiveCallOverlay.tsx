@@ -458,10 +458,14 @@ export const ActiveCallOverlay: React.FC = () => {
                             <video
                                 ref={(el) => {
                                     if (el && stream) {
-                                        el.srcObject = stream;
+                                        // Only set srcObject if it's different to prevent flickering
+                                        if (el.srcObject !== stream) {
+                                            el.srcObject = stream;
+                                            el.muted = fullscreenVideoId === 'local-screen';
+                                            el.play().catch(e => console.error('Error playing video:', e));
+                                        }
+                                        // Always update volume
                                         el.volume = currentVolume;
-                                        el.muted = fullscreenVideoId === 'local-screen';
-                                        el.play().catch(e => console.error('Error playing video:', e));
                                     }
                                 }}
                                 autoPlay

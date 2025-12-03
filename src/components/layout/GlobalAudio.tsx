@@ -1,10 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { useCall } from '@/contexts/CallContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export const GlobalAudio: React.FC = () => {
     const { participants: voiceParticipants } = useVoiceChannel();
     const { remoteStream: callRemoteStream } = useCall();
+    const { user } = useAuth();
 
     // Refs to keep track of audio elements
     const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -21,8 +23,14 @@ export const GlobalAudio: React.FC = () => {
             }
         }
 
-        // Update/Create audio for participants
+        // Update/Create audio for participants (EXCEPT local user)
         voiceParticipants.forEach(participant => {
+            // CRITICAL FIX: Don't play your own audio stream
+            if (participant.user_id === user?.id) {
+                console.log(`[GlobalAudio] Skipping local user's audio to prevent echo`);
+                return;
+            }
+
             if (participant.stream) {
                 let audio = audioRefs.current.get(participant.user_id);
 
@@ -44,7 +52,7 @@ export const GlobalAudio: React.FC = () => {
         return () => {
             // We don't stop tracks here, just clear refs, as context manages streams
         };
-    }, [voiceParticipants]);
+    }, [voiceParticipants, user]);
 
     // Handle Direct Call Audio
     useEffect(() => {
