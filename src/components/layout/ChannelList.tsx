@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff } from 'lucide-react';
+import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff, Music2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember, PERMISSIONS, ServerRole, ChannelPermission } from '@/lib/types';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
+import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
 
 interface ChannelListProps {
   serverId: string | null;
@@ -28,6 +29,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ channels: Channel[], members: Profile[] }>({ channels: [], members: [] });
+  const [showSoundPanel, setShowSoundPanel] = useState(false);
 
   const { user, profile } = useAuth();
   const {
@@ -43,7 +45,8 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
     toggleDeafen,
     toggleScreenShare,
     toggleCamera,
-    participants: activeParticipants
+    participants: activeParticipants,
+    playSoundboardAudio
   } = useVoiceChannel();
 
   // Track speaking state for each participant
@@ -585,8 +588,8 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                       onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
                     >
                       <div className={`w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden transition-all duration-200 ${speakingUsers.has(participant.user_id)
-                          ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
-                          : ''
+                        ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                        : ''
                         }`}>
                         {participant.profile?.profile_image_url ? (
                           <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
@@ -688,12 +691,22 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
             >
               {isCameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
             </button>
-            <button
-              className="p-2 rounded-full hover:bg-gray-700 text-gray-300"
-              title="Ayarlar"
-            >
-              <Settings size={18} />
-            </button>
+            {/* Sound Panel Button - Shows for all users */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSoundPanel(!showSoundPanel)}
+                className={`p-2 rounded-full transition-colors ${showSoundPanel ? 'bg-purple-500/20 text-purple-400' : 'hover:bg-gray-700 text-gray-300'}`}
+                title="Ses Paneli"
+              >
+                <Music2 size={18} />
+              </button>
+              <SoundPanelPopup
+                isOpen={showSoundPanel}
+                onClose={() => setShowSoundPanel(false)}
+                anchorPosition="top"
+                onPlaySound={playSoundboardAudio}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -10,10 +10,34 @@ export interface DesktopCapturerSource {
     } | null;
 }
 
+export interface SoundboardSound {
+    id: string;
+    name: string;
+    filename: string;
+    createdAt: string;
+}
+
+export interface SoundboardSoundData extends SoundboardSound {
+    buffer: string; // base64 encoded
+}
+
+export interface SoundboardFilePickerResult {
+    name: string;
+    buffer: string; // base64 encoded
+    extension: string;
+}
+
 declare global {
     interface Window {
-        electron: {
+        electron?: {
             getDesktopSources: () => Promise<DesktopCapturerSource[]>;
+            soundboard: {
+                openFilePicker: () => Promise<SoundboardFilePickerResult | null>;
+                saveSound: (data: { name: string; buffer: string; extension: string }) => Promise<SoundboardSound>;
+                listSounds: () => Promise<SoundboardSound[]>;
+                deleteSound: (id: string) => Promise<boolean>;
+                getSoundData: (id: string) => Promise<SoundboardSoundData | null>;
+            };
         };
     }
 }

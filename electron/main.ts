@@ -1,7 +1,38 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
+
+// Soundboard storage directory
+const getSoundboardDir = () => {
+    const soundboardDir = path.join(app.getPath('userData'), 'soundboard');
+    if (!fs.existsSync(soundboardDir)) {
+        fs.mkdirSync(soundboardDir, { recursive: true });
+    }
+    return soundboardDir;
+};
+
+// Soundboard metadata file
+const getSoundboardMetaPath = () => path.join(getSoundboardDir(), 'sounds.json');
+
+// Load soundboard metadata
+const loadSoundboardMeta = (): Array<{ id: string; name: string; filename: string; createdAt: string }> => {
+    const metaPath = getSoundboardMetaPath();
+    if (fs.existsSync(metaPath)) {
+        try {
+            return JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+        } catch {
+            return [];
+        }
+    }
+    return [];
+};
+
+// Save soundboard metadata
+const saveSoundboardMeta = (meta: Array<{ id: string; name: string; filename: string; createdAt: string }>) => {
+    fs.writeFileSync(getSoundboardMetaPath(), JSON.stringify(meta, null, 2));
+};
 
 function createWindow() {
     const iconPath = isDev
@@ -24,6 +55,87 @@ function createWindow() {
     ipcMain.handle('get-desktop-sources', async () => {
         const sources = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 150, height: 150 } });
         return sources;
+    });
+
+    // Soundboard IPC handlers
+    ipcMain.handle('soundboard-open-file-dialog', async () => {
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: 'Ses Dosyası Seç',
+            filters: [
+                { name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg', 'webm', 'm4a'] }
+            ],
+            properties: ['openFile']
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+            return null;
+        }
+
+        const filePath = result.filePaths[0];
+        const buffer = fs.readFileSync(filePath);
+        const fileName = path.basename(filePath);
+
+        return {
+            name: path.parse(fileName).name,
+            buffer: buffer.toString('base64'),
+            extension: path.extname(fileName).slice(1)
+        };
+    });
+
+    ipcMain.handle('soundboard-save-sound', async (_event, { name, buffer, extension }: { name: string; buffer: string; extension: string }) => {
+        const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        const filename = `${id}.${extension}`;
+        const filePath = path.join(getSoundboardDir(), filename);
+
+        fs.writeFileSync(filePath, Buffer.from(buffer, 'base64'));
+
+        const meta = loadSoundboardMeta();
+        meta.push({
+            id,
+            name,
+            filename,
+            createdAt: new Date().toISOString()
+        });
+        saveSoundboardMeta(meta);
+
+        return { id, name, filename };
+    });
+
+    ipcMain.handle('soundboard-list-sounds', async () => {
+        return loadSoundboardMeta();
+    });
+
+    ipcMain.handle('soundboard-delete-sound', async (_event, id: string) => {
+        const meta = loadSoundboardMeta();
+        const sound = meta.find(s => s.id === id);
+
+        if (sound) {
+            const filePath = path.join(getSoundboardDir(), sound.filename);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            const newMeta = meta.filter(s => s.id !== id);
+            saveSoundboardMeta(newMeta);
+            return true;
+        }
+        return false;
+    });
+
+    ipcMain.handle('soundboard-get-sound-data', async (_event, id: string) => {
+        const meta = loadSoundboardMeta();
+        const sound = meta.find(s => s.id === id);
+
+        if (sound) {
+            const filePath = path.join(getSoundboardDir(), sound.filename);
+            if (fs.existsSync(filePath)) {
+                const buffer = fs.readFileSync(filePath);
+                return {
+                    ...sound,
+                    buffer: buffer.toString('base64')
+                };
+            }
+        }
+        return null;
     });
 
     if (isDev) {

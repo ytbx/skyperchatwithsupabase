@@ -1,5 +1,6 @@
-import React from 'react';
-import { Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, PhoneOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, PhoneOff, Music2 } from 'lucide-react';
+import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
 
 interface CallControlsProps {
     isMicMuted: boolean;
@@ -11,6 +12,8 @@ interface CallControlsProps {
     onEndCall: () => void;
     showCamera?: boolean;
     showScreenShare?: boolean;
+    onPlaySound?: (audioBuffer: AudioBuffer) => void;
+    audioContext?: AudioContext;
 }
 
 export const CallControls: React.FC<CallControlsProps> = ({
@@ -22,8 +25,12 @@ export const CallControls: React.FC<CallControlsProps> = ({
     onScreenShareToggle,
     onEndCall,
     showCamera = true,
-    showScreenShare = true
+    showScreenShare = true,
+    onPlaySound,
+    audioContext
 }) => {
+    const [showSoundPanel, setShowSoundPanel] = useState(false);
+
     return (
         <div className="flex items-center justify-center space-x-3 p-4 bg-gray-900/90 backdrop-blur-sm rounded-lg">
             {/* Microphone Toggle */}
@@ -77,6 +84,27 @@ export const CallControls: React.FC<CallControlsProps> = ({
                     )}
                 </button>
             )}
+
+            {/* Sound Panel Button - Shows for all users */}
+            <div className="relative">
+                <button
+                    onClick={() => setShowSoundPanel(!showSoundPanel)}
+                    className={`p-4 rounded-full transition-all ${showSoundPanel
+                        ? 'bg-purple-600 hover:bg-purple-700'
+                        : 'bg-gray-700 hover:bg-gray-600'
+                        }`}
+                    title="Ses Paneli"
+                >
+                    <Music2 size={20} className="text-white" />
+                </button>
+                <SoundPanelPopup
+                    isOpen={showSoundPanel}
+                    onClose={() => setShowSoundPanel(false)}
+                    anchorPosition="top"
+                    onPlaySound={onPlaySound}
+                    audioContext={audioContext}
+                />
+            </div>
 
             {/* End Call Button */}
             <button

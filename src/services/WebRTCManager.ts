@@ -78,31 +78,58 @@ export class WebRTCManager {
                 // Video track - could be camera or screen share
                 console.log('[WebRTCManager] Processing video track');
 
-                if (!this.remoteStream) {
-                    this.remoteStream = new MediaStream();
-                }
+                const track = event.track;
 
-                // Check if we already have a video track
-                const existingVideoTrack = this.remoteStream.getVideoTracks()[0];
-                if (existingVideoTrack) {
-                    console.log('[WebRTCManager] Removing existing video track');
-                    this.remoteStream.removeTrack(existingVideoTrack);
-                }
-                this.remoteStream.addTrack(event.track);
-                console.log('[WebRTCManager] ✓ Video track added to remote stream');
-                this.onRemoteStreamCallback?.(this.remoteStream);
+                // Wait for track to be ready if it's not yet
+                const waitForTrackReady = async () => {
+                    // If track is not live, wait for it
+                    if (track.readyState !== 'live') {
+                        console.log('[WebRTCManager] Track not live yet, waiting...');
+                        await new Promise<void>((resolve) => {
+                            const checkState = () => {
+                                if (track.readyState === 'live') {
+                                    resolve();
+                                } else {
+                                    setTimeout(checkState, 50);
+                                }
+                            };
+                            // Also resolve after timeout to prevent hanging
+                            setTimeout(resolve, 500);
+                            checkState();
+                        });
+                    }
 
-                // Also treat as screen share for compatibility with current UI logic
-                const screenStream = new MediaStream([event.track]);
-                console.log('[WebRTCManager] ✓ Calling onRemoteScreenCallback');
-                this.onRemoteScreenCallback?.(screenStream);
+                    if (!this.remoteStream) {
+                        this.remoteStream = new MediaStream();
+                    }
 
-                // Also treat as camera stream
-                const cameraStream = new MediaStream([event.track]);
-                console.log('[WebRTCManager] ✓ Calling onRemoteCameraCallback');
-                this.onRemoteCameraCallback?.(cameraStream);
+                    // Check if we already have a video track
+                    const existingVideoTrack = this.remoteStream.getVideoTracks()[0];
+                    if (existingVideoTrack) {
+                        console.log('[WebRTCManager] Removing existing video track');
+                        this.remoteStream.removeTrack(existingVideoTrack);
+                    }
+                    this.remoteStream.addTrack(track);
+                    console.log('[WebRTCManager] ✓ Video track added to remote stream');
+                    this.onRemoteStreamCallback?.(this.remoteStream);
 
-                console.log('[WebRTCManager] ========== VIDEO TRACK PROCESSING COMPLETE ==========');
+                    // Small delay to ensure track is fully initialized before callbacks
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
+                    // Also treat as screen share for compatibility with current UI logic
+                    const screenStream = new MediaStream([track]);
+                    console.log('[WebRTCManager] ✓ Calling onRemoteScreenCallback');
+                    this.onRemoteScreenCallback?.(screenStream);
+
+                    // Also treat as camera stream
+                    const cameraStream = new MediaStream([track]);
+                    console.log('[WebRTCManager] ✓ Calling onRemoteCameraCallback');
+                    this.onRemoteCameraCallback?.(cameraStream);
+
+                    console.log('[WebRTCManager] ========== VIDEO TRACK PROCESSING COMPLETE ==========');
+                };
+
+                waitForTrackReady();
             }
         };
 
@@ -201,9 +228,17 @@ export class WebRTCManager {
         }
 
         console.log('[WebRTCManager] Creating answer');
+        console.log('[WebRTCManager] Current signaling state:', this.peerConnection.signalingState);
+
+        // Warn if state is unexpected, but don't block - WebRTC might handle it
+        if (this.peerConnection.signalingState !== 'have-remote-offer') {
+            console.warn('[WebRTCManager] Creating answer in unexpected state:', this.peerConnection.signalingState);
+            console.warn('[WebRTCManager] Proceeding anyway - WebRTC may handle this gracefully');
+        }
 
         const answer = await this.peerConnection.createAnswer();
         await this.peerConnection.setLocalDescription(answer);
+        console.log('[WebRTCManager] Answer created and set as local description');
         return answer;
     }
 
@@ -218,10 +253,37 @@ export class WebRTCManager {
         }
 
         console.log('[WebRTCManager] Setting remote description:', description.type);
+        console.log('[WebRTCManager] Current signaling state:', this.peerConnection.signalingState);
+
+        // Validate signaling state before setting remote description
+        const currentState = this.peerConnection.signalingState;
+        const isOffer = description.type === 'offer';
+        const isAnswer = description.type === 'answer';
+
+        // Valid state transitions:
+        // - offer can be set in 'stable' or 'have-local-offer' (for renegotiation)
+        // - answer can be set in 'have-local-offer'
+        if (isOffer && currentState !== 'stable' && currentState !== 'have-local-offer') {
+            console.warn('[WebRTCManager] Invalid state for setting offer:', currentState);
+            console.warn('[WebRTCManager] Waiting for state to stabilize...');
+            // Wait a bit and retry
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (this.peerConnection.signalingState !== 'stable' && this.peerConnection.signalingState !== 'have-local-offer') {
+                console.error('[WebRTCManager] State did not stabilize, current state:', this.peerConnection.signalingState);
+                throw new Error(`Cannot set remote offer in state: ${this.peerConnection.signalingState}`);
+            }
+        }
+
+        if (isAnswer && currentState !== 'have-local-offer') {
+            console.warn('[WebRTCManager] Setting answer in unexpected state:', currentState);
+            console.warn('[WebRTCManager] Proceeding anyway - WebRTC may handle this gracefully');
+        }
 
         await this.peerConnection.setRemoteDescription(
             new RTCSessionDescription(description)
         );
+
+        console.log('[WebRTCManager] Remote description set successfully, new state:', this.peerConnection.signalingState);
 
         // Process pending candidates
         if (this.pendingCandidates.length > 0) {
@@ -416,6 +478,21 @@ export class WebRTCManager {
         const receivers = this.peerConnection.getReceivers();
         const videoReceiver = receivers.find(r => r.track.kind === 'video');
         return videoReceiver?.track;
+    }
+
+    /**
+     * Get peer connection signaling state
+     */
+    getSignalingState(): RTCSignalingState | null {
+        if (!this.peerConnection) return null;
+        return this.peerConnection.signalingState;
+    }
+
+    /**
+     * Get the peer connection for direct access (soundboard audio mixing)
+     */
+    getPeerConnection(): RTCPeerConnection | null {
+        return this.peerConnection;
     }
 
     /**

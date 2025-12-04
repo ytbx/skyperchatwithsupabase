@@ -33,6 +33,7 @@ interface VoiceChannelContextType {
     toggleDeafen: () => void;
     toggleScreenShare: () => Promise<void>;
     toggleCamera: () => Promise<void>;
+    playSoundboardAudio: (audioBuffer: AudioBuffer) => void;
 }
 
 const VoiceChannelContext = createContext<VoiceChannelContextType | undefined>(undefined);
@@ -58,6 +59,13 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const cameraStreamRef = useRef<MediaStream | null>(null);
 
     const activeChannelIdRef = useRef<number | null>(null);
+
+    // Soundboard audio mixing refs
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const mixedStreamDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+    const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const micGainRef = useRef<GainNode | null>(null);
+    const soundboardGainRef = useRef<GainNode | null>(null);
 
     useEffect(() => {
         activeChannelIdRef.current = activeChannelId;
@@ -88,23 +96,58 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
         console.log('[VoiceChannelContext] Leaving channel...');
 
-        // Stop local stream
+        // First, stop screen share if active (this will signal peers)
+        if (isScreenSharing && screenStreamRef.current) {
+            console.log('[VoiceChannelContext] Stopping screen share before leaving...');
+            screenStreamRef.current.getTracks().forEach(track => track.stop());
+            screenStreamRef.current = null;
+
+            // Notify peers about screen share stop
+            for (const [peerId, manager] of peerManagers.current.entries()) {
+                try {
+                    await manager.stopScreenShare();
+                    const offer = await manager.createOffer();
+                    await supabase.from('webrtc_signals').insert({
+                        channel_id: activeChannelIdRef.current,
+                        from_user_id: user.id,
+                        to_user_id: peerId,
+                        signal_type: 'offer',
+                        payload: offer
+                    });
+                } catch (e) {
+                    console.log('[VoiceChannelContext] Error stopping screen share for peer:', e);
+                }
+            }
+
+            if (activeChannelIdRef.current) {
+                await supabase
+                    .from('voice_channel_users')
+                    .update({ is_screen_sharing: false })
+                    .eq('channel_id', activeChannelIdRef.current)
+                    .eq('user_id', user.id);
+            }
+        }
+
+        // Then, stop camera if active
+        if (isCameraEnabled && cameraStreamRef.current) {
+            console.log('[VoiceChannelContext] Stopping camera before leaving...');
+            cameraStreamRef.current.getTracks().forEach(track => track.stop());
+            cameraStreamRef.current = null;
+
+            if (activeChannelIdRef.current) {
+                await supabase
+                    .from('voice_channel_users')
+                    .update({ is_video_enabled: false })
+                    .eq('channel_id', activeChannelIdRef.current)
+                    .eq('user_id', user.id);
+            }
+        }
+
+        // Stop local audio stream
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => track.stop());
             localStreamRef.current = null;
             setLocalStream(null);
-        }
-
-        // Stop screen share
-        if (screenStreamRef.current) {
-            screenStreamRef.current.getTracks().forEach(track => track.stop());
-            screenStreamRef.current = null;
-        }
-
-        // Stop camera
-        if (cameraStreamRef.current) {
-            cameraStreamRef.current.getTracks().forEach(track => track.stop());
-            cameraStreamRef.current = null;
         }
 
         cleanupPeerConnections();
@@ -122,7 +165,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         setIsScreenSharing(false);
         setIsCameraEnabled(false);
         // We keep mute/deafen state as user preference
-    }, [user, isConnected, cleanupPeerConnections]);
+    }, [user, isConnected, isScreenSharing, isCameraEnabled, cleanupPeerConnections]);
 
     // Join channel
     const joinChannel = useCallback(async (channelId: number) => {
@@ -658,6 +701,102 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [activeCall, activeChannelId, leaveChannel]);
 
+    // Play soundboard audio - plays locally and mixes with WebRTC stream
+    const playSoundboardAudio = useCallback((audioBuffer: AudioBuffer) => {
+        console.log('[VoiceChannelContext] Playing soundboard audio, duration:', audioBuffer.duration, 's');
+        console.log('[VoiceChannelContext] Connected:', isConnected, 'Peer count:', peerManagers.current.size);
+
+        // Create or get audio context
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+            audioContextRef.current = new AudioContext();
+        }
+        const ctx = audioContextRef.current;
+
+        // Resume context if suspended (browser autoplay policy)
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
+
+        // Play locally through speakers
+        const localSource = ctx.createBufferSource();
+        localSource.buffer = audioBuffer;
+        localSource.connect(ctx.destination);
+        localSource.start();
+
+        // Send through all peer connections
+        if (peerManagers.current.size > 0 && localStreamRef.current) {
+            console.log('[VoiceChannelContext] Sending soundboard to', peerManagers.current.size, 'peers');
+
+            const micTrack = localStreamRef.current.getAudioTracks()[0];
+            if (!micTrack) {
+                console.log('[VoiceChannelContext] No mic track available');
+                return;
+            }
+
+            // Create a mixed audio destination
+            const mixedDestination = ctx.createMediaStreamDestination();
+
+            // Add microphone to the mix
+            const micSource = ctx.createMediaStreamSource(new MediaStream([micTrack.clone()]));
+            const micGain = ctx.createGain();
+            micGain.gain.value = 1.0;
+            micSource.connect(micGain);
+            micGain.connect(mixedDestination);
+
+            // Add soundboard audio to the mix
+            const soundSource = ctx.createBufferSource();
+            soundSource.buffer = audioBuffer;
+            const soundGain = ctx.createGain();
+            soundGain.gain.value = 1.5; // Slightly boost soundboard volume
+            soundSource.connect(soundGain);
+            soundGain.connect(mixedDestination);
+            soundSource.start();
+
+            // Get the mixed track
+            const mixedTrack = mixedDestination.stream.getAudioTracks()[0];
+
+            // Replace track on all peer connections
+            peerManagers.current.forEach(async (manager, peerId) => {
+                try {
+                    const pc = (manager as any).peerConnection as RTCPeerConnection;
+                    if (!pc) {
+                        console.log('[VoiceChannelContext] No peer connection for', peerId);
+                        return;
+                    }
+
+                    const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+                    if (!audioSender) {
+                        console.log('[VoiceChannelContext] No audio sender for', peerId);
+                        return;
+                    }
+
+                    console.log('[VoiceChannelContext] Replacing track for peer:', peerId);
+                    await audioSender.replaceTrack(mixedTrack);
+
+                    // Restore original mic track after sound finishes
+                    setTimeout(async () => {
+                        try {
+                            if (localStreamRef.current) {
+                                const currentMicTrack = localStreamRef.current.getAudioTracks()[0];
+                                if (currentMicTrack && audioSender) {
+                                    console.log('[VoiceChannelContext] Restoring mic track for peer:', peerId);
+                                    await audioSender.replaceTrack(currentMicTrack);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('[VoiceChannelContext] Error restoring mic:', e);
+                        }
+                    }, (audioBuffer.duration * 1000) + 200);
+
+                } catch (e) {
+                    console.error('[VoiceChannelContext] Error sending soundboard to peer:', peerId, e);
+                }
+            });
+        } else {
+            console.log('[VoiceChannelContext] No peers or no local stream, playing locally only');
+        }
+    }, [isConnected]);
+
     const value: VoiceChannelContextType = {
         activeChannelId,
         participants,
@@ -671,7 +810,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         toggleMute: () => setIsMuted(!isMuted),
         toggleDeafen: () => setIsDeafened(!isDeafened),
         toggleScreenShare,
-        toggleCamera
+        toggleCamera,
+        playSoundboardAudio
     };
 
     return (

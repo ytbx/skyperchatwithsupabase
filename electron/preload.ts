@@ -3,6 +3,23 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electron', {
     getDesktopSources: async () => {
         return await ipcRenderer.invoke('get-desktop-sources')
+    },
+    soundboard: {
+        openFilePicker: async () => {
+            return await ipcRenderer.invoke('soundboard-open-file-dialog')
+        },
+        saveSound: async (data: { name: string; buffer: string; extension: string }) => {
+            return await ipcRenderer.invoke('soundboard-save-sound', data)
+        },
+        listSounds: async () => {
+            return await ipcRenderer.invoke('soundboard-list-sounds')
+        },
+        deleteSound: async (id: string) => {
+            return await ipcRenderer.invoke('soundboard-delete-sound', id)
+        },
+        getSoundData: async (id: string) => {
+            return await ipcRenderer.invoke('soundboard-get-sound-data', id)
+        }
     }
 })
 

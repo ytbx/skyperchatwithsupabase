@@ -30,6 +30,7 @@ interface CallContextType {
     toggleMic: () => void;
     toggleCamera: () => void;
     toggleScreenShare: () => Promise<void>;
+    playSoundboardAudio: (audioBuffer: AudioBuffer) => void;
 }
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
@@ -56,6 +57,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+    const lastProcessedOfferSdp = useRef<string | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const isProcessingOffer = useRef<boolean>(false);
+    const offerQueue = useRef<RTCSessionDescriptionInit[]>([]);
 
     // Initialize ringtone
     useEffect(() => {
@@ -183,40 +188,75 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     }
                 } else if (signal.signal_type === 'offer') {
                     // Handle renegotiation offer from peer (e.g., peer started screen sharing)
-                    console.log('[CallContext] Received renegotiation offer from peer');
-                    await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
-                    const answer = await webrtcManager.createAnswer();
-                    await signaling.sendAnswer(answer);
-                } else if (signal.signal_type === 'screen-share-started') {
-                    console.log('[CallContext] ========== PEER STARTED SCREEN SHARING ==========');
-                    setIsRemoteScreenSharing(true);
+                    const offer = signal.payload as RTCSessionDescriptionInit;
+                    const offerSdp = offer.sdp;
 
-                    // Get the remote video track from WebRTC
-                    const remoteVideoTrack = webrtcManager.getRemoteVideoTrack();
-                    if (remoteVideoTrack) {
-                        console.log('[CallContext] Found remote video track, creating screen stream');
-                        const screenStream = new MediaStream([remoteVideoTrack]);
-                        setRemoteScreenStream(screenStream);
-                        console.log('[CallContext] ✓ Remote screen stream set successfully');
-                    } else {
-                        console.warn('[CallContext] ⚠ No remote video track found for screen share');
-                        // Try to get from current remote stream as fallback
-                        const currentRemoteStream = webrtcManager.getRemoteStream();
-                        if (currentRemoteStream) {
-                            const videoTrack = currentRemoteStream.getVideoTracks()[0];
-                            if (videoTrack) {
-                                console.log('[CallContext] Using video track from remote stream');
-                                setRemoteScreenStream(new MediaStream([videoTrack]));
+                    // Deduplicate offers - ignore if we just processed this exact offer
+                    if (lastProcessedOfferSdp.current === offerSdp) {
+                        console.log('[CallContext] Ignoring duplicate offer (same SDP)');
+                        return;
+                    }
+
+                    console.log('[CallContext] Received renegotiation offer from peer');
+
+                    // If already processing an offer, queue this one
+                    if (isProcessingOffer.current) {
+                        console.log('[CallContext] Already processing an offer, queueing this one');
+                        offerQueue.current = [offer];
+                        return;
+                    }
+
+                    // Process this offer
+                    const processOffer = async (offerToProcess: RTCSessionDescriptionInit) => {
+                        isProcessingOffer.current = true;
+                        try {
+                            const signalingState = webrtcManager.getSignalingState();
+                            if (signalingState !== 'stable') {
+                                console.log('[CallContext] Waiting for stable state, current:', signalingState);
+                                await new Promise<void>((resolve) => {
+                                    const checkState = () => {
+                                        const state = webrtcManager.getSignalingState();
+                                        if (state === 'stable') {
+                                            resolve();
+                                        } else {
+                                            setTimeout(checkState, 50);
+                                        }
+                                    };
+                                    setTimeout(resolve, 2000);
+                                    checkState();
+                                });
+                            }
+
+                            const finalState = webrtcManager.getSignalingState();
+                            if (finalState !== 'stable') {
+                                console.warn('[CallContext] State not stable after waiting:', finalState);
+                                return;
+                            }
+
+                            lastProcessedOfferSdp.current = offerToProcess.sdp || null;
+                            await webrtcManager.setRemoteDescription(offerToProcess);
+                            const answer = await webrtcManager.createAnswer();
+                            await signaling.sendAnswer(answer);
+                        } catch (err) {
+                            console.error('[CallContext] Error processing offer:', err);
+                        } finally {
+                            isProcessingOffer.current = false;
+
+                            if (offerQueue.current.length > 0) {
+                                const nextOffer = offerQueue.current.shift()!;
+                                console.log('[CallContext] Processing queued offer');
+                                processOffer(nextOffer);
                             }
                         }
-                    }
+                    };
 
-                    // Also force update remote stream to ensure UI updates
-                    const currentRemoteStream = webrtcManager.getRemoteStream();
-                    if (currentRemoteStream) {
-                        console.log('[CallContext] Force updating remote stream for UI refresh');
-                        setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
-                    }
+                    await processOffer(offer);
+                } else if (signal.signal_type === 'screen-share-started') {
+                    console.log('[CallContext] ========== PEER STARTED SCREEN SHARING ==========');
+                    // Just set the flag - the video track will come through ontrack event
+                    // and will be handled by onRemoteScreenCallback
+                    setIsRemoteScreenSharing(true);
+                    console.log('[CallContext] ✓ Screen sharing flag set, waiting for video track via ontrack');
                 } else if (signal.signal_type === 'screen-share-stopped') {
                     console.log('[CallContext] Peer stopped screen sharing');
                     setIsRemoteScreenSharing(false);
@@ -367,42 +407,83 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         await signaling.sendAnswer(answer);
                     } else if (signal.signal_type === 'offer' && peerConnectionCreated) {
                         // Handle renegotiation offer (e.g., peer started screen sharing)
+                        const offer = signal.payload as RTCSessionDescriptionInit;
+                        const offerSdp = offer.sdp;
+
+                        // Deduplicate offers - ignore if we just processed this exact offer
+                        if (lastProcessedOfferSdp.current === offerSdp) {
+                            console.log('[CallContext] Ignoring duplicate renegotiation offer (same SDP)');
+                            return;
+                        }
+
                         console.log('[CallContext] Received renegotiation offer from peer');
-                        await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
-                        const answer = await webrtcManager.createAnswer();
-                        await signaling.sendAnswer(answer);
+
+                        // If already processing an offer, queue this one
+                        if (isProcessingOffer.current) {
+                            console.log('[CallContext] Already processing an offer, queueing this one');
+                            // Only keep the latest offer in queue (older ones are stale)
+                            offerQueue.current = [offer];
+                            return;
+                        }
+
+                        // Process this offer
+                        const processOffer = async (offerToProcess: RTCSessionDescriptionInit) => {
+                            isProcessingOffer.current = true;
+                            try {
+                                // Check if peer connection is in a valid state for renegotiation
+                                const signalingState = webrtcManager.getSignalingState();
+                                if (signalingState !== 'stable') {
+                                    console.log('[CallContext] Waiting for stable state, current:', signalingState);
+                                    // Wait for state to become stable
+                                    await new Promise<void>((resolve) => {
+                                        const checkState = () => {
+                                            const state = webrtcManager.getSignalingState();
+                                            if (state === 'stable') {
+                                                resolve();
+                                            } else {
+                                                setTimeout(checkState, 50);
+                                            }
+                                        };
+                                        // Timeout after 2 seconds
+                                        setTimeout(resolve, 2000);
+                                        checkState();
+                                    });
+                                }
+
+                                // Double check state is still stable
+                                const finalState = webrtcManager.getSignalingState();
+                                if (finalState !== 'stable') {
+                                    console.warn('[CallContext] State not stable after waiting:', finalState);
+                                    return;
+                                }
+
+                                lastProcessedOfferSdp.current = offerToProcess.sdp || null;
+                                await webrtcManager.setRemoteDescription(offerToProcess);
+                                const answer = await webrtcManager.createAnswer();
+                                await signaling.sendAnswer(answer);
+                            } catch (err) {
+                                console.error('[CallContext] Error processing offer:', err);
+                            } finally {
+                                isProcessingOffer.current = false;
+
+                                // Process next offer in queue if any
+                                if (offerQueue.current.length > 0) {
+                                    const nextOffer = offerQueue.current.shift()!;
+                                    console.log('[CallContext] Processing queued offer');
+                                    processOffer(nextOffer);
+                                }
+                            }
+                        };
+
+                        await processOffer(offer);
                     } else if (signal.signal_type === 'ice-candidate') {
                         await webrtcManager.addICECandidate(signal.payload as RTCIceCandidateInit);
                     } else if (signal.signal_type === 'screen-share-started') {
                         console.log('[CallContext] ========== PEER STARTED SCREEN SHARING (CALLEE) ==========');
+                        // Just set the flag - the video track will come through ontrack event
+                        // and will be handled by onRemoteScreenCallback
                         setIsRemoteScreenSharing(true);
-
-                        // Get the remote video track from WebRTC
-                        const remoteVideoTrack = webrtcManager.getRemoteVideoTrack();
-                        if (remoteVideoTrack) {
-                            console.log('[CallContext] Found remote video track, creating screen stream');
-                            const screenStream = new MediaStream([remoteVideoTrack]);
-                            setRemoteScreenStream(screenStream);
-                            console.log('[CallContext] ✓ Remote screen stream set successfully');
-                        } else {
-                            console.warn('[CallContext] ⚠ No remote video track found for screen share');
-                            // Try to get from current remote stream as fallback
-                            const currentRemoteStream = webrtcManager.getRemoteStream();
-                            if (currentRemoteStream) {
-                                const videoTrack = currentRemoteStream.getVideoTracks()[0];
-                                if (videoTrack) {
-                                    console.log('[CallContext] Using video track from remote stream');
-                                    setRemoteScreenStream(new MediaStream([videoTrack]));
-                                }
-                            }
-                        }
-
-                        // Also force update remote stream to ensure UI updates
-                        const currentRemoteStream = webrtcManager.getRemoteStream();
-                        if (currentRemoteStream) {
-                            console.log('[CallContext] Force updating remote stream for UI refresh');
-                            setRemoteStream(new MediaStream(currentRemoteStream.getTracks()));
-                        }
+                        console.log('[CallContext] ✓ Screen sharing flag set, waiting for video track via ontrack');
                     } else if (signal.signal_type === 'screen-share-stopped') {
                         console.log('[CallContext] Peer stopped screen sharing');
                         setIsRemoteScreenSharing(false);
@@ -590,6 +671,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
         try {
             console.log('[CallContext] ========== STARTING SCREEN SHARE ==========');
             console.log('[CallContext] Screen stream tracks:', stream.getTracks().map(t => `${t.kind}: ${t.label}`));
+            console.log('[CallContext] Current connection state:', connectionState);
+
+            // Ensure connection is stable before starting screen share
+            if (connectionState !== 'connected') {
+                console.log('[CallContext] Waiting for connection to stabilize...');
+                // Wait a bit for connection to stabilize
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
             await webrtcManager.startScreenShare(stream);
             setIsScreenSharing(true);
             setScreenStream(stream);
@@ -603,13 +693,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
             // THEN notify peer that screen sharing started
             if (signalingService) {
                 console.log('[CallContext] Step 1: Creating and sending renegotiation offer...');
+
+                // Create and send offer
                 const offer = await webrtcManager.createOffer();
                 console.log('[CallContext] Offer created:', offer.type);
                 await signalingService.sendOffer(offer);
                 console.log('[CallContext] ✓ Offer sent successfully');
 
-                // Wait for the offer/answer to complete (increased for Electron)
-                await new Promise(resolve => setTimeout(resolve, 800));
+                // Wait longer for the offer/answer exchange to complete
+                // First screen share needs more time for transceiver setup
+                console.log('[CallContext] Waiting for renegotiation to complete...');
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                // Check signaling state - if still negotiating, wait more
+                const signalingState = webrtcManager.getSignalingState();
+                console.log('[CallContext] Signaling state after wait:', signalingState);
+
+                if (signalingState === 'have-local-offer') {
+                    console.log('[CallContext] Still waiting for answer, waiting more...');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
 
                 console.log('[CallContext] Step 2: Sending screen-share-started signal...');
                 await signalingService.sendScreenShareStarted();
@@ -930,6 +1033,90 @@ export function CallProvider({ children }: { children: ReactNode }) {
         };
     }, [user?.id]); // Only re-subscribe when user changes, not on every state change
 
+    // Play soundboard audio - plays locally and mixes with WebRTC stream
+    const playSoundboardAudio = useCallback((audioBuffer: AudioBuffer) => {
+        console.log('[CallContext] Playing soundboard audio, duration:', audioBuffer.duration, 's');
+
+        // Create or get audio context
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+            audioContextRef.current = new AudioContext();
+        }
+        const ctx = audioContextRef.current;
+
+        // Resume context if suspended (browser autoplay policy)
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
+
+        // Play locally through speakers
+        const localSourceNode = ctx.createBufferSource();
+        localSourceNode.buffer = audioBuffer;
+        localSourceNode.connect(ctx.destination);
+        localSourceNode.start();
+
+        // Send through WebRTC peer connection
+        const pc = webrtcManager.getPeerConnection();
+        if (pc && localStream) {
+            console.log('[CallContext] Sending soundboard to peer via WebRTC');
+
+            const micTrack = localStream.getAudioTracks()[0];
+            if (!micTrack) {
+                console.log('[CallContext] No mic track available');
+                return;
+            }
+
+            // Create a mixed audio destination
+            const mixedDestination = ctx.createMediaStreamDestination();
+
+            // Add microphone to the mix
+            const micSource = ctx.createMediaStreamSource(new MediaStream([micTrack.clone()]));
+            const micGain = ctx.createGain();
+            micGain.gain.value = 1.0;
+            micSource.connect(micGain);
+            micGain.connect(mixedDestination);
+
+            // Add soundboard audio to the mix
+            const soundSource = ctx.createBufferSource();
+            soundSource.buffer = audioBuffer;
+            const soundGain = ctx.createGain();
+            soundGain.gain.value = 1.5; // Slightly boost soundboard volume
+            soundSource.connect(soundGain);
+            soundGain.connect(mixedDestination);
+            soundSource.start();
+
+            // Get the mixed track
+            const mixedTrack = mixedDestination.stream.getAudioTracks()[0];
+
+            // Find the audio sender and replace track
+            const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+            if (audioSender) {
+                console.log('[CallContext] Replacing audio track with mixed track');
+                audioSender.replaceTrack(mixedTrack).then(() => {
+                    // Restore original mic track after sound finishes
+                    setTimeout(async () => {
+                        try {
+                            if (localStream) {
+                                const currentMicTrack = localStream.getAudioTracks()[0];
+                                if (currentMicTrack && audioSender) {
+                                    console.log('[CallContext] Restoring mic track');
+                                    await audioSender.replaceTrack(currentMicTrack);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('[CallContext] Error restoring mic:', e);
+                        }
+                    }, (audioBuffer.duration * 1000) + 200);
+                }).catch(e => {
+                    console.error('[CallContext] Error replacing track:', e);
+                });
+            } else {
+                console.log('[CallContext] No audio sender found');
+            }
+        } else {
+            console.log('[CallContext] No peer connection or local stream, playing locally only');
+        }
+    }, [localStream, webrtcManager]);
+
     const value: CallContextType = {
         activeCall,
         callStatus,
@@ -948,7 +1135,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         endCall,
         toggleMic,
         toggleCamera,
-        toggleScreenShare
+        toggleScreenShare,
+        playSoundboardAudio
     };
 
     return (

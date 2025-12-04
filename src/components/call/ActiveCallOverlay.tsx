@@ -22,7 +22,8 @@ export const ActiveCallOverlay: React.FC = () => {
         endCall,
         activeCall,
         screenStream,
-        remoteScreenStream
+        remoteScreenStream,
+        playSoundboardAudio
     } = useCall();
 
     const [callDuration, setCallDuration] = useState(0);
@@ -150,26 +151,29 @@ export const ActiveCallOverlay: React.FC = () => {
         };
     }, [localStream, isMicMuted]);
 
-    // Debug: Log when remoteScreenStream changes
-    useEffect(() => {
-        console.log('[ActiveCallOverlay] ========== REMOTE SCREEN STREAM CHANGED ==========');
-        console.log('[ActiveCallOverlay] isRemoteScreenSharing:', isRemoteScreenSharing);
-        console.log('[ActiveCallOverlay] remoteScreenStream:', remoteScreenStream);
-        if (remoteScreenStream) {
-            console.log('[ActiveCallOverlay] Remote screen tracks:', remoteScreenStream.getTracks().map(t => `${t.kind}: ${t.label} (${t.readyState})`));
-        }
-    }, [remoteScreenStream, isRemoteScreenSharing]);
 
-    // Helper to set video stream
-    const setVideoStream = (el: HTMLVideoElement | null, stream: MediaStream | null, videoId?: string) => {
+    // Helper to set video stream - handles race conditions with play
+    const setVideoStream = async (el: HTMLVideoElement | null, stream: MediaStream | null, videoId?: string) => {
         if (el && stream) {
+            // Only update if stream changed
             if (el.srcObject !== stream) {
                 console.log('[ActiveCallOverlay] Setting stream to video element');
+                // Pause any existing playback first
+                el.pause();
                 el.srcObject = stream;
                 if (videoId) {
                     el.volume = volumes.get(videoId) ?? 1.0;
                 }
-                el.play().catch(e => console.error('Error playing video:', e));
+                // Wait a frame before playing
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                try {
+                    await el.play();
+                } catch (e: any) {
+                    // Ignore AbortError as it just means play was interrupted by another play
+                    if (e.name !== 'AbortError') {
+                        console.error('Error playing video:', e);
+                    }
+                }
             }
         }
     };
@@ -423,6 +427,7 @@ export const ActiveCallOverlay: React.FC = () => {
                     onEndCall={endCall}
                     showCamera={isVideoCall}
                     showScreenShare={true}
+                    onPlaySound={playSoundboardAudio}
                 />
             </div>
 
