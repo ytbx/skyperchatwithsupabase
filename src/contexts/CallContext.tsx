@@ -14,6 +14,7 @@ interface CallContextType {
     callStatus: CallStatus;
     localStream: MediaStream | null;
     remoteStream: MediaStream | null;
+    remoteSoundpadStream: MediaStream | null;  // NEW: Separate soundpad stream
     screenStream: MediaStream | null;
     remoteScreenStream: MediaStream | null;
     isMicMuted: boolean;
@@ -48,6 +49,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const [remoteSoundpadStream, setRemoteSoundpadStream] = useState<MediaStream | null>(null);  // NEW
     const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
     const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
     const [isMicMuted, setIsMicMuted] = useState(false);
@@ -61,6 +63,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const audioContextRef = useRef<AudioContext | null>(null);
     const isProcessingOffer = useRef<boolean>(false);
     const offerQueue = useRef<RTCSessionDescriptionInit[]>([]);
+
+    // Soundpad audio - SEPARATE TRACK for independent volume control
+    const soundpadDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+    const soundpadStreamRef = useRef<MediaStream | null>(null);
 
     // Initialize ringtone
     useEffect(() => {
@@ -119,14 +125,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setLocalStream(stream);
             setIsCameraOff(callType === 'voice');
 
+            // Create persistent soundpad stream for separate audio track
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new AudioContext();
+            }
+            const ctx = audioContextRef.current;
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+            soundpadDestinationRef.current = ctx.createMediaStreamDestination();
+            soundpadStreamRef.current = soundpadDestinationRef.current.stream;
+            console.log('[CallContext] Created separate soundpad stream');
+
             // Initialize signaling
             const signaling = new SignalingService(call.id, user.id, contactId);
             setSignalingService(signaling);
 
-            // Create peer connection
+            // Create peer connection with soundpad callback
             webrtcManager.createPeerConnection(
                 (remoteStream) => {
-                    console.log('[CallContext] Remote stream received');
+                    console.log('[CallContext] Remote VOICE stream received');
                     // Create a new MediaStream reference to ensure React re-renders
                     setRemoteStream(new MediaStream(remoteStream.getTracks()));
                 },
@@ -155,11 +173,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     console.log('[CallContext] Setting isRemoteScreenSharing to TRUE');
                     setIsRemoteScreenSharing(true);
                     console.log('[CallContext] ✓ Remote screen stream set successfully');
+                },
+                undefined,  // onRemoteCamera (not used in direct calls)
+                // NEW: Soundpad callback - separate stream
+                (soundpadStream) => {
+                    console.log('[CallContext] Remote SOUNDPAD stream received');
+                    setRemoteSoundpadStream(new MediaStream(soundpadStream.getTracks()));
                 }
             );
 
-            // Add local stream
+            // Add local stream (voice/mic) first
             webrtcManager.addLocalStream(stream);
+
+            // Add soundpad stream second (separate track)
+            if (soundpadStreamRef.current) {
+                console.log('[CallContext] Adding soundpad stream to peer connection');
+                webrtcManager.addSoundpadStream(soundpadStreamRef.current);
+            }
 
             // Queue for ICE candidates that arrive before answer
             const pendingIceCandidates: RTCIceCandidateInit[] = [];
@@ -337,6 +367,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setLocalStream(stream);
             setIsCameraOff(call.call_type === 'voice');
 
+            // Create persistent soundpad stream for separate audio track
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new AudioContext();
+            }
+            const ctx = audioContextRef.current;
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+            soundpadDestinationRef.current = ctx.createMediaStreamDestination();
+            soundpadStreamRef.current = soundpadDestinationRef.current.stream;
+            console.log('[CallContext] Created separate soundpad stream (callee)');
+
             // Use existing signaling service or create new one
             let signaling = signalingService;
             if (!signaling) {
@@ -360,10 +402,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         console.log('[CallContext] Creating peer connection for callee');
                         peerConnectionCreated = true;
 
-                        // Create peer connection
+                        // Create peer connection with soundpad callback
                         webrtcManager.createPeerConnection(
                             (remoteStream) => {
-                                console.log('[CallContext] Remote stream received');
+                                console.log('[CallContext] Remote VOICE stream received (callee)');
                                 // Create a new MediaStream reference to ensure React re-renders
                                 setRemoteStream(new MediaStream(remoteStream.getTracks()));
                             },
@@ -393,11 +435,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 console.log('[CallContext] Setting isRemoteScreenSharing to TRUE');
                                 setIsRemoteScreenSharing(true);
                                 console.log('[CallContext] ✓ Remote screen stream set successfully');
+                            },
+                            undefined,  // onRemoteCamera (not used in direct calls)
+                            // NEW: Soundpad callback - separate stream
+                            (soundpadStream) => {
+                                console.log('[CallContext] Remote SOUNDPAD stream received (callee)');
+                                setRemoteSoundpadStream(new MediaStream(soundpadStream.getTracks()));
                             }
                         );
 
-                        // Add local stream
+                        // Add local stream (voice/mic) first
                         webrtcManager.addLocalStream(stream);
+
+                        // Add soundpad stream second (separate track)
+                        if (soundpadStreamRef.current) {
+                            console.log('[CallContext] Adding soundpad stream to peer connection (callee)');
+                            webrtcManager.addSoundpadStream(soundpadStreamRef.current);
+                        }
 
                         // Set remote description (offer)
                         await webrtcManager.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
@@ -1034,6 +1088,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }, [user?.id]); // Only re-subscribe when user changes, not on every state change
 
     // Play soundboard audio - plays locally and mixes with WebRTC stream
+    // Play soundboard audio - plays locally AND to separate soundpad track
     const playSoundboardAudio = useCallback((audioBuffer: AudioBuffer) => {
         console.log('[CallContext] Playing soundboard audio, duration:', audioBuffer.duration, 's');
 
@@ -1054,74 +1109,35 @@ export function CallProvider({ children }: { children: ReactNode }) {
         localSourceNode.connect(ctx.destination);
         localSourceNode.start();
 
-        // Send through WebRTC peer connection
-        const pc = webrtcManager.getPeerConnection();
-        if (pc && localStream) {
-            console.log('[CallContext] Sending soundboard to peer via WebRTC');
+        // Send to soundpad destination (separate track)
+        if (soundpadDestinationRef.current) {
+            console.log('[CallContext] Sending soundboard to SEPARATE soundpad track');
 
-            const micTrack = localStream.getAudioTracks()[0];
-            if (!micTrack) {
-                console.log('[CallContext] No mic track available');
-                return;
-            }
+            // Create buffer source for WebRTC transmission
+            const remoteSource = ctx.createBufferSource();
+            remoteSource.buffer = audioBuffer;
 
-            // Create a mixed audio destination
-            const mixedDestination = ctx.createMediaStreamDestination();
-
-            // Add microphone to the mix
-            const micSource = ctx.createMediaStreamSource(new MediaStream([micTrack.clone()]));
-            const micGain = ctx.createGain();
-            micGain.gain.value = 1.0;
-            micSource.connect(micGain);
-            micGain.connect(mixedDestination);
-
-            // Add soundboard audio to the mix
-            const soundSource = ctx.createBufferSource();
-            soundSource.buffer = audioBuffer;
+            // Create gain node for volume boost
             const soundGain = ctx.createGain();
             soundGain.gain.value = 1.5; // Slightly boost soundboard volume
-            soundSource.connect(soundGain);
-            soundGain.connect(mixedDestination);
-            soundSource.start();
 
-            // Get the mixed track
-            const mixedTrack = mixedDestination.stream.getAudioTracks()[0];
+            // Connect: source -> gain -> soundpad destination
+            remoteSource.connect(soundGain);
+            soundGain.connect(soundpadDestinationRef.current);
+            remoteSource.start();
 
-            // Find the audio sender and replace track
-            const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
-            if (audioSender) {
-                console.log('[CallContext] Replacing audio track with mixed track');
-                audioSender.replaceTrack(mixedTrack).then(() => {
-                    // Restore original mic track after sound finishes
-                    setTimeout(async () => {
-                        try {
-                            if (localStream) {
-                                const currentMicTrack = localStream.getAudioTracks()[0];
-                                if (currentMicTrack && audioSender) {
-                                    console.log('[CallContext] Restoring mic track');
-                                    await audioSender.replaceTrack(currentMicTrack);
-                                }
-                            }
-                        } catch (e) {
-                            console.error('[CallContext] Error restoring mic:', e);
-                        }
-                    }, (audioBuffer.duration * 1000) + 200);
-                }).catch(e => {
-                    console.error('[CallContext] Error replacing track:', e);
-                });
-            } else {
-                console.log('[CallContext] No audio sender found');
-            }
+            console.log('[CallContext] ✓ Soundboard audio routed to soundpad track');
         } else {
-            console.log('[CallContext] No peer connection or local stream, playing locally only');
+            console.log('[CallContext] No soundpad destination, playing locally only');
         }
-    }, [localStream, webrtcManager]);
+    }, []);
 
     const value: CallContextType = {
         activeCall,
         callStatus,
         localStream,
         remoteStream,
+        remoteSoundpadStream,  // NEW
         screenStream,
         remoteScreenStream,
         isMicMuted,

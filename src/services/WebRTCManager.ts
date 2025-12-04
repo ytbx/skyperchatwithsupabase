@@ -6,8 +6,10 @@ export class WebRTCManager {
     private peerConnection: RTCPeerConnection | null = null;
     private localStream: MediaStream | null = null;
     private remoteStream: MediaStream | null = null;
+    private remoteSoundpadStream: MediaStream | null = null;  // Separate soundpad stream
     private screenStream: MediaStream | null = null;
     private screenAudioSender: RTCRtpSender | null = null;
+    private audioTrackCount: number = 0;  // Track how many audio tracks we've received
 
     // ICE servers configuration (using free STUN servers)
     private iceServers: RTCConfiguration = {
@@ -20,6 +22,7 @@ export class WebRTCManager {
 
     // Callbacks
     private onRemoteStreamCallback?: (stream: MediaStream) => void;
+    private onRemoteSoundpadCallback?: (stream: MediaStream) => void;  // NEW: Soundpad callback
     private onRemoteScreenCallback?: (stream: MediaStream) => void;
     private onRemoteCameraCallback?: (stream: MediaStream) => void;
     private onICECandidateCallback?: (candidate: RTCIceCandidateInit) => void;
@@ -35,16 +38,19 @@ export class WebRTCManager {
         onConnectionStateChange?: (state: RTCPeerConnectionState) => void,
         onNegotiationNeeded?: () => void,
         onRemoteScreen?: (stream: MediaStream) => void,
-        onRemoteCamera?: (stream: MediaStream) => void
+        onRemoteCamera?: (stream: MediaStream) => void,
+        onRemoteSoundpad?: (stream: MediaStream) => void  // NEW: Soundpad callback
     ) {
         console.log('[WebRTCManager] Creating peer connection');
 
         this.onRemoteStreamCallback = onRemoteStream;
+        this.onRemoteSoundpadCallback = onRemoteSoundpad;  // NEW
         this.onRemoteScreenCallback = onRemoteScreen;
         this.onRemoteCameraCallback = onRemoteCamera;
         this.onICECandidateCallback = onICECandidate;
         this.onConnectionStateChangeCallback = onConnectionStateChange;
         this.onNegotiationNeededCallback = onNegotiationNeeded;
+        this.audioTrackCount = 0;  // Reset track count
 
         this.peerConnection = new RTCPeerConnection(this.iceServers);
 
@@ -66,14 +72,36 @@ export class WebRTCManager {
             console.log('[WebRTCManager] Track readyState:', event.track.readyState);
 
             if (event.track.kind === 'audio') {
-                // Audio track - for voice
-                console.log('[WebRTCManager] Processing audio track');
-                if (!this.remoteStream) {
-                    this.remoteStream = new MediaStream();
+                // Audio track - differentiate between voice and soundpad
+                this.audioTrackCount++;
+                console.log('[WebRTCManager] Processing audio track #', this.audioTrackCount);
+
+                if (this.audioTrackCount === 1) {
+                    // First audio track is VOICE (microphone)
+                    console.log('[WebRTCManager] This is VOICE track');
+                    if (!this.remoteStream) {
+                        this.remoteStream = new MediaStream();
+                    }
+                    this.remoteStream.addTrack(event.track);
+                    this.onRemoteStreamCallback?.(this.remoteStream);
+                    console.log('[WebRTCManager] ✓ Voice audio track added to remote stream');
+                } else if (this.audioTrackCount === 2) {
+                    // Second audio track is SOUNDPAD
+                    console.log('[WebRTCManager] This is SOUNDPAD track');
+                    if (!this.remoteSoundpadStream) {
+                        this.remoteSoundpadStream = new MediaStream();
+                    }
+                    this.remoteSoundpadStream.addTrack(event.track);
+                    this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
+                    console.log('[WebRTCManager] ✓ Soundpad audio track added to separate stream');
+                } else {
+                    // Additional audio tracks (screen share audio, etc.) - add to voice stream
+                    console.log('[WebRTCManager] Additional audio track, adding to voice stream');
+                    if (this.remoteStream) {
+                        this.remoteStream.addTrack(event.track);
+                        this.onRemoteStreamCallback?.(this.remoteStream);
+                    }
                 }
-                this.remoteStream.addTrack(event.track);
-                this.onRemoteStreamCallback?.(this.remoteStream);
-                console.log('[WebRTCManager] ✓ Audio track added to remote stream');
             } else if (event.track.kind === 'video') {
                 // Video track - could be camera or screen share
                 console.log('[WebRTCManager] Processing video track');
@@ -196,6 +224,22 @@ export class WebRTCManager {
         console.log('[WebRTCManager] Adding local stream to peer connection');
 
         stream.getTracks().forEach(track => {
+            this.peerConnection?.addTrack(track, stream);
+        });
+    }
+
+    /**
+     * Add soundpad stream to peer connection (separate track)
+     */
+    addSoundpadStream(stream: MediaStream) {
+        if (!this.peerConnection) {
+            console.warn('[WebRTCManager] Cannot add soundpad stream - peer connection not initialized');
+            return;
+        }
+
+        console.log('[WebRTCManager] Adding soundpad stream to peer connection');
+
+        stream.getAudioTracks().forEach(track => {
             this.peerConnection?.addTrack(track, stream);
         });
     }

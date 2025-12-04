@@ -39,5 +39,9 @@ declare global {
                 getSoundData: (id: string) => Promise<SoundboardSoundData | null>;
             };
         };
+        electronUpdater?: {
+            onProgress: (callback: (percent: number, status?: string) => void) => void;
+            onStatus: (callback: (status: string) => void) => void;
+        };
     }
 }

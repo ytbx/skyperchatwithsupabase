@@ -14,7 +14,8 @@ interface VoiceParticipant {
     is_video_enabled: boolean;
     is_screen_sharing: boolean;
     peerConnection?: RTCPeerConnection;
-    stream?: MediaStream;
+    stream?: MediaStream;           // Voice/mic stream
+    soundpadStream?: MediaStream;   // Separate soundpad stream
     screenStream?: MediaStream;
     cameraStream?: MediaStream;
 }
@@ -60,12 +61,10 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     const activeChannelIdRef = useRef<number | null>(null);
 
-    // Soundboard audio mixing refs
+    // Soundboard audio - SEPARATE TRACK for independent volume control
     const audioContextRef = useRef<AudioContext | null>(null);
-    const mixedStreamDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-    const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-    const micGainRef = useRef<GainNode | null>(null);
-    const soundboardGainRef = useRef<GainNode | null>(null);
+    const soundpadDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+    const soundpadStreamRef = useRef<MediaStream | null>(null);  // Persistent soundpad stream
 
     useEffect(() => {
         activeChannelIdRef.current = activeChannelId;
@@ -195,7 +194,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         try {
             setActiveChannelId(channelId);
 
-            // 2. Get local media
+            // 2. Get local media (microphone)
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             setLocalStream(stream);
             localStreamRef.current = stream;
@@ -204,6 +203,20 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             stream.getAudioTracks().forEach(track => {
                 track.enabled = !isMuted;
             });
+
+            // 3. Create persistent soundpad stream for separate audio track
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new AudioContext();
+            }
+            const ctx = audioContextRef.current;
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+
+            // Create a persistent destination for soundpad audio
+            soundpadDestinationRef.current = ctx.createMediaStreamDestination();
+            soundpadStreamRef.current = soundpadDestinationRef.current.stream;
+            console.log('[VoiceChannelContext] Created separate soundpad stream');
 
             // 3. Add user to voice_channel_users
             const { error } = await supabase
@@ -246,9 +259,10 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         const manager = new WebRTCManager();
         peerManagers.current.set(peerId, manager);
 
-        // Setup peer connection
+        // Setup peer connection with soundpad callback
         manager.createPeerConnection(
             (remoteStream) => {
+                console.log('[VoiceChannelContext] Received VOICE stream from', peerId);
                 setParticipants(prev => prev.map(p =>
                     p.user_id === peerId ? { ...p, stream: remoteStream } : p
                 ));
@@ -278,11 +292,25 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 setParticipants(prev => prev.map(p =>
                     p.user_id === peerId ? { ...p, cameraStream: cameraStream } : p
                 ));
+            },
+            // NEW: Soundpad callback - separate stream
+            (soundpadStream) => {
+                console.log('[VoiceChannelContext] Received SOUNDPAD stream from', peerId);
+                setParticipants(prev => prev.map(p =>
+                    p.user_id === peerId ? { ...p, soundpadStream: soundpadStream } : p
+                ));
             }
         );
 
+        // Add voice (mic) stream first
         if (localStreamRef.current) {
             manager.addLocalStream(localStreamRef.current);
+        }
+
+        // Add soundpad stream second (separate track)
+        if (soundpadStreamRef.current) {
+            console.log('[VoiceChannelContext] Adding soundpad stream to peer:', peerId);
+            manager.addSoundpadStream(soundpadStreamRef.current);
         }
 
         // If already screen sharing, add screen share to this new peer
@@ -330,6 +358,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
             manager.createPeerConnection(
                 (remoteStream) => {
+                    console.log('[VoiceChannelContext] Received VOICE stream from', from_user_id);
                     setParticipants(prev => prev.map(p =>
                         p.user_id === from_user_id ? { ...p, stream: remoteStream } : p
                     ));
@@ -350,11 +379,25 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     setParticipants(prev => prev.map(p =>
                         p.user_id === from_user_id ? { ...p, cameraStream: cameraStream } : p
                     ));
+                },
+                // NEW: Soundpad callback
+                (soundpadStream) => {
+                    console.log('[VoiceChannelContext] Received SOUNDPAD stream from', from_user_id);
+                    setParticipants(prev => prev.map(p =>
+                        p.user_id === from_user_id ? { ...p, soundpadStream: soundpadStream } : p
+                    ));
                 }
             );
 
+            // Add voice (mic) stream first
             if (localStreamRef.current) {
                 manager.addLocalStream(localStreamRef.current);
+            }
+
+            // Add soundpad stream second (separate track)
+            if (soundpadStreamRef.current) {
+                console.log('[VoiceChannelContext] Adding soundpad stream to peer from signal:', from_user_id);
+                manager.addSoundpadStream(soundpadStreamRef.current);
             }
 
             if (screenStreamRef.current) {
@@ -701,7 +744,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [activeCall, activeChannelId, leaveChannel]);
 
-    // Play soundboard audio - plays locally and mixes with WebRTC stream
+    // Play soundboard audio - plays locally AND to separate soundpad track
     const playSoundboardAudio = useCallback((audioBuffer: AudioBuffer) => {
         console.log('[VoiceChannelContext] Playing soundboard audio, duration:', audioBuffer.duration, 's');
         console.log('[VoiceChannelContext] Connected:', isConnected, 'Peer count:', peerManagers.current.size);
@@ -723,77 +766,26 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         localSource.connect(ctx.destination);
         localSource.start();
 
-        // Send through all peer connections
-        if (peerManagers.current.size > 0 && localStreamRef.current) {
-            console.log('[VoiceChannelContext] Sending soundboard to', peerManagers.current.size, 'peers');
+        // Send to soundpad destination (separate track)
+        if (soundpadDestinationRef.current) {
+            console.log('[VoiceChannelContext] Sending soundboard to SEPARATE soundpad track');
 
-            const micTrack = localStreamRef.current.getAudioTracks()[0];
-            if (!micTrack) {
-                console.log('[VoiceChannelContext] No mic track available');
-                return;
-            }
+            // Create buffer source for WebRTC transmission
+            const remoteSource = ctx.createBufferSource();
+            remoteSource.buffer = audioBuffer;
 
-            // Create a mixed audio destination
-            const mixedDestination = ctx.createMediaStreamDestination();
-
-            // Add microphone to the mix
-            const micSource = ctx.createMediaStreamSource(new MediaStream([micTrack.clone()]));
-            const micGain = ctx.createGain();
-            micGain.gain.value = 1.0;
-            micSource.connect(micGain);
-            micGain.connect(mixedDestination);
-
-            // Add soundboard audio to the mix
-            const soundSource = ctx.createBufferSource();
-            soundSource.buffer = audioBuffer;
+            // Create gain node for volume boost
             const soundGain = ctx.createGain();
             soundGain.gain.value = 1.5; // Slightly boost soundboard volume
-            soundSource.connect(soundGain);
-            soundGain.connect(mixedDestination);
-            soundSource.start();
 
-            // Get the mixed track
-            const mixedTrack = mixedDestination.stream.getAudioTracks()[0];
+            // Connect: source -> gain -> soundpad destination
+            remoteSource.connect(soundGain);
+            soundGain.connect(soundpadDestinationRef.current);
+            remoteSource.start();
 
-            // Replace track on all peer connections
-            peerManagers.current.forEach(async (manager, peerId) => {
-                try {
-                    const pc = (manager as any).peerConnection as RTCPeerConnection;
-                    if (!pc) {
-                        console.log('[VoiceChannelContext] No peer connection for', peerId);
-                        return;
-                    }
-
-                    const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
-                    if (!audioSender) {
-                        console.log('[VoiceChannelContext] No audio sender for', peerId);
-                        return;
-                    }
-
-                    console.log('[VoiceChannelContext] Replacing track for peer:', peerId);
-                    await audioSender.replaceTrack(mixedTrack);
-
-                    // Restore original mic track after sound finishes
-                    setTimeout(async () => {
-                        try {
-                            if (localStreamRef.current) {
-                                const currentMicTrack = localStreamRef.current.getAudioTracks()[0];
-                                if (currentMicTrack && audioSender) {
-                                    console.log('[VoiceChannelContext] Restoring mic track for peer:', peerId);
-                                    await audioSender.replaceTrack(currentMicTrack);
-                                }
-                            }
-                        } catch (e) {
-                            console.error('[VoiceChannelContext] Error restoring mic:', e);
-                        }
-                    }, (audioBuffer.duration * 1000) + 200);
-
-                } catch (e) {
-                    console.error('[VoiceChannelContext] Error sending soundboard to peer:', peerId, e);
-                }
-            });
+            console.log('[VoiceChannelContext] ✓ Soundboard audio routed to soundpad track');
         } else {
-            console.log('[VoiceChannelContext] No peers or no local stream, playing locally only');
+            console.log('[VoiceChannelContext] No soundpad destination, playing locally only');
         }
     }, [isConnected]);
 

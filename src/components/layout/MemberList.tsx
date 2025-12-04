@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSupabaseRealtime } from '@/contexts/SupabaseRealtimeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Profile, PERMISSIONS } from '@/lib/types';
 import { Crown, User } from 'lucide-react';
 import { UserContextMenu } from '../server/UserContextMenu';
@@ -12,11 +13,12 @@ interface MemberListProps {
 }
 
 export function MemberList({ serverId }: MemberListProps) {
+  const { user } = useAuth();
   const [members, setMembers] = useState<Profile[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [currentUserPermissions, setCurrentUserPermissions] = useState<bigint>(0n);
   const [isCurrentUserOwner, setIsCurrentUserOwner] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; memberId: string; memberName: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; memberId: string; memberName: string; profileImage?: string; isSelf: boolean } | null>(null);
   const { isUserOnline } = useSupabaseRealtime();
 
   useEffect(() => {
@@ -122,7 +124,9 @@ export function MemberList({ serverId }: MemberListProps) {
       x: e.clientX,
       y: e.clientY,
       memberId: member.id,
-      memberName: member.username || 'Kullanıcı'
+      memberName: member.username || 'Kullanıcı',
+      profileImage: member.profile_image_url || undefined,
+      isSelf: member.id === user?.id
     });
   };
 
@@ -362,8 +366,10 @@ export function MemberList({ serverId }: MemberListProps) {
           y={contextMenu.y}
           targetMemberId={contextMenu.memberId}
           targetMemberName={contextMenu.memberName}
+          targetMemberProfileImage={contextMenu.profileImage}
           currentUserPermissions={currentUserPermissions}
           isOwner={isCurrentUserOwner}
+          isSelf={contextMenu.isSelf}
           onClose={() => setContextMenu(null)}
           onKick={handleKick}
           onBan={handleBan}

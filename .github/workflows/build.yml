@@ -2,6 +2,8 @@ name: Build/Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -14,6 +16,8 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Node.js, NPM and Yarn
         uses: actions/setup-node@v3
@@ -27,6 +31,23 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
+
+      - name: Auto increment version
+        if: startsWith(github.ref, 'refs/heads/')
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          $packageJson = Get-Content package.json | ConvertFrom-Json
+          $version = $packageJson.version
+          $parts = $version.Split('.')
+          $parts[2] = [int]$parts[2] + 1
+          $newVersion = $parts -join '.'
+          $packageJson.version = $newVersion
+          $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
+          git add package.json
+          git commit -m "chore: bump version to $newVersion [skip ci]"
+          git push
+          echo "NEW_VERSION=$newVersion" >> $env:GITHUB_ENV
 
       - name: Build & Release
         env:

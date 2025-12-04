@@ -4,6 +4,9 @@ import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
 
+let mainWindow: BrowserWindow | null = null;
+let updateWindow: BrowserWindow | null = null;
+
 // Soundboard storage directory
 const getSoundboardDir = () => {
     const soundboardDir = path.join(app.getPath('userData'), 'soundboard');
@@ -34,12 +37,52 @@ const saveSoundboardMeta = (meta: Array<{ id: string; name: string; filename: st
     fs.writeFileSync(getSoundboardMetaPath(), JSON.stringify(meta, null, 2));
 };
 
+// Create update window
+function createUpdateWindow() {
+    updateWindow = new BrowserWindow({
+        width: 400,
+        height: 300,
+        frame: false,
+        resizable: false,
+        transparent: true,
+        alwaysOnTop: true,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true,
+        },
+    });
+
+    if (isDev) {
+        updateWindow.loadFile(path.join(__dirname, '..', 'public', 'update.html'));
+    } else {
+        updateWindow.loadFile(path.join(__dirname, '..', 'dist', 'update.html'));
+    }
+
+    updateWindow.on('closed', () => {
+        updateWindow = null;
+    });
+}
+
+// Send update progress to update window
+function sendUpdateStatus(status: string) {
+    if (updateWindow && !updateWindow.isDestroyed()) {
+        updateWindow.webContents.send('update-status', status);
+    }
+}
+
+function sendUpdateProgress(percent: number) {
+    if (updateWindow && !updateWindow.isDestroyed()) {
+        updateWindow.webContents.send('update-progress', percent);
+    }
+}
+
 function createWindow() {
     const iconPath = isDev
         ? path.join(__dirname, '..', 'public', 'icon.png')
         : path.join(__dirname, '..', 'dist', 'icon.png');
 
-    const mainWindow = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
         icon: iconPath,
@@ -59,7 +102,7 @@ function createWindow() {
 
     // Soundboard IPC handlers
     ipcMain.handle('soundboard-open-file-dialog', async () => {
-        const result = await dialog.showOpenDialog(mainWindow, {
+        const result = await dialog.showOpenDialog(mainWindow!, {
             title: 'Ses Dosyası Seç',
             filters: [
                 { name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg', 'webm', 'm4a'] }
@@ -146,18 +189,23 @@ function createWindow() {
         mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
     }
 
-    // Auto-update logic
-    if (!isDev) {
-        try {
-            autoUpdater.checkForUpdatesAndNotify();
-        } catch (e) {
-            console.error('Failed to check for updates:', e);
-        }
-    }
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
 }
 
 app.whenReady().then(() => {
-    createWindow();
+    // Check for updates first in production
+    if (!isDev) {
+        try {
+            autoUpdater.checkForUpdates();
+        } catch (e) {
+            console.error('Failed to check for updates:', e);
+            createWindow();
+        }
+    } else {
+        createWindow();
+    }
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -179,14 +227,33 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', (info: any) => {
     console.log('Update available.', info);
+    // Create update window and hide main window if exists
+    createUpdateWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+    }
+    sendUpdateStatus('Güncelleme bulundu, indiriliyor...');
 });
 
 autoUpdater.on('update-not-available', (info: any) => {
     console.log('Update not available.', info);
+    // No update available, create main window if not exists
+    if (!mainWindow) {
+        createWindow();
+    }
 });
 
 autoUpdater.on('error', (err: any) => {
-    console.log('Error in auto-updater. ' + err);
+    console.log('Error in auto-updater: ' + err);
+    // On error, close update window and show main window
+    if (updateWindow && !updateWindow.isDestroyed()) {
+        updateWindow.close();
+    }
+    if (!mainWindow) {
+        createWindow();
+    } else if (!mainWindow.isDestroyed()) {
+        mainWindow.show();
+    }
 });
 
 autoUpdater.on('download-progress', (progressObj: any) => {
@@ -194,9 +261,20 @@ autoUpdater.on('download-progress', (progressObj: any) => {
     log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
     log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
     console.log(log_message);
+
+    sendUpdateProgress(progressObj.percent);
+
+    const mbTransferred = (progressObj.transferred / 1024 / 1024).toFixed(1);
+    const mbTotal = (progressObj.total / 1024 / 1024).toFixed(1);
+    sendUpdateStatus(`${mbTransferred} MB / ${mbTotal} MB`);
 });
 
 autoUpdater.on('update-downloaded', (info: any) => {
     console.log('Update downloaded');
-    autoUpdater.quitAndInstall();
+    sendUpdateStatus('Güncelleme tamamlandı, yeniden başlatılıyor...');
+
+    // Wait a moment to show the message, then install
+    setTimeout(() => {
+        autoUpdater.quitAndInstall(false, true);
+    }, 1500);
 });

@@ -28,6 +28,7 @@ import { SupabaseRealtimeProvider } from '@/contexts/SupabaseRealtimeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { CallProvider } from '@/contexts/CallContext';
 import { VoiceChannelProvider, useVoiceChannel } from '@/contexts/VoiceChannelContext';
+import { UserAudioProvider } from '@/contexts/UserAudioContext';
 import { GlobalAudio } from '@/components/layout/GlobalAudio';
 
 function AppContent() {
@@ -457,13 +458,15 @@ function App() {
             <NotificationProvider>
                 <CallProvider>
                     <VoiceChannelProvider>
-                        <SupabaseRealtimeProvider>
-                            <GlobalAudio />
-                            <Routes>
-                                <Route path="/" element={<AppContent />} />
-                                <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
-                            </Routes>
-                        </SupabaseRealtimeProvider>
+                        <UserAudioProvider>
+                            <SupabaseRealtimeProvider>
+                                <GlobalAudio />
+                                <Routes>
+                                    <Route path="/" element={<AppContent />} />
+                                    <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
+                                </Routes>
+                            </SupabaseRealtimeProvider>
+                        </UserAudioProvider>
                     </VoiceChannelProvider>
                 </CallProvider>
             </NotificationProvider>

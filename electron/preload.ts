@@ -23,6 +23,20 @@ contextBridge.exposeInMainWorld('electron', {
     }
 })
 
+// Expose update events for update window
+contextBridge.exposeInMainWorld('electronUpdater', {
+    onProgress: (callback: (percent: number, status?: string) => void) => {
+        ipcRenderer.on('update-progress', (_event, percent) => {
+            callback(percent)
+        })
+    },
+    onStatus: (callback: (status: string) => void) => {
+        ipcRenderer.on('update-status', (_event, status) => {
+            callback(status)
+        })
+    }
+})
+
 window.addEventListener('DOMContentLoaded', () => {
     const replaceText = (selector: string, text: string) => {
         const element = document.getElementById(selector)

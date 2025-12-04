@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff, Music2 } from 'lucide-react';
+import { ChevronDown, Hash, Plus, Settings, UserPlus, Shield, Search, X, Lock, Volume2, Mic, MicOff, Headphones, PhoneOff, MonitorUp, Video, VideoOff, Music2, VolumeX } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember, PERMISSIONS, ServerRole, ChannelPermission } from '@/lib/types';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
+import { useUserAudio } from '@/contexts/UserAudioContext';
 import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
 import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
+import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
 
 interface ChannelListProps {
   serverId: string | null;
@@ -30,6 +32,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ channels: Channel[], members: Profile[] }>({ channels: [], members: [] });
   const [showSoundPanel, setShowSoundPanel] = useState(false);
+  const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string } | null>(null);
 
   const { user, profile } = useAuth();
   const {
@@ -48,6 +51,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
     participants: activeParticipants,
     playSoundboardAudio
   } = useVoiceChannel();
+  const { getUserMuted } = useUserAudio();
 
   // Track speaking state for each participant
   const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
@@ -391,180 +395,135 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   }
 
   return (
-    <div className="hidden md:flex md:w-60 bg-gray-900 flex-col border-r border-gray-800 shadow-lg">
-      {/* Server Header */}
-      <div className="h-12 px-4 flex items-center justify-between border-b border-gray-800 shadow-sm hover:bg-gray-800 transition-colors cursor-pointer">
-        <h2 className="text-base font-semibold text-white truncate">{server?.name || 'Sunucu'}</h2>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowSearch(!showSearch)}
-            className="p-1.5 hover:bg-gray-700 rounded transition-all duration-150 hover:scale-105"
-            title="Ara"
-          >
-            <Search className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
-          </button>
-          {onInvite && (
+    <>
+      <div className="hidden md:flex md:w-60 bg-gray-900 flex-col border-r border-gray-800 shadow-lg">
+        {/* Server Header */}
+        <div className="h-12 px-4 flex items-center justify-between border-b border-gray-800 shadow-sm hover:bg-gray-800 transition-colors cursor-pointer">
+          <h2 className="text-base font-semibold text-white truncate">{server?.name || 'Sunucu'}</h2>
+          <div className="flex items-center gap-1">
             <button
-              onClick={onInvite}
+              onClick={() => setShowSearch(!showSearch)}
               className="p-1.5 hover:bg-gray-700 rounded transition-all duration-150 hover:scale-105"
-              title="Sunucuya Davet Et"
+              title="Ara"
             >
-              <UserPlus className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
+              <Search className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
             </button>
-          )}
-          {(server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_SERVER) || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_ROLES)) && onServerSettings && (
-            <button
-              onClick={onServerSettings}
-              className="p-1.5 hover:bg-gray-700 rounded transition-all duration-150 hover:scale-105"
-              title="Sunucu Ayarları"
-            >
-              <Settings className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      {showSearch && (
-        <div className="p-3 border-b border-gray-800 animate-slide-down">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Ara..."
-              className="w-full pl-9 pr-9 py-2 text-sm bg-gray-900 border border-gray-800 rounded text-white placeholder:text-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-              autoFocus
-            />
-            {searchQuery && (
+            {onInvite && (
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 hover:bg-gray-700 p-0.5 rounded"
+                onClick={onInvite}
+                className="p-1.5 hover:bg-gray-700 rounded transition-all duration-150 hover:scale-105"
+                title="Sunucuya Davet Et"
               >
-                <X className="w-4 h-4 text-gray-400 hover:text-white" />
+                <UserPlus className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
+              </button>
+            )}
+            {(server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_SERVER) || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_ROLES)) && onServerSettings && (
+              <button
+                onClick={onServerSettings}
+                className="p-1.5 hover:bg-gray-700 rounded transition-all duration-150 hover:scale-105"
+                title="Sunucu Ayarları"
+              >
+                <Settings className="w-4 h-4 text-gray-400 hover:text-white transition-colors" />
               </button>
             )}
           </div>
-
-          {searchQuery && (
-            <div className="mt-2 max-h-60 overflow-y-auto custom-scrollbar">
-              {searchResults.channels.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1">Kanallar</div>
-                  {searchResults.channels.map(channel => (
-                    <button
-                      key={channel.id}
-                      onClick={() => {
-                        onSelectChannel(channel.id);
-                        setSearchQuery('');
-                        setShowSearch(false);
-                      }}
-                      className="w-full px-2 py-1.5 flex items-center gap-2 text-gray-300 hover:bg-gray-800 rounded transition-colors text-sm"
-                    >
-                      <Hash className="w-4 h-4" />
-                      {channel.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {searchResults.members.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1">Üyeler</div>
-                  {searchResults.members.map(member => (
-                    <div
-                      key={member.id}
-                      className="px-2 py-1.5 flex items-center gap-2 text-gray-300 rounded text-sm"
-                    >
-                      <div className="w-6 h-6 rounded-full bg-primary-500 flex items-center justify-center text-xs text-white">
-                        {member.username?.charAt(0).toUpperCase()}
-                      </div>
-                      {member.username}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {searchResults.channels.length === 0 && searchResults.members.length === 0 && (
-                <div className="text-center py-4 text-sm text-gray-500">
-                  Sonuç bulunamadı
-                </div>
-              )}
-            </div>
-          )}
         </div>
-      )}
 
-      {/* Channels */}
-      <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
-        {/* Text Channels */}
-        <div className="mb-1">
-          <button
-            onClick={() => setTextChannelsExpanded(!textChannelsExpanded)}
-            className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
-          >
-            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${textChannelsExpanded ? '' : '-rotate-90'}`} />
-            <span>Metin Kanalları</span>
-          </button>
-          {textChannelsExpanded && (
-            <div className="mt-0.5 space-y-0.5">
-              {channels.map((channel) => (
+        {/* Search Bar */}
+        {showSearch && (
+          <div className="p-3 border-b border-gray-800 animate-slide-down">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Ara..."
+                className="w-full pl-9 pr-9 py-2 text-sm bg-gray-900 border border-gray-800 rounded text-white placeholder:text-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
+                autoFocus
+              />
+              {searchQuery && (
                 <button
-                  key={channel.id}
-                  onClick={() => onSelectChannel(channel.id)}
-                  className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${selectedChannelId === channel.id
-                    ? 'bg-gray-700 text-white'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
-                    }`}
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 hover:bg-gray-700 p-0.5 rounded"
                 >
-                  <Hash className={`w-4 h-4 flex-shrink-0 ${selectedChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
-                  <span className="text-sm truncate font-medium flex-1 text-left">{channel.name}</span>
-                  {onEditChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEditChannel(channel.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-white transition-opacity"
-                    >
-                      <Settings size={12} />
-                    </button>
-                  )}
+                  <X className="w-4 h-4 text-gray-400 hover:text-white" />
                 </button>
-              ))}
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Voice Channels */}
-        <div className="mb-1 mt-4">
-          <button
-            onClick={() => setVoiceChannelsExpanded(!voiceChannelsExpanded)}
-            className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
-          >
-            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${voiceChannelsExpanded ? '' : '-rotate-90'}`} />
-            <span>Ses Kanalları</span>
-          </button>
-          {voiceChannelsExpanded && (
-            <div className="mt-0.5 space-y-0.5">
-              {voiceChannels.map((channel) => (
-                <div
-                  key={channel.id}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, channel.id)}
-                >
+            {searchQuery && (
+              <div className="mt-2 max-h-60 overflow-y-auto custom-scrollbar">
+                {searchResults.channels.length > 0 && (
+                  <div className="mb-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1">Kanallar</div>
+                    {searchResults.channels.map(channel => (
+                      <button
+                        key={channel.id}
+                        onClick={() => {
+                          onSelectChannel(channel.id);
+                          setSearchQuery('');
+                          setShowSearch(false);
+                        }}
+                        className="w-full px-2 py-1.5 flex items-center gap-2 text-gray-300 hover:bg-gray-800 rounded transition-colors text-sm"
+                      >
+                        <Hash className="w-4 h-4" />
+                        {channel.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {searchResults.members.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1">Üyeler</div>
+                    {searchResults.members.map(member => (
+                      <div
+                        key={member.id}
+                        className="px-2 py-1.5 flex items-center gap-2 text-gray-300 rounded text-sm"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-primary-500 flex items-center justify-center text-xs text-white">
+                          {member.username?.charAt(0).toUpperCase()}
+                        </div>
+                        {member.username}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {searchResults.channels.length === 0 && searchResults.members.length === 0 && (
+                  <div className="text-center py-4 text-sm text-gray-500">
+                    Sonuç bulunamadı
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Channels */}
+        <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
+          {/* Text Channels */}
+          <div className="mb-1">
+            <button
+              onClick={() => setTextChannelsExpanded(!textChannelsExpanded)}
+              className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${textChannelsExpanded ? '' : '-rotate-90'}`} />
+              <span>Metin Kanalları</span>
+            </button>
+            {textChannelsExpanded && (
+              <div className="mt-0.5 space-y-0.5">
+                {channels.map((channel) => (
                   <button
-                    onClick={() => {
-                      joinChannel(channel.id);
-                      onSelectChannel(channel.id);
-                    }}
-                    className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
+                    key={channel.id}
+                    onClick={() => onSelectChannel(channel.id)}
+                    className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${selectedChannelId === channel.id
                       ? 'bg-gray-700 text-white'
                       : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
                       }`}
                   >
-                    <Volume2 className={`w-4 h-4 flex-shrink-0 ${activeChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
+                    <Hash className={`w-4 h-4 flex-shrink-0 ${selectedChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
                     <span className="text-sm truncate font-medium flex-1 text-left">{channel.name}</span>
                     {onEditChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
                       <button
@@ -578,164 +537,223 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                       </button>
                     )}
                   </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-                  {/* Voice Participants */}
-                  {voiceParticipants[channel.id]?.map((participant) => (
-                    <div
-                      key={participant.id}
-                      className={`ml-8 mr-2 py-1 flex items-center gap-2 group rounded px-1 ${canMoveMembers ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:bg-gray-800/50`}
-                      draggable={canMoveMembers}
-                      onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
+          {/* Voice Channels */}
+          <div className="mb-1 mt-4">
+            <button
+              onClick={() => setVoiceChannelsExpanded(!voiceChannelsExpanded)}
+              className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${voiceChannelsExpanded ? '' : '-rotate-90'}`} />
+              <span>Ses Kanalları</span>
+            </button>
+            {voiceChannelsExpanded && (
+              <div className="mt-0.5 space-y-0.5">
+                {voiceChannels.map((channel) => (
+                  <div
+                    key={channel.id}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, channel.id)}
+                  >
+                    <button
+                      onClick={() => {
+                        joinChannel(channel.id);
+                        onSelectChannel(channel.id);
+                      }}
+                      className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
+                        ? 'bg-gray-700 text-white'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
+                        }`}
                     >
-                      <div className={`w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden transition-all duration-200 ${speakingUsers.has(participant.user_id)
-                        ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
-                        : ''
-                        }`}>
-                        {participant.profile?.profile_image_url ? (
-                          <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-xs text-white">
-                            {participant.profile?.username?.charAt(0).toUpperCase()}
+                      <Volume2 className={`w-4 h-4 flex-shrink-0 ${activeChannelId === channel.id ? 'text-white' : 'text-gray-500'}`} />
+                      <span className="text-sm truncate font-medium flex-1 text-left">{channel.name}</span>
+                      {onEditChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditChannel(channel.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-white transition-opacity"
+                        >
+                          <Settings size={12} />
+                        </button>
+                      )}
+                    </button>
+
+                    {/* Voice Participants */}
+                    {voiceParticipants[channel.id]?.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className={`ml-8 mr-2 py-1 flex items-center gap-2 group rounded px-1 ${canMoveMembers ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:bg-gray-800/50`}
+                        draggable={canMoveMembers}
+                        onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
+                        onContextMenu={(e) => {
+                          // Don't show volume menu for self
+                          if (participant.user_id === user?.id) return;
+                          e.preventDefault();
+                          setVolumeContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            userId: participant.user_id,
+                            username: participant.profile?.username || 'Kullanıcı',
+                            profileImageUrl: participant.profile?.profile_image_url
+                          });
+                        }}
+                      >
+                        <div className={`w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden transition-all duration-200 ${speakingUsers.has(participant.user_id)
+                          ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                          : getUserMuted(participant.user_id) ? 'ring-2 ring-red-500/50' : ''
+                          }`}>
+                          {participant.profile?.profile_image_url ? (
+                            <img src={participant.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-xs text-white">
+                              {participant.profile?.username?.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0 flex items-center justify-between">
+                          <span className={`text-sm truncate ${activeChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : getUserMuted(participant.user_id) ? 'text-red-400 line-through' : 'text-gray-400'}`}>
+                            {participant.profile?.username}
                           </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0 flex items-center justify-between">
-                        <span className={`text-sm truncate ${activeChannelId === channel.id && participant.user_id === user?.id ? 'text-green-400' : 'text-gray-400'}`}>
-                          {participant.profile?.username}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {participant.is_muted && <MicOff className="w-3 h-3 text-red-500" />}
-                          {participant.is_deafened && <Headphones className="w-3 h-3 text-red-500" />}
+                          <div className="flex items-center gap-1">
+                            {getUserMuted(participant.user_id) && <VolumeX className="w-3 h-3 text-red-500" />}
+                            {participant.is_muted && <MicOff className="w-3 h-3 text-red-500" />}
+                            {participant.is_deafened && <Headphones className="w-3 h-3 text-red-500" />}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {onCreateChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
+            <button
+              onClick={onCreateChannel}
+              className="w-full px-2 py-1.5 mx-2 mt-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="text-sm font-medium">Kanal Ekle</span>
+            </button>
           )}
         </div>
 
-        {onCreateChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
-          <button
-            onClick={onCreateChannel}
-            className="w-full px-2 py-1.5 mx-2 mt-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="text-sm font-medium">Kanal Ekle</span>
-          </button>
-        )}
-      </div>
+        {/* Hidden Audio Elements */}
+        {activeParticipants.map((participant) => (
+          <audio
+            key={participant.user_id}
+            id={`audio-${participant.user_id}`}
+            autoPlay
+            playsInline
+            className="hidden"
+          />
+        ))}
 
-      {/* Hidden Audio Elements */}
-      {activeParticipants.map((participant) => (
-        <audio
-          key={participant.user_id}
-          id={`audio-${participant.user_id}`}
-          autoPlay
-          playsInline
-          className="hidden"
-        />
-      ))}
+        {/* Voice Controls (if connected) */}
+        {activeChannelId && (
+          <div className="bg-gray-850 border-t border-gray-800 p-2 pb-0">
+            <div className="flex items-center justify-between px-2 py-1 bg-green-900/20 rounded border border-green-900/50 mb-2">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <Volume2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-green-500 truncate">Ses Bağlantısı</span>
+                  <span className="text-xs text-gray-400 truncate">
+                    {voiceChannels.find(c => c.id === activeChannelId)?.name}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  leaveChannel();
+                }}
+                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                title="Bağlantıyı Kes"
+              >
+                <PhoneOff size={16} />
+              </button>
+            </div>
 
-      {/* Voice Controls (if connected) */}
-      {activeChannelId && (
-        <div className="bg-gray-850 border-t border-gray-800 p-2 pb-0">
-          <div className="flex items-center justify-between px-2 py-1 bg-green-900/20 rounded border border-green-900/50 mb-2">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <Volume2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-bold text-green-500 truncate">Ses Bağlantısı</span>
-                <span className="text-xs text-gray-400 truncate">
-                  {voiceChannels.find(c => c.id === activeChannelId)?.name}
-                </span>
+            <div className="flex items-center justify-center gap-4 pb-2">
+              <button
+                onClick={toggleMute}
+                className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
+                title={isMuted ? "Sesi Aç" : "Sessize Al"}
+              >
+                {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+              <button
+                onClick={toggleDeafen}
+                className={`p-2 rounded-full transition-colors ${isDeafened ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
+                title={isDeafened ? "Sağırlaştır" : "Sağırlaştır"}
+              >
+                <Headphones size={18} />
+              </button>
+              <button
+                onClick={toggleScreenShare}
+                className={`p-2 rounded-full transition-colors ${isScreenSharing ? 'bg-green-500/20 text-green-500' : 'hover:bg-gray-700 text-gray-300'}`}
+                title={isScreenSharing ? "Ekran Paylaşımını Durdur" : "Ekran Paylaş"}
+              >
+                <MonitorUp size={18} />
+              </button>
+              <button
+                onClick={toggleCamera}
+                className={`p-2 rounded-full transition-colors ${isCameraEnabled ? 'bg-blue-500/20 text-blue-500' : 'hover:bg-gray-700 text-gray-300'}`}
+                title={isCameraEnabled ? "Kamerayı Kapat" : "Kamerayı Aç"}
+              >
+                {isCameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
+              </button>
+              {/* Sound Panel Button - Shows for all users */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSoundPanel(!showSoundPanel)}
+                  className={`p-2 rounded-full transition-colors ${showSoundPanel ? 'bg-purple-500/20 text-purple-400' : 'hover:bg-gray-700 text-gray-300'}`}
+                  title="Ses Paneli"
+                >
+                  <Music2 size={18} />
+                </button>
+                <SoundPanelPopup
+                  isOpen={showSoundPanel}
+                  onClose={() => setShowSoundPanel(false)}
+                  anchorPosition="top"
+                  onPlaySound={playSoundboardAudio}
+                />
               </div>
             </div>
-            <button
-              onClick={() => {
-                leaveChannel();
-              }}
-              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
-              title="Bağlantıyı Kes"
-            >
-              <PhoneOff size={16} />
-            </button>
           </div>
+        )}
 
-          <div className="flex items-center justify-center gap-4 pb-2">
-            <button
-              onClick={toggleMute}
-              className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
-              title={isMuted ? "Sesi Aç" : "Sessize Al"}
-            >
-              {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
-            </button>
-            <button
-              onClick={toggleDeafen}
-              className={`p-2 rounded-full transition-colors ${isDeafened ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
-              title={isDeafened ? "Sağırlaştır" : "Sağırlaştır"}
-            >
-              <Headphones size={18} />
-            </button>
-            <button
-              onClick={toggleScreenShare}
-              className={`p-2 rounded-full transition-colors ${isScreenSharing ? 'bg-green-500/20 text-green-500' : 'hover:bg-gray-700 text-gray-300'}`}
-              title={isScreenSharing ? "Ekran Paylaşımını Durdur" : "Ekran Paylaş"}
-            >
-              <MonitorUp size={18} />
-            </button>
-            <button
-              onClick={toggleCamera}
-              className={`p-2 rounded-full transition-colors ${isCameraEnabled ? 'bg-blue-500/20 text-blue-500' : 'hover:bg-gray-700 text-gray-300'}`}
-              title={isCameraEnabled ? "Kamerayı Kapat" : "Kamerayı Aç"}
-            >
-              {isCameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
-            </button>
-            {/* Sound Panel Button - Shows for all users */}
-            <div className="relative">
-              <button
-                onClick={() => setShowSoundPanel(!showSoundPanel)}
-                className={`p-2 rounded-full transition-colors ${showSoundPanel ? 'bg-purple-500/20 text-purple-400' : 'hover:bg-gray-700 text-gray-300'}`}
-                title="Ses Paneli"
-              >
-                <Music2 size={18} />
-              </button>
-              <SoundPanelPopup
-                isOpen={showSoundPanel}
-                onClose={() => setShowSoundPanel(false)}
-                anchorPosition="top"
-                onPlaySound={playSoundboardAudio}
-              />
+        {/* User Profile Bar */}
+        <div className="h-14 px-2 flex items-center gap-2 bg-gray-900 border-t border-gray-800">
+          <div className="relative">
+            <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center overflow-hidden">
+              {profile?.profile_image_url ? (
+                <img src={profile.profile_image_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-sm font-semibold text-white">
+                  {profile?.username?.charAt(0).toUpperCase() || 'U'}
+                </span>
+              )}
+            </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-gray-900" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-white truncate">
+              {profile?.username || 'Kullanıcı'}
+            </div>
+            <div className="text-xs text-gray-400">
+              Çevrimiçi
             </div>
           </div>
         </div>
-      )}
 
-      {/* User Profile Bar */}
-      <div className="h-14 px-2 flex items-center gap-2 bg-gray-900 border-t border-gray-800">
-        <div className="relative">
-          <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center overflow-hidden">
-            {profile?.profile_image_url ? (
-              <img src={profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-sm font-semibold text-white">
-                {profile?.username?.charAt(0).toUpperCase() || 'U'}
-              </span>
-            )}
-          </div>
-          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-gray-900" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-white truncate">
-            {profile?.username || 'Kullanıcı'}
-          </div>
-          <div className="text-xs text-gray-400">
-            Çevrimiçi
-          </div>
-        </div>
-      </div>
-
-      <style>{`
+        <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }
@@ -763,6 +781,21 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
           animation: slide-down 0.2s ease-out;
         }
       `}</style>
-    </div>
+      </div>
+
+      {/* Volume Context Menu */}
+      {
+        volumeContextMenu && (
+          <UserVolumeContextMenu
+            x={volumeContextMenu.x}
+            y={volumeContextMenu.y}
+            userId={volumeContextMenu.userId}
+            username={volumeContextMenu.username}
+            profileImageUrl={volumeContextMenu.profileImageUrl}
+            onClose={() => setVolumeContextMenu(null)}
+          />
+        )
+      }
+    </>
   );
 }
