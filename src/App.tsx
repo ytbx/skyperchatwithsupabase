@@ -31,6 +31,7 @@ import { VoiceChannelProvider, useVoiceChannel } from '@/contexts/VoiceChannelCo
 import { UserAudioProvider } from '@/contexts/UserAudioContext';
 import { NoiseSuppressionProvider } from '@/contexts/NoiseSuppressionContext';
 import { GlobalAudio } from '@/components/layout/GlobalAudio';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function AppContent() {
     const { user, loading } = useAuth();
@@ -453,6 +454,8 @@ function AppContent() {
     );
 }
 
+
+
 function App() {
     return (
         <AuthProvider>
@@ -462,7 +465,9 @@ function App() {
                         <VoiceChannelProvider>
                             <UserAudioProvider>
                                 <SupabaseRealtimeProvider>
-                                    <GlobalAudio />
+                                    <ErrorBoundary>
+                                        <GlobalAudio />
+                                    </ErrorBoundary>
                                     <Routes>
                                         <Route path="/" element={<AppContent />} />
                                         <Route path="/invite/:inviteCode" element={<JoinServerPage />} />

@@ -83,8 +83,8 @@ function sendUpdateProgress(percent: number) {
 
 function createWindow() {
     const iconPath = isDev
-        ? path.join(__dirname, '..', 'public', 'icon.png')
-        : path.join(__dirname, '..', 'dist', 'icon.png');
+        ? path.join(__dirname, '..', 'public', 'ovox-large.png')
+        : path.join(__dirname, '..', 'dist', 'ovox-large.png');
 
     mainWindow = new BrowserWindow({
         width: 1280,
