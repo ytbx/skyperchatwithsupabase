@@ -42,6 +42,7 @@ export const ActiveCallOverlay: React.FC = () => {
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteCameraVideoRef = useRef<HTMLVideoElement | null>(null);
+    const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteAudioContextRef = useRef<AudioContext | null>(null);
     const localAudioContextRef = useRef<AudioContext | null>(null);
     const remoteAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -199,6 +200,36 @@ export const ActiveCallOverlay: React.FC = () => {
     const closeFullscreen = () => {
         setFullscreenVideoId(null);
     };
+
+    // Handle fullscreen video stream assignment with useEffect to prevent flickering
+    useEffect(() => {
+        const video = fullscreenVideoRef.current;
+        if (!video || !fullscreenVideoId) return;
+
+        let stream: MediaStream | null = null;
+        let isLocalStream = false;
+
+        if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
+            stream = remoteScreenStream;
+        } else if (fullscreenVideoId === 'local-screen' && screenStream) {
+            stream = screenStream;
+            isLocalStream = true;
+        } else if (fullscreenVideoId === 'remote-camera' && remoteStream) {
+            stream = remoteStream;
+        }
+
+        if (stream) {
+            // Only update srcObject if it changed
+            if (video.srcObject !== stream) {
+                video.srcObject = stream;
+                video.muted = isLocalStream; // Mute local stream to prevent feedback
+                video.play().catch(e => console.error('Error playing fullscreen video:', e));
+            }
+            // Always update volume for remote streams
+            const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
+            video.volume = isLocalStream ? 0 : currentVolume;
+        }
+    }, [fullscreenVideoId, remoteScreenStream, screenStream, remoteStream, volumes]);
 
     // Call duration timer
     useEffect(() => {
@@ -474,18 +505,7 @@ export const ActiveCallOverlay: React.FC = () => {
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <video
-                                    ref={(el) => {
-                                        if (el && stream) {
-                                            // Only set srcObject if it's different to prevent flickering
-                                            if (el.srcObject !== stream) {
-                                                el.srcObject = stream;
-                                                el.muted = fullscreenVideoId === 'local-screen';
-                                                el.play().catch(e => console.error('Error playing video:', e));
-                                            }
-                                            // Always update volume
-                                            el.volume = currentVolume;
-                                        }
-                                    }}
+                                    ref={fullscreenVideoRef}
                                     autoPlay
                                     playsInline
                                     className="w-full h-full object-contain"

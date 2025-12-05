@@ -121,7 +121,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setActiveCall(call);
 
             // Get user media
-            const stream = await webrtcManager.getUserMedia(true, callType === 'video');
+            let stream = await webrtcManager.getUserMedia(true, callType === 'video');
+
+            // Apply noise suppression processor (can be toggled live)
+            try {
+                console.log('[CallContext] Creating noise suppression processor (initiateCall)');
+                const { createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
+                const processor = await createNoiseSuppressionProcessor(stream);
+                stream = processor.outputStream;
+                console.log('[CallContext] Noise suppression processor created (live toggle enabled)');
+            } catch (e) {
+                console.log('[CallContext] Noise suppression not available:', e);
+            }
+
             setLocalStream(stream);
             setIsCameraOff(callType === 'voice');
 
@@ -363,7 +375,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 .eq('id', call.id);
 
             // Get user media
-            const stream = await webrtcManager.getUserMedia(true, call.call_type === 'video');
+            let stream = await webrtcManager.getUserMedia(true, call.call_type === 'video');
+
+            // Apply noise suppression processor (can be toggled live)
+            try {
+                console.log('[CallContext] Creating noise suppression processor (acceptCall)');
+                const { createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
+                const processor = await createNoiseSuppressionProcessor(stream);
+                stream = processor.outputStream;
+                console.log('[CallContext] Noise suppression processor created (live toggle enabled)');
+            } catch (e) {
+                console.log('[CallContext] Noise suppression not available:', e);
+            }
+
             setLocalStream(stream);
             setIsCameraOff(call.call_type === 'voice');
 
@@ -827,7 +851,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
-                        chromeMediaSource: 'desktop'
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: sourceId
                     }
                 } : false,
                 video: {

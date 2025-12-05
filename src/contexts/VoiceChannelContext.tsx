@@ -5,6 +5,7 @@ import { useCall } from './CallContext';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
+import { useNoiseSuppression } from './NoiseSuppressionContext';
 
 interface VoiceParticipant {
     user_id: string;
@@ -195,7 +196,19 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             setActiveChannelId(channelId);
 
             // 2. Get local media (microphone)
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            let stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+            // Apply noise suppression processor (can be toggled live)
+            try {
+                console.log('[VoiceChannelContext] Creating noise suppression processor');
+                const { createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
+                const processor = await createNoiseSuppressionProcessor(stream);
+                stream = processor.outputStream;
+                console.log('[VoiceChannelContext] Noise suppression processor created (live toggle enabled)');
+            } catch (e) {
+                console.log('[VoiceChannelContext] Noise suppression not available:', e);
+            }
+
             setLocalStream(stream);
             localStreamRef.current = stream;
 
@@ -662,7 +675,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
-                        chromeMediaSource: 'desktop'
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: sourceId
                     }
                 } : false,
                 video: {

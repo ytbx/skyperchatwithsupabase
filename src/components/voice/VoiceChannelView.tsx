@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2 } from 'lucide-react';
 
@@ -29,6 +29,9 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
     const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
+
+    // Stable ref for fullscreen video to prevent flickering
+    const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
 
     // Track speaking state for each participant
     const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
@@ -127,15 +130,50 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         });
     }, [cameraParticipants, screenSharingParticipants, volumes]);
 
+    // Get the current fullscreen stream
+    const getFullscreenStream = useCallback((): { stream: MediaStream | null; isLocalUser: boolean } => {
+        if (!fullscreenVideoId) return { stream: null, isLocalUser: false };
 
+        const participant = [...cameraParticipants, ...screenSharingParticipants].find(p =>
+            fullscreenVideoId === `camera-${p.user_id}` || fullscreenVideoId === `screen-${p.user_id}`
+        );
+        if (!participant) return { stream: null, isLocalUser: false };
 
-    const handleVolumeChange = (videoId: string, volume: number) => {
+        const isCamera = fullscreenVideoId.startsWith('camera-');
+        const stream = isCamera ? participant.cameraStream : participant.screenStream;
+        return { stream: stream || null, isLocalUser: participant.user_id === user?.id };
+    }, [fullscreenVideoId, cameraParticipants, screenSharingParticipants, user?.id]);
+
+    // Handle fullscreen video stream assignment with useEffect to prevent flickering
+    useEffect(() => {
+        const { stream, isLocalUser } = getFullscreenStream();
+        const video = fullscreenVideoRef.current;
+
+        if (video && stream) {
+            // Only update srcObject if it changed
+            if (video.srcObject !== stream) {
+                video.srcObject = stream;
+                video.muted = isLocalUser; // Mute local user's stream to prevent feedback
+                video.play().catch(e => console.error('Error playing fullscreen video:', e));
+            }
+            // Always update volume
+            const currentVolume = volumes.get(fullscreenVideoId!) ?? 1.0;
+            video.volume = isLocalUser ? 0 : currentVolume;
+        }
+    }, [fullscreenVideoId, getFullscreenStream, volumes]);
+
+    const handleVolumeChange = useCallback((videoId: string, volume: number) => {
+        // Update the video element in the list
         const video = videoRefs.current.get(videoId);
         if (video) {
             video.volume = volume;
         }
-        setVolumes(new Map(volumes.set(videoId, volume)));
-    };
+        // Also update fullscreen video if it's the same
+        if (fullscreenVideoRef.current && fullscreenVideoId === videoId) {
+            fullscreenVideoRef.current.volume = volume;
+        }
+        setVolumes(prev => new Map(prev.set(videoId, volume)));
+    }, [fullscreenVideoId]);
 
     const openFullscreen = (videoId: string) => {
         setFullscreenVideoId(videoId);
@@ -374,6 +412,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                 const isCamera = fullscreenVideoId.startsWith('camera-');
                 const stream = isCamera ? participant?.cameraStream : participant?.screenStream;
                 const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
+                const isLocalUser = participant?.user_id === user?.id;
 
                 return (
                     <div
@@ -385,13 +424,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                             onClick={(e) => e.stopPropagation()}
                         >
                             <video
-                                ref={(el) => {
-                                    if (el && stream) {
-                                        el.srcObject = stream;
-                                        el.volume = currentVolume;
-                                        el.play().catch(e => console.error('Error playing video:', e));
-                                    }
-                                }}
+                                ref={fullscreenVideoRef}
                                 autoPlay
                                 playsInline
                                 className="w-full h-full object-contain"
@@ -406,23 +439,25 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                 <X className="w-6 h-6 text-white" />
                             </button>
 
-                            {/* Volume control */}
-                            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
-                                <Volume2 className="w-5 h-5 text-white" />
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.1"
-                                    value={currentVolume}
-                                    onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
-                                    className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                    style={{
-                                        background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
-                                    }}
-                                />
-                                <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
-                            </div>
+                            {/* Volume control - only for other users' streams */}
+                            {!isLocalUser && (
+                                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
+                                    <Volume2 className="w-5 h-5 text-white" />
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.1"
+                                        value={currentVolume}
+                                        onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
+                                        className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                        style={{
+                                            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
+                                        }}
+                                    />
+                                    <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
+                                </div>
+                            )}
 
                             {/* User info */}
                             <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">

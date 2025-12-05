@@ -5,9 +5,32 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Channel, Server, Profile, VoiceChannelMember, PERMISSIONS, ServerRole, ChannelPermission } from '@/lib/types';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { useUserAudio } from '@/contexts/UserAudioContext';
+import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
 import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
 import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
 import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
+
+// Noise Suppression Toggle Button Component
+function NoiseSuppressionButton() {
+  const { isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
+
+  return (
+    <button
+      onClick={toggleNoiseSuppression}
+      className={`p-1.5 rounded-md transition-colors ${isNoiseSuppressionEnabled
+          ? 'bg-green-600 hover:bg-green-700 text-white'
+          : 'bg-gray-700 hover:bg-gray-600 text-gray-400'
+        }`}
+      title={isNoiseSuppressionEnabled ? 'Gürültü Engelleme: Açık' : 'Gürültü Engelleme: Kapalı'}
+    >
+      {isNoiseSuppressionEnabled ? (
+        <Mic size={14} />
+      ) : (
+        <VolumeX size={14} />
+      )}
+    </button>
+  );
+}
 
 interface ChannelListProps {
   serverId: string | null;
@@ -751,6 +774,9 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               Çevrimiçi
             </div>
           </div>
+
+          {/* Noise Suppression Toggle */}
+          <NoiseSuppressionButton />
         </div>
 
         <style>{`
