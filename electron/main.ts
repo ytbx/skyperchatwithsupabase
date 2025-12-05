@@ -4,6 +4,10 @@ import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
 
+// Enable detailed logging for auto-updater
+autoUpdater.logger = console;
+(autoUpdater.logger as any).transports = { console: { level: 'debug' } };
+
 let mainWindow: BrowserWindow | null = null;
 let updateWindow: BrowserWindow | null = null;
 
