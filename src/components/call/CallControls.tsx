@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, PhoneOff, Music2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, PhoneOff, Music2, Volume2, VolumeX } from 'lucide-react';
 import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
 
 interface CallControlsProps {
     isMicMuted: boolean;
+    isDeafened: boolean;
     isCameraOff: boolean;
     isScreenSharing: boolean;
     onMicToggle: () => void;
+    onDeafenToggle: () => void;
     onCameraToggle: () => void;
     onScreenShareToggle: () => void;
     onEndCall: () => void;
@@ -18,9 +20,11 @@ interface CallControlsProps {
 
 export const CallControls: React.FC<CallControlsProps> = ({
     isMicMuted,
+    isDeafened,
     isCameraOff,
     isScreenSharing,
     onMicToggle,
+    onDeafenToggle,
     onCameraToggle,
     onScreenShareToggle,
     onEndCall,
@@ -40,12 +44,28 @@ export const CallControls: React.FC<CallControlsProps> = ({
                     ? 'bg-red-600 hover:bg-red-700'
                     : 'bg-gray-700 hover:bg-gray-600'
                     }`}
-                title={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
+                title={isMicMuted ? 'Mikrofonu aç' : 'Mikrofonu kapat'}
             >
                 {isMicMuted ? (
                     <MicOff size={20} className="text-white" />
                 ) : (
                     <Mic size={20} className="text-white" />
+                )}
+            </button>
+
+            {/* Deafen Toggle (Speaker/Headphones) */}
+            <button
+                onClick={onDeafenToggle}
+                className={`p-4 rounded-full transition-all ${isDeafened
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                title={isDeafened ? 'Sesi aç' : 'Sesi kapat'}
+            >
+                {isDeafened ? (
+                    <VolumeX size={20} className="text-white" />
+                ) : (
+                    <Volume2 size={20} className="text-white" />
                 )}
             </button>
 
@@ -57,7 +77,7 @@ export const CallControls: React.FC<CallControlsProps> = ({
                         ? 'bg-red-600 hover:bg-red-700'
                         : 'bg-gray-700 hover:bg-gray-600'
                         }`}
-                    title={isCameraOff ? 'Turn on camera' : 'Turn off camera'}
+                    title={isCameraOff ? 'Kamerayı aç' : 'Kamerayı kapat'}
                 >
                     {isCameraOff ? (
                         <VideoOff size={20} className="text-white" />
@@ -75,7 +95,7 @@ export const CallControls: React.FC<CallControlsProps> = ({
                         ? 'bg-blue-600 hover:bg-blue-700'
                         : 'bg-gray-700 hover:bg-gray-600'
                         }`}
-                    title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+                    title={isScreenSharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
                 >
                     {isScreenSharing ? (
                         <MonitorOff size={20} className="text-white" />
@@ -110,7 +130,7 @@ export const CallControls: React.FC<CallControlsProps> = ({
             <button
                 onClick={onEndCall}
                 className="p-4 rounded-full bg-red-600 hover:bg-red-700 transition-all"
-                title="End call"
+                title="Aramayı sonlandır"
             >
                 <PhoneOff size={20} className="text-white" />
             </button>

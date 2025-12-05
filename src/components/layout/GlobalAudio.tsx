@@ -5,10 +5,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUserAudio } from '@/contexts/UserAudioContext';
 
 export const GlobalAudio: React.FC = () => {
-    const { participants: voiceParticipants } = useVoiceChannel();
-    const { remoteStream: callRemoteStream, remoteSoundpadStream: callSoundpadStream, activeCall } = useCall();
+    const { participants: voiceParticipants, isDeafened: isVoiceChannelDeafened } = useVoiceChannel();
+    const { remoteStream: callRemoteStream, remoteSoundpadStream: callSoundpadStream, activeCall, isDeafened: isCallDeafened } = useCall();
     const { user } = useAuth();
-    const { getEffectiveVoiceVolume, getEffectiveSoundpadVolume } = useUserAudio();
+    const { getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isGlobalMuted } = useUserAudio();
 
     // Refs to keep track of audio elements
     const voiceAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -61,7 +61,11 @@ export const GlobalAudio: React.FC = () => {
                 }
 
                 // Apply VOICE volume from user audio settings
-                const voiceVolume = getEffectiveVoiceVolume(participant.user_id);
+                // Check for voice channel deafen and global mute
+                let voiceVolume = 0;
+                if (!isVoiceChannelDeafened && !isGlobalMuted) {
+                    voiceVolume = getEffectiveVoiceVolume(participant.user_id);
+                }
                 audio.volume = voiceVolume;
 
                 if (audio.srcObject !== participant.stream) {
@@ -82,7 +86,11 @@ export const GlobalAudio: React.FC = () => {
                 }
 
                 // Apply SOUNDPAD volume from user audio settings
-                const soundpadVolume = getEffectiveSoundpadVolume(participant.user_id);
+                // Check for voice channel deafen and global mute
+                let soundpadVolume = 0;
+                if (!isVoiceChannelDeafened && !isGlobalMuted) {
+                    soundpadVolume = getEffectiveSoundpadVolume(participant.user_id);
+                }
                 audio.volume = soundpadVolume;
 
                 if (audio.srcObject !== participant.soundpadStream) {
@@ -97,13 +105,16 @@ export const GlobalAudio: React.FC = () => {
         return () => {
             // We don't stop tracks here, just clear refs, as context manages streams
         };
-    }, [voiceParticipants, user, getEffectiveVoiceVolume, getEffectiveSoundpadVolume]);
+    }, [voiceParticipants, user, getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isVoiceChannelDeafened, isGlobalMuted]);
 
     // Update volumes when they change (separate effect to avoid recreating audio elements)
     useEffect(() => {
         // Update voice volumes
         voiceAudioRefs.current.forEach((audio, participantId) => {
-            const effectiveVolume = getEffectiveVoiceVolume(participantId);
+            let effectiveVolume = 0;
+            if (!isVoiceChannelDeafened && !isGlobalMuted) {
+                effectiveVolume = getEffectiveVoiceVolume(participantId);
+            }
             if (audio.volume !== effectiveVolume) {
                 audio.volume = effectiveVolume;
                 console.log(`[GlobalAudio] Updated VOICE volume for ${participantId} to ${effectiveVolume}`);
@@ -112,13 +123,16 @@ export const GlobalAudio: React.FC = () => {
 
         // Update soundpad volumes
         soundpadAudioRefs.current.forEach((audio, participantId) => {
-            const effectiveVolume = getEffectiveSoundpadVolume(participantId);
+            let effectiveVolume = 0;
+            if (!isVoiceChannelDeafened && !isGlobalMuted) {
+                effectiveVolume = getEffectiveSoundpadVolume(participantId);
+            }
             if (audio.volume !== effectiveVolume) {
                 audio.volume = effectiveVolume;
                 console.log(`[GlobalAudio] Updated SOUNDPAD volume for ${participantId} to ${effectiveVolume}`);
             }
         });
-    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume]);
+    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isVoiceChannelDeafened, isGlobalMuted]);
 
     // Handle Direct Call VOICE Audio - apply user volume settings
     useEffect(() => {
@@ -132,11 +146,13 @@ export const GlobalAudio: React.FC = () => {
 
         if (callRemoteStream) {
             // Apply volume settings for the remote user
-            if (remoteUserId) {
-                const effectiveVolume = getEffectiveVoiceVolume(remoteUserId);
-                audio.volume = effectiveVolume;
-                console.log(`[GlobalAudio] Setting direct call VOICE volume for ${remoteUserId} to ${effectiveVolume}`);
+            // Check for call deafen and global mute
+            let effectiveVolume = 0;
+            if (!isCallDeafened && !isGlobalMuted && remoteUserId) {
+                effectiveVolume = getEffectiveVoiceVolume(remoteUserId);
             }
+            audio.volume = effectiveVolume;
+            console.log(`[GlobalAudio] Setting direct call VOICE volume to ${effectiveVolume} (deafened: ${isCallDeafened})`);
 
             if (audio.srcObject !== callRemoteStream) {
                 console.log('[GlobalAudio] Setting direct call remote VOICE stream');
@@ -148,7 +164,7 @@ export const GlobalAudio: React.FC = () => {
                 audio.srcObject = null;
             }
         }
-    }, [callRemoteStream, activeCall, user, getEffectiveVoiceVolume]);
+    }, [callRemoteStream, activeCall, user, getEffectiveVoiceVolume, isCallDeafened, isGlobalMuted]);
 
     // Handle Direct Call SOUNDPAD Audio - separate stream with independent volume
     useEffect(() => {
@@ -162,11 +178,13 @@ export const GlobalAudio: React.FC = () => {
 
         if (callSoundpadStream) {
             // Apply SOUNDPAD volume settings for the remote user
-            if (remoteUserId) {
-                const effectiveVolume = getEffectiveSoundpadVolume(remoteUserId);
-                audio.volume = effectiveVolume;
-                console.log(`[GlobalAudio] Setting direct call SOUNDPAD volume for ${remoteUserId} to ${effectiveVolume}`);
+            // Check for call deafen and global mute
+            let effectiveVolume = 0;
+            if (!isCallDeafened && !isGlobalMuted && remoteUserId) {
+                effectiveVolume = getEffectiveSoundpadVolume(remoteUserId);
             }
+            audio.volume = effectiveVolume;
+            console.log(`[GlobalAudio] Setting direct call SOUNDPAD volume to ${effectiveVolume} (deafened: ${isCallDeafened})`);
 
             if (audio.srcObject !== callSoundpadStream) {
                 console.log('[GlobalAudio] Setting direct call remote SOUNDPAD stream');
@@ -178,31 +196,37 @@ export const GlobalAudio: React.FC = () => {
                 audio.srcObject = null;
             }
         }
-    }, [callSoundpadStream, activeCall, user, getEffectiveSoundpadVolume]);
+    }, [callSoundpadStream, activeCall, user, getEffectiveSoundpadVolume, isCallDeafened, isGlobalMuted]);
 
-    // Update direct call volumes when settings change
+    // Update direct call volumes when settings change (including deafen state)
     useEffect(() => {
         const remoteUserId = getRemoteUserId();
         if (!remoteUserId) return;
 
         // Update voice volume
         if (callAudioRef.current && callRemoteStream) {
-            const effectiveVolume = getEffectiveVoiceVolume(remoteUserId);
+            let effectiveVolume = 0;
+            if (!isCallDeafened && !isGlobalMuted) {
+                effectiveVolume = getEffectiveVoiceVolume(remoteUserId);
+            }
             if (callAudioRef.current.volume !== effectiveVolume) {
                 callAudioRef.current.volume = effectiveVolume;
-                console.log(`[GlobalAudio] Updated direct call VOICE volume for ${remoteUserId} to ${effectiveVolume}`);
+                console.log(`[GlobalAudio] Updated direct call VOICE volume to ${effectiveVolume} (deafened: ${isCallDeafened})`);
             }
         }
 
         // Update soundpad volume
         if (callSoundpadAudioRef.current && callSoundpadStream) {
-            const effectiveVolume = getEffectiveSoundpadVolume(remoteUserId);
+            let effectiveVolume = 0;
+            if (!isCallDeafened && !isGlobalMuted) {
+                effectiveVolume = getEffectiveSoundpadVolume(remoteUserId);
+            }
             if (callSoundpadAudioRef.current.volume !== effectiveVolume) {
                 callSoundpadAudioRef.current.volume = effectiveVolume;
-                console.log(`[GlobalAudio] Updated direct call SOUNDPAD volume for ${remoteUserId} to ${effectiveVolume}`);
+                console.log(`[GlobalAudio] Updated direct call SOUNDPAD volume to ${effectiveVolume} (deafened: ${isCallDeafened})`);
             }
         }
-    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, callRemoteStream, callSoundpadStream, activeCall, user]);
+    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, callRemoteStream, callSoundpadStream, activeCall, user, isCallDeafened, isGlobalMuted]);
 
     return null; // This component does not render anything visual
 };

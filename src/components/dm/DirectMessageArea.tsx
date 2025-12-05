@@ -324,7 +324,9 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
         }
       });
 
-      setMessages(prev => [...prev, data]);
+      // NOT: Optimistic update kaldırldı! 
+      // Realtime subscription zaten INSERT event'i ile mesajı ekleyecek.
+      // Bu sayede duplicate mesaj sorunu önleniyor.
       setNewMessage('');
       setSelectedFile(null);
     } catch (error) {

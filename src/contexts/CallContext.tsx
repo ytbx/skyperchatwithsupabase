@@ -18,6 +18,7 @@ interface CallContextType {
     screenStream: MediaStream | null;
     remoteScreenStream: MediaStream | null;
     isMicMuted: boolean;
+    isDeafened: boolean;  // Kulaklık kapalı mı (gelen sesler susturulmuş mu)
     isCameraOff: boolean;
     isScreenSharing: boolean;
     isRemoteScreenSharing: boolean;
@@ -29,6 +30,7 @@ interface CallContextType {
     rejectCall: (callId: string) => Promise<void>;
     endCall: () => Promise<void>;
     toggleMic: () => void;
+    toggleDeafen: () => void;  // Kulaklık aç/kapa
     toggleCamera: () => void;
     toggleScreenShare: () => Promise<void>;
     playSoundboardAudio: (audioBuffer: AudioBuffer) => void;
@@ -53,6 +55,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
     const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
     const [isMicMuted, setIsMicMuted] = useState(false);
+    const [isDeafened, setIsDeafened] = useState(false);  // Kulaklık durumu
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
@@ -734,6 +737,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }, [isMicMuted, webrtcManager]);
 
     /**
+     * Toggle deafen (mute incoming audio / speaker)
+     */
+    const toggleDeafen = useCallback(() => {
+        const newDeafenState = !isDeafened;
+        setIsDeafened(newDeafenState);
+        console.log('[CallContext] Deafen toggled:', newDeafenState);
+    }, [isDeafened]);
+
+    /**
      * Toggle camera on/off
      */
     const toggleCamera = useCallback(() => {
@@ -1166,6 +1178,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         screenStream,
         remoteScreenStream,
         isMicMuted,
+        isDeafened,
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
@@ -1175,6 +1188,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         rejectCall,
         endCall,
         toggleMic,
+        toggleDeafen,
         toggleCamera,
         toggleScreenShare,
         playSoundboardAudio

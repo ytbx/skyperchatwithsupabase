@@ -13,11 +13,13 @@ export const ActiveCallOverlay: React.FC = () => {
         localStream,
         remoteStream,
         isMicMuted,
+        isDeafened,
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
         connectionState,
         toggleMic,
+        toggleDeafen,
         toggleCamera,
         toggleScreenShare,
         endCall,
@@ -463,9 +465,11 @@ export const ActiveCallOverlay: React.FC = () => {
                 <div className="p-4 flex justify-center">
                     <CallControls
                         isMicMuted={isMicMuted}
+                        isDeafened={isDeafened}
                         isCameraOff={isCameraOff}
                         isScreenSharing={isScreenSharing}
                         onMicToggle={toggleMic}
+                        onDeafenToggle={toggleDeafen}
                         onCameraToggle={toggleCamera}
                         onScreenShareToggle={toggleScreenShare}
                         onEndCall={endCall}
