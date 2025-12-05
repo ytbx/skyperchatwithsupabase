@@ -279,6 +279,22 @@ autoUpdater.on('update-downloaded', (info: any) => {
 
     // Wait a moment to show the message, then install
     setTimeout(() => {
-        autoUpdater.quitAndInstall(false, true);
+        // Close all windows first
+        if (updateWindow && !updateWindow.isDestroyed()) {
+            updateWindow.close();
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.close();
+        }
+
+        // Force quit and install
+        // isSilent: true = don't show installer UI
+        // isForceRunAfter: true = run app after install
+        autoUpdater.quitAndInstall(true, true);
+
+        // Force exit if quitAndInstall doesn't work
+        setTimeout(() => {
+            app.exit(0);
+        }, 1000);
     }, 1500);
 });
