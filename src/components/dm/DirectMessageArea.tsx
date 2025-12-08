@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useCall } from '../../contexts/CallContext';
+import { useSupabaseRealtime } from '../../contexts/SupabaseRealtimeContext';
 import { DirectMessage } from '../../lib/types';
 import { Send, Paperclip, Smile, MoreVertical, Hash, User, Search, X, Clock, Hash as ChannelIcon, Users, Phone, Video, Trash2 } from 'lucide-react';
 import { ActiveCallOverlay } from '../call/ActiveCallOverlay';
@@ -25,6 +26,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const { user, profile } = useAuth();
   const { setActiveChat } = useNotifications();
   const { initiateCall, callStatus } = useCall();
+  const { isUserOnline } = useSupabaseRealtime();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -311,18 +313,27 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
       if (error) throw error;
 
-      // Send notification to receiver (Sender-side generation)
-      await supabase.from('notifications').insert({
-        user_id: contactId,
-        type: 'message',
-        title: 'Yeni Direkt Mesaj',
-        message: `${profile?.username || 'Birisi'}: ${newMessage.trim() || (fileData ? 'Dosya gönderdi' : 'Mesaj')}`,
-        metadata: {
-          type: 'dm',
-          senderId: user.id,
-          messageId: data.id
-        }
-      });
+      // Alıcı çevrimdışıysa bildirim gönder (çevrimiçi olunca görmesi için)
+      // Çevrimiçiyse alıcı kendi bildirim oluşturacak (NotificationContext'te)
+      const isReceiverOnline = isUserOnline(contactId);
+      console.log('[DirectMessageArea] Receiver online status:', isReceiverOnline);
+
+      if (!isReceiverOnline) {
+        console.log('[DirectMessageArea] Receiver offline, creating notification');
+        await supabase.from('notifications').insert({
+          user_id: contactId,
+          type: 'message',
+          title: 'Yeni Direkt Mesaj',
+          message: `${profile?.username || 'Birisi'}: ${newMessage.trim() || (fileData ? 'Dosya gönderdi' : 'Mesaj')}`,
+          metadata: {
+            type: 'dm',
+            senderId: user.id,
+            messageId: data.id
+          }
+        });
+      } else {
+        console.log('[DirectMessageArea] Receiver online, skipping notification (receiver will create it)');
+      }
 
       // NOT: Optimistic update kaldırldı! 
       // Realtime subscription zaten INSERT event'i ile mesajı ekleyecek.

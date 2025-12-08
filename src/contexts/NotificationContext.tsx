@@ -242,6 +242,73 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [currentUserId, addNotification]);
 
   /**
+   * Subscribe to incoming DM messages (receiver-side notification generation)
+   * This handles notifications when sender is online and didn't create a DB notification
+   */
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    console.log('[Notifications] Setting up DM notifications subscription for user:', currentUserId);
+
+    const dmChannel = supabase
+      .channel('dm-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chats',
+          filter: `receiver_id=eq.${currentUserId}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as any;
+          console.log('[Notifications] Received DM:', newMessage);
+
+          // Aktif chat'den geliyorsa bildirim gösterme
+          if (newMessage.sender_id === activeContactId) {
+            console.log('[Notifications] Message from active chat, skipping notification');
+            return;
+          }
+
+          console.log('[Notifications] Message from inactive chat, creating notification');
+
+          // Gönderen profil bilgisini al
+          const { data: senderProfile } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', newMessage.sender_id)
+            .single();
+
+          const notificationData = {
+            user_id: currentUserId,
+            type: 'message' as const,
+            title: 'Yeni Direkt Mesaj',
+            message: `${senderProfile?.username || 'Birisi'}: ${newMessage.message || 'Dosya gönderdi'}`,
+            metadata: { type: 'dm', senderId: newMessage.sender_id }
+          };
+
+          // Bildirimi DB'ye yaz (NotificationSystem kutusunda görünmesi için)
+          // DB insert -> notification subscription -> addNotification -> ses çalar
+          const { error } = await supabase.from('notifications').insert(notificationData);
+
+          if (error) {
+            console.error('[Notifications] Error inserting notification:', error);
+          } else {
+            console.log('[Notifications] Notification inserted to DB');
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Notifications] DM subscription status:', status);
+      });
+
+    return () => {
+      console.log('[Notifications] Cleaning up DM subscription');
+      dmChannel.unsubscribe();
+    };
+  }, [currentUserId, activeContactId]);
+
+  /**
    * Load initial notifications
    */
   useEffect(() => {
