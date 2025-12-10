@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Shield, Trash2, Plus, Save, Upload, Loader2, Image as ImageIcon, Ban } from 'lucide-react';
+import { X, Shield, Trash2, Plus, Save, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Server, ServerRole, PERMISSIONS } from '@/lib/types';
 import { hasPermission } from '@/utils/PermissionUtils';
@@ -13,7 +13,7 @@ interface ServerSettingsModalProps {
 }
 
 export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSettingsModalProps) {
-    const [activeTab, setActiveTab] = useState<'overview' | 'roles' | 'members' | 'bans'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'roles' | 'members'>('overview');
     const [server, setServer] = useState<Server | null>(null);
     const [roles, setRoles] = useState<ServerRole[]>([]);
     const [selectedRole, setSelectedRole] = useState<ServerRole | null>(null);
@@ -23,7 +23,6 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
     const [members, setMembers] = useState<any[]>([]);
     const [memberRoles, setMemberRoles] = useState<Record<string, ServerRole[]>>({});
     const [openDropdownMemberId, setOpenDropdownMemberId] = useState<string | null>(null);
-    const [bannedUsers, setBannedUsers] = useState<any[]>([]);
 
     // Overview tab states
     const [editedServerName, setEditedServerName] = useState('');
@@ -33,12 +32,8 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
     const serverIconInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (isOpen && serverId) {
-            if (activeTab === 'members') {
-                loadMembers();
-            } else if (activeTab === 'bans') {
-                loadBannedUsers();
-            }
+        if (isOpen && serverId && activeTab === 'members') {
+            loadMembers();
         }
     }, [isOpen, serverId, activeTab]);
 
@@ -62,37 +57,6 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
                 if (ur.server_roles) rolesMap[ur.user_id].push(ur.server_roles);
             });
             setMemberRoles(rolesMap);
-        }
-    }
-
-    async function loadBannedUsers() {
-        const { data: bansData } = await supabase
-            .from('server_bans')
-            .select('*, profile:profiles(*)')
-            .eq('server_id', serverId);
-
-        if (bansData) {
-            setBannedUsers(bansData);
-        }
-    }
-
-    async function handleUnbanUser(userId: string) {
-        if (!confirm('Bu kullanıcının yasağını kaldırmak istediğinize emin misiniz?')) return;
-
-        const toastId = toast.loading('Yasak kaldırılıyor...');
-        try {
-            const { error } = await supabase.rpc('unban_server_member', {
-                p_server_id: serverId,
-                p_user_id: userId
-            });
-
-            if (error) throw error;
-
-            toast.success('Kullanıcı yasağı kaldırıldı', { id: toastId });
-            loadBannedUsers();
-        } catch (error: any) {
-            console.error('Unban error:', error);
-            toast.error(`Hata: ${error.message || 'Yasak kaldırılamadı'}`, { id: toastId });
         }
     }
 
@@ -189,7 +153,7 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
 
         if (!error) {
             setRoles(roles.map(r => r.id === selectedRole.id ? { ...r, ...updates } : r));
-            toast.success('Rol kaydedildi!');
+            alert('Rol kaydedildi!');
         }
     }
 
@@ -295,12 +259,6 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
                         className={`text-left px-3 py-2 rounded text-sm font-medium ${activeTab === 'members' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`}
                     >
                         Üyeler
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('bans')}
-                        className={`text-left px-3 py-2 rounded text-sm font-medium ${activeTab === 'bans' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`}
-                    >
-                        Yasaklamalar
                     </button>
 
                     <div className="mt-auto">
@@ -582,45 +540,6 @@ export function ServerSettingsModal({ isOpen, onClose, serverId }: ServerSetting
                                         </div>
                                     </div>
                                 ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'bans' && (
-                        <div className="p-8 h-full flex flex-col">
-                            <h2 className="text-2xl font-bold text-white mb-4">Yasaklamalar</h2>
-                            <div className="flex-1 overflow-y-auto space-y-2">
-                                {bannedUsers.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                                        <Ban size={48} className="mb-4 opacity-50" />
-                                        <p>Bu sunucuda yasaklanmış kullanıcı yok.</p>
-                                    </div>
-                                ) : (
-                                    bannedUsers.map(ban => (
-                                        <div key={ban.id} className="bg-gray-850 p-4 rounded flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
-                                                    {ban.profile?.profile_image_url ? (
-                                                        <img src={ban.profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <span className="text-white font-semibold">{ban.profile?.username?.charAt(0).toUpperCase()}</span>
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <div className="text-white font-medium">{ban.profile?.username || 'Bilinmeyen Kullanıcı'}</div>
-                                                    <div className="text-xs text-gray-400">Sebep: {ban.reason || 'Belirtilmedi'}</div>
-                                                </div>
-                                            </div>
-
-                                            <button
-                                                onClick={() => handleUnbanUser(ban.user_id)}
-                                                className="px-3 py-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded text-sm transition-colors"
-                                            >
-                                                Yasağı Kaldır
-                                            </button>
-                                        </div>
-                                    ))
-                                )}
                             </div>
                         </div>
                     )}

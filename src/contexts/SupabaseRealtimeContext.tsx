@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import type { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
+import { useCall } from './CallContext';
+import { useVoiceChannel } from './VoiceChannelContext';
 
 interface PresenceUser {
     user_id: string;
@@ -17,8 +19,16 @@ const SupabaseRealtimeContext = createContext<SupabaseRealtimeContextType | unde
 
 export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) {
     const { user } = useAuth();
+    const { activeCall, endCall } = useCall();
+    const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
     const [presenceChannel, setPresenceChannel] = useState<RealtimeChannel | null>(null);
+
+    // Keep refs to current state to access in channel callback without re-subscribing
+    const cleanupRefs = useRef({ activeCall, activeChannelId, endCall, leaveChannel });
+    useEffect(() => {
+        cleanupRefs.current = { activeCall, activeChannelId, endCall, leaveChannel };
+    }, [activeCall, activeChannelId, endCall, leaveChannel]);
 
     useEffect(() => {
         if (!user) {
@@ -96,6 +106,21 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     });
 
                     console.log('[SupabaseRealtime] User presence tracked');
+                }
+
+                // Handle disconnection
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.log(`[SupabaseRealtime] Connection issue detected: ${status}`);
+                    const { activeCall, endCall, activeChannelId, leaveChannel } = cleanupRefs.current;
+
+                    if (activeCall) {
+                        console.log('[SupabaseRealtime] Ending call due to connection loss');
+                        endCall();
+                    }
+                    if (activeChannelId) {
+                        console.log('[SupabaseRealtime] Leaving voice channel due to connection loss');
+                        leaveChannel();
+                    }
                 }
             });
 

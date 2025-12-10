@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Home, Settings, Users, Search, Download } from 'lucide-react';
+import { Plus, Home, Settings, Users, Search, Download, AudioWaveform } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Server } from '@/lib/types';
+import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
 
 interface ServerListProps {
   selectedServerId: string | null;
@@ -25,13 +26,13 @@ export function ServerList({
 }: ServerListProps) {
   const [servers, setServers] = useState<Server[]>([]);
   const { user } = useAuth();
+  const { isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
   const [isElectron, setIsElectron] = useState(false);
 
   // Check if running in Electron
   useEffect(() => {
     setIsElectron(typeof window !== 'undefined' && !!(window as any).electron);
   }, []);
-
   useEffect(() => {
     if (!user) return;
 
@@ -124,6 +125,25 @@ export function ServerList({
       </button>
 
       <div className="flex-1" />
+
+      {/* Noise Suppression Toggle */}
+      <button
+        onClick={toggleNoiseSuppression}
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:shadow-glow-sm group ${isNoiseSuppressionEnabled
+          ? 'bg-green-600 hover:bg-green-500'
+          : 'bg-gray-800 hover:bg-gray-700'
+          }`}
+        title={isNoiseSuppressionEnabled ? 'Gürültü Engelleme: Açık' : 'Gürültü Engelleme: Kapalı'}
+      >
+        {isNoiseSuppressionEnabled ? (
+          <AudioWaveform className="w-6 h-6 text-white" />
+        ) : (
+          <div className="relative">
+            <AudioWaveform className="w-6 h-6 text-gray-400 group-hover:text-white" />
+            <div className="absolute top-1/2 left-1/2 w-[120%] h-0.5 bg-gray-400 group-hover:bg-white -translate-x-1/2 -translate-y-1/2 -rotate-45" />
+          </div>
+        )}
+      </button>
 
       {/* Search Button */}
       <button

@@ -15,365 +15,88 @@
         }
 
         :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --bg-dark: #0a0a0f;
-            --bg-card: rgba(20, 20, 30, 0.85);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.7);
-            --text-muted: rgba(255, 255, 255, 0.4);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --glow-color: rgba(102, 126, 234, 0.4);
+            --accent-color: #667eea;
+            --bg-color: #111111;
+            --text-color: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.6);
+            --border-color: #333333;
         }
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-dark);
-            min-height: 100vh;
+            background: var(--bg-color);
+            height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--text-primary);
+            color: var(--text-color);
             overflow: hidden;
-            position: relative;
-        }
-
-        /* Animated background */
-        .bg-animation {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            overflow: hidden;
-        }
-
-        .bg-animation::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background:
-                radial-gradient(circle at 20% 80%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(118, 75, 162, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(102, 126, 234, 0.1) 0%, transparent 40%);
-            animation: bgMove 20s ease-in-out infinite;
-        }
-
-        @keyframes bgMove {
-
-            0%,
-            100% {
-                transform: translate(0, 0) rotate(0deg);
-            }
-
-            25% {
-                transform: translate(-5%, 5%) rotate(5deg);
-            }
-
-            50% {
-                transform: translate(5%, -5%) rotate(-5deg);
-            }
-
-            75% {
-                transform: translate(-3%, -3%) rotate(3deg);
-            }
-        }
-
-        /* Floating particles */
-        .particles {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-            pointer-events: none;
-        }
-
-        .particle {
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background: rgba(102, 126, 234, 0.6);
-            border-radius: 50%;
-            animation: floatUp 8s infinite ease-in-out;
-        }
-
-        .particle:nth-child(1) {
-            left: 10%;
-            animation-delay: 0s;
-            animation-duration: 12s;
-        }
-
-        .particle:nth-child(2) {
-            left: 20%;
-            animation-delay: 2s;
-            animation-duration: 10s;
-        }
-
-        .particle:nth-child(3) {
-            left: 30%;
-            animation-delay: 4s;
-            animation-duration: 14s;
-        }
-
-        .particle:nth-child(4) {
-            left: 40%;
-            animation-delay: 1s;
-            animation-duration: 11s;
-        }
-
-        .particle:nth-child(5) {
-            left: 50%;
-            animation-delay: 3s;
-            animation-duration: 13s;
-        }
-
-        .particle:nth-child(6) {
-            left: 60%;
-            animation-delay: 5s;
-            animation-duration: 9s;
-        }
-
-        .particle:nth-child(7) {
-            left: 70%;
-            animation-delay: 2s;
-            animation-duration: 15s;
-        }
-
-        .particle:nth-child(8) {
-            left: 80%;
-            animation-delay: 4s;
-            animation-duration: 10s;
-        }
-
-        .particle:nth-child(9) {
-            left: 90%;
-            animation-delay: 1s;
-            animation-duration: 12s;
-        }
-
-        @keyframes floatUp {
-            0% {
-                transform: translateY(100vh) scale(0);
-                opacity: 0;
-            }
-
-            10% {
-                opacity: 1;
-                transform: translateY(90vh) scale(1);
-            }
-
-            90% {
-                opacity: 1;
-            }
-
-            100% {
-                transform: translateY(-20vh) scale(0);
-                opacity: 0;
-            }
+            border: 1px solid var(--border-color);
         }
 
         /* Main container */
         .container {
-            position: relative;
-            z-index: 10;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
             text-align: center;
-            padding: clamp(24px, 6vw, 48px);
-            background: var(--bg-card);
-            border-radius: clamp(16px, 4vw, 28px);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--border-color);
-            box-shadow:
-                0 4px 24px rgba(0, 0, 0, 0.4),
-                0 0 60px rgba(102, 126, 234, 0.15),
-                inset 0 1px 0 rgba(255, 255, 255, 0.05);
-            max-width: 420px;
-            width: calc(100% - 32px);
-            margin: 16px;
-            animation: containerAppear 0.8s ease-out;
-        }
-
-        @keyframes containerAppear {
-            from {
-                opacity: 0;
-                transform: translateY(30px) scale(0.95);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+            background: var(--bg-color);
         }
 
         /* Logo area */
         .logo-wrapper {
-            position: relative;
-            width: clamp(70px, 18vw, 100px);
-            height: clamp(70px, 18vw, 100px);
-            margin: 0 auto clamp(20px, 5vw, 32px);
-        }
-
-        .logo-glow {
-            position: absolute;
-            inset: -20%;
-            background: var(--primary-gradient);
-            border-radius: 50%;
-            filter: blur(30px);
-            opacity: 0.5;
-            animation: glowPulse 3s ease-in-out infinite;
-        }
-
-        @keyframes glowPulse {
-
-            0%,
-            100% {
-                opacity: 0.3;
-                transform: scale(1);
-            }
-
-            50% {
-                opacity: 0.6;
-                transform: scale(1.1);
-            }
-        }
-
-        .logo-ring {
-            position: absolute;
-            inset: 0;
-            border-radius: 50%;
-            border: 2px solid transparent;
-            background: linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
-                var(--primary-gradient) border-box;
-            animation: ringRotate 4s linear infinite;
-        }
-
-        @keyframes ringRotate {
-            from {
-                transform: rotate(0deg);
-            }
-
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .logo-inner {
-            position: absolute;
-            inset: 8px;
-            background: var(--primary-gradient);
-            border-radius: 50%;
+            width: 64px;
+            height: 64px;
+            margin-bottom: 24px;
+            background: var(--accent-color);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: clamp(24px, 7vw, 36px);
+            font-size: 32px;
             font-weight: 700;
             color: white;
-            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-            animation: logoPulse 2s ease-in-out infinite;
-        }
-
-        @keyframes logoPulse {
-
-            0%,
-            100% {
-                transform: scale(1);
-            }
-
-            50% {
-                transform: scale(1.05);
-            }
+            /* Square design */
+            border-radius: 0; 
         }
 
         /* Title */
         h1 {
-            font-size: clamp(22px, 6vw, 32px);
-            font-weight: 700;
-            margin-bottom: clamp(6px, 2vw, 12px);
-            background: var(--primary-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            letter-spacing: -0.5px;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-color);
         }
 
         /* Message */
         .message {
-            font-size: clamp(14px, 3.5vw, 16px);
+            font-size: 14px;
             color: var(--text-secondary);
-            margin-bottom: clamp(24px, 6vw, 36px);
-            line-height: 1.5;
+            margin-bottom: 32px;
         }
 
         /* Progress container */
         .progress-wrapper {
-            margin-bottom: clamp(16px, 4vw, 24px);
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 24px;
         }
 
         .progress-container {
-            position: relative;
             width: 100%;
-            height: clamp(8px, 2vw, 12px);
-            background: rgba(255, 255, 255, 0.06);
-            border-radius: 100px;
+            height: 4px;
+            background: #222;
             overflow: hidden;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
         }
 
         .progress-bar {
             height: 100%;
-            background: var(--primary-gradient);
-            border-radius: 100px;
+            background: var(--accent-color);
             width: 0%;
-            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .progress-bar::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(90deg,
-                    transparent 0%,
-                    rgba(255, 255, 255, 0.4) 50%,
-                    transparent 100%);
-            animation: shimmer 2s infinite;
-        }
-
-        @keyframes shimmer {
-            0% {
-                transform: translateX(-100%);
-            }
-
-            100% {
-                transform: translateX(100%);
-            }
-        }
-
-        .progress-glow {
-            position: absolute;
-            top: 50%;
-            right: 0;
-            transform: translateY(-50%);
-            width: 30px;
-            height: 30px;
-            background: var(--glow-color);
-            border-radius: 50%;
-            filter: blur(10px);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .progress-bar:not([style*="width: 0"]) .progress-glow {
-            opacity: 1;
+            transition: width 0.2s ease;
         }
 
         /* Progress percentage */
@@ -381,202 +104,52 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: clamp(10px, 2.5vw, 14px);
+            margin-top: 12px;
         }
 
         .progress-text {
-            font-size: clamp(13px, 3.2vw, 15px);
+            font-size: 12px;
             color: var(--text-secondary);
-            font-weight: 500;
         }
 
         .progress-percent {
-            font-size: clamp(14px, 3.5vw, 18px);
+            font-size: 12px;
             font-weight: 600;
-            background: var(--primary-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        /* Spinner */
-        .spinner-wrapper {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: clamp(8px, 2vw, 12px);
-            margin-bottom: clamp(12px, 3vw, 20px);
-        }
-
-        .spinner {
-            width: clamp(18px, 4.5vw, 24px);
-            height: clamp(18px, 4.5vw, 24px);
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #667eea;
-            border-right-color: #764ba2;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+            color: var(--text-color);
         }
 
         /* Status */
         .status {
-            font-size: clamp(12px, 3vw, 14px);
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
         }
 
-        .status-dot {
-            width: 6px;
-            height: 6px;
-            background: #667eea;
-            border-radius: 50%;
-            animation: statusPulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes statusPulse {
-
-            0%,
-            100% {
-                opacity: 0.4;
-                transform: scale(0.8);
-            }
-
-            50% {
-                opacity: 1;
-                transform: scale(1.2);
-            }
-        }
-
-        /* Footer */
-        .footer {
-            margin-top: clamp(20px, 5vw, 32px);
-            padding-top: clamp(16px, 4vw, 24px);
-            border-top: 1px solid var(--border-color);
-        }
-
-        .footer-text {
-            font-size: clamp(11px, 2.8vw, 13px);
-            color: var(--text-muted);
-            letter-spacing: 0.3px;
-        }
-
-        .footer-text span {
-            color: #667eea;
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 360px) {
-            .container {
-                padding: 20px 16px;
-            }
-
-            .logo-wrapper {
-                width: 60px;
-                height: 60px;
-            }
-
-            .logo-inner {
-                font-size: 20px;
-            }
-        }
-
-        @media (min-height: 800px) {
-            .container {
-                padding: 48px 40px;
-            }
-        }
-
-        /* High contrast mode support */
-        @media (prefers-contrast: high) {
-            .container {
-                border-color: rgba(255, 255, 255, 0.3);
-            }
-
-            .progress-container {
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-        }
-
-        /* Reduced motion support */
-        @media (prefers-reduced-motion: reduce) {
-
-            *,
-            *::before,
-            *::after {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
-            }
-        }
     </style>
 </head>
 
 <body>
-    <!-- Animated background -->
-    <div class="bg-animation"></div>
-
-    <!-- Floating particles -->
-    <div class="particles">
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-    </div>
-
     <!-- Main container -->
     <div class="container">
         <!-- Logo -->
-        <div class="logo-wrapper">
-            <div class="logo-glow"></div>
-            <div class="logo-ring"></div>
-            <div class="logo-inner">O</div>
-        </div>
+        <div class="logo-wrapper">O</div>
 
         <!-- Title -->
         <h1>Ovox</h1>
-        <p class="message">Güncellemeler yapılıyor, lütfen bekleyiniz...</p>
+        <p class="message">Güncelleme yapılıyor...</p>
 
         <!-- Progress -->
         <div class="progress-wrapper">
             <div class="progress-container">
-                <div class="progress-bar" id="progressBar">
-                    <div class="progress-glow"></div>
-                </div>
+                <div class="progress-bar" id="progressBar"></div>
             </div>
             <div class="progress-info">
                 <span class="progress-text" id="progressText">İndiriliyor...</span>
                 <span class="progress-percent" id="progressPercent">0%</span>
             </div>
         </div>
-
-        <!-- Status -->
-        <div class="spinner-wrapper">
-            <div class="spinner"></div>
-            <p class="status">
-                <span class="status-dot"></span>
-                <span id="status">Güncelleme kontrol ediliyor</span>
-            </p>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <p class="footer-text">Uygulama otomatik olarak başlatılacak<span>.</span></p>
-        </div>
+        
+        <p class="status" id="status">Hazırlanıyor</p>
     </div>
 
     <script>
