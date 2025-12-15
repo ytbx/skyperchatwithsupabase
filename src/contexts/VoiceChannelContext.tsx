@@ -71,6 +71,18 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         activeChannelIdRef.current = activeChannelId;
     }, [activeChannelId]);
 
+    const playJoinSound = useCallback(() => {
+        const audio = new Audio('sounds/joinovox.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.error('Error playing join sound:', e));
+    }, []);
+
+    const playLeaveSound = useCallback(() => {
+        const audio = new Audio('sounds/logout.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.error('Error playing leave sound:', e));
+    }, []);
+
     const sendSignal = async (toUserId: string, type: string, payload: any) => {
         if (!user || !activeChannelIdRef.current) return;
 
@@ -95,6 +107,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         if (!user) return;
 
         console.log('[VoiceChannelContext] Leaving channel...');
+        playLeaveSound();
 
         // First, stop screen share if active (this will signal peers)
         if (isScreenSharing && screenStreamRef.current) {
@@ -244,6 +257,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             if (error) throw error;
 
             setIsConnected(true);
+            playJoinSound();
 
             // 4. Fetch existing participants
             const { data: existingUsers } = await supabase
@@ -472,6 +486,26 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 table: 'voice_channel_users',
                 filter: `channel_id=eq.${activeChannelId}`
             }, (payload) => {
+                // Handle sound effects for other users
+                if (payload.eventType === 'INSERT') {
+                    // Only play if it's not the local user (already played in joinChannel)
+                    if (payload.new && payload.new.user_id !== user.id) {
+                        playJoinSound();
+                    }
+                } else if (payload.eventType === 'DELETE') {
+                    // Only play if it's not the local user (already played in leaveChannel)
+                    // Note: payload.old might not have user_id if not in RLS identity, but we can assume
+                    // if we are still connected and receive a delete, it's someone else.
+                    if (payload.old && payload.old.user_id !== user.id) {
+                        playLeaveSound();
+                    } else if (payload.old && !payload.old.user_id) {
+                        // Fallback if user_id is missing in old payload (depends on table replica identity)
+                        // If we are still strictly connected and it's a delete event on this channel, 
+                        // it's likely someone else leaving.
+                        playLeaveSound();
+                    }
+                }
+
                 // Handle participant list updates
                 fetchParticipants(activeChannelId);
             })
