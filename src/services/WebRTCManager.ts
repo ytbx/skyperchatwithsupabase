@@ -144,14 +144,14 @@ export class WebRTCManager {
                     // Small delay to ensure track is fully initialized before callbacks
                     await new Promise(resolve => setTimeout(resolve, 100));
 
-                    // Also treat as screen share for compatibility with current UI logic
+                    // Note: We used to automatically call onRemoteScreenCallback here.
+                    // Now we rely on the signal state in CallContext to determine if this is a screen share.
+                    // We still update the screen stream just in case it's needed, but we don't trigger the UI mode change here.
                     const screenStream = new MediaStream([track]);
-                    console.log('[WebRTCManager] ✓ Calling onRemoteScreenCallback');
                     this.onRemoteScreenCallback?.(screenStream);
 
                     // Also treat as camera stream
                     const cameraStream = new MediaStream([track]);
-                    console.log('[WebRTCManager] ✓ Calling onRemoteCameraCallback');
                     this.onRemoteCameraCallback?.(cameraStream);
 
                     console.log('[WebRTCManager] ========== VIDEO TRACK PROCESSING COMPLETE ==========');
@@ -537,6 +537,29 @@ export class WebRTCManager {
      */
     getPeerConnection(): RTCPeerConnection | null {
         return this.peerConnection;
+    }
+
+    /**
+     * Get call statistics (RTT, etc.)
+     */
+    async getCallStats(): Promise<{ rtt: number | null }> {
+        if (!this.peerConnection) return { rtt: null };
+
+        try {
+            const stats = await this.peerConnection.getStats();
+            let rtt: number | null = null;
+
+            stats.forEach(report => {
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    rtt = report.currentRoundTripTime * 1000; // converted to ms
+                }
+            });
+
+            return { rtt };
+        } catch (e) {
+            console.error('[WebRTCManager] Error getting stats:', e);
+            return { rtt: null };
+        }
     }
 
     /**

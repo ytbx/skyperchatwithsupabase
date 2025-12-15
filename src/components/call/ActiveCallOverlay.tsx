@@ -26,7 +26,8 @@ export const ActiveCallOverlay: React.FC = () => {
         activeCall,
         screenStream,
         remoteScreenStream,
-        playSoundboardAudio
+        playSoundboardAudio,
+        ping
     } = useCall();
 
     const [callDuration, setCallDuration] = useState(0);
@@ -160,30 +161,51 @@ export const ActiveCallOverlay: React.FC = () => {
 
 
     // Helper to set video stream - handles race conditions with play
-    const setVideoStream = async (el: HTMLVideoElement | null, stream: MediaStream | null, videoId?: string) => {
-        if (el && stream) {
-            // Only update if stream changed
-            if (el.srcObject !== stream) {
-                console.log('[ActiveCallOverlay] Setting stream to video element');
-                // Pause any existing playback first
-                el.pause();
-                el.srcObject = stream;
-                if (videoId) {
-                    el.volume = volumes.get(videoId) ?? 1.0;
-                }
-                // Wait a frame before playing
-                await new Promise(resolve => requestAnimationFrame(resolve));
-                try {
-                    await el.play();
-                } catch (e: any) {
-                    // Ignore AbortError as it just means play was interrupted by another play
-                    if (e.name !== 'AbortError') {
-                        console.error('Error playing video:', e);
-                    }
-                }
+    // Refactored to be used inside useEffect
+    const attachStreamToVideo = async (video: HTMLVideoElement, stream: MediaStream, videoId: string) => {
+        if (video.srcObject !== stream) {
+            console.log(`[ActiveCallOverlay] Attaching stream to ${videoId}`);
+            video.srcObject = stream;
+            // Common volume handling
+            const vol = volumes.get(videoId) ?? 1.0;
+            video.volume = vol;
+            try {
+                await video.play();
+            } catch (e) {
+                console.error(`[ActiveCallOverlay] Error playing ${videoId}:`, e);
             }
         }
     };
+
+    // Effect to handle Remote Screen Stream
+    useEffect(() => {
+        const video = remoteScreenVideoRef.current;
+        if (video && remoteScreenStream && isRemoteScreenSharing) {
+            attachStreamToVideo(video, remoteScreenStream, 'remote-screen');
+        }
+    }, [remoteScreenStream, isRemoteScreenSharing]);
+
+    // Effect to handle Remote Camera Stream
+    useEffect(() => {
+        const video = remoteCameraVideoRef.current;
+        if (video && remoteStream) {
+            // Only attach as camera if NOT screen sharing or if it's explicitly allowed
+            // The logic: showRemoteVideo = (isVideoCall && remoteStream) || isRemoteScreenSharing;
+            // But we have separate refs.
+            const isVideoCall = activeCall?.call_type === 'video';
+            if (isVideoCall) {
+                attachStreamToVideo(video, remoteStream, 'remote-camera');
+            }
+        }
+    }, [remoteStream, activeCall?.call_type]);
+
+    // Effect to handle Local Screen Stream
+    useEffect(() => {
+        const video = localScreenVideoRef.current;
+        if (video && screenStream && isScreenSharing) {
+            attachStreamToVideo(video, screenStream, 'local-screen');
+        }
+    }, [screenStream, isScreenSharing]);
 
     const handleVolumeChange = (videoId: string, volume: number) => {
         const videoRefs = [remoteScreenVideoRef, localScreenVideoRef, remoteCameraVideoRef];
@@ -282,7 +304,14 @@ export const ActiveCallOverlay: React.FC = () => {
                     </div>
 
                     {/* Connection Quality Indicator */}
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-4">
+                        {ping !== null && (
+                            <div className={`flex items-center space-x-1 ${ping < 100 ? 'text-green-500' :
+                                ping < 200 ? 'text-yellow-500' : 'text-red-500'
+                                }`}>
+                                <span className="text-xs font-medium">Ping: {Math.round(ping)}ms</span>
+                            </div>
+                        )}
                         {connectionState === 'connected' ? (
                             <div className="flex items-center space-x-1 text-green-500">
                                 <Wifi size={16} />
@@ -321,10 +350,7 @@ export const ActiveCallOverlay: React.FC = () => {
                                 {isRemoteScreenSharing && remoteScreenStream ? (
                                     <>
                                         <video
-                                            ref={(el) => {
-                                                remoteScreenVideoRef.current = el;
-                                                setVideoStream(el, remoteScreenStream, 'remote-screen');
-                                            }}
+                                            ref={remoteScreenVideoRef}
                                             autoPlay
                                             playsInline
                                             className="w-full h-full object-contain bg-black"
@@ -341,10 +367,7 @@ export const ActiveCallOverlay: React.FC = () => {
                                 ) : showRemoteVideo && remoteStream ? (
                                     <>
                                         <video
-                                            ref={(el) => {
-                                                remoteCameraVideoRef.current = el;
-                                                setVideoStream(el, remoteStream, 'remote-camera');
-                                            }}
+                                            ref={remoteCameraVideoRef}
                                             autoPlay
                                             playsInline
                                             className="w-full h-full object-cover"
@@ -400,10 +423,7 @@ export const ActiveCallOverlay: React.FC = () => {
                                 {isScreenSharing && screenStream ? (
                                     <>
                                         <video
-                                            ref={(el) => {
-                                                localScreenVideoRef.current = el;
-                                                setVideoStream(el, screenStream, 'local-screen');
-                                            }}
+                                            ref={localScreenVideoRef}
                                             autoPlay
                                             playsInline
                                             muted
@@ -420,7 +440,12 @@ export const ActiveCallOverlay: React.FC = () => {
                                     </>
                                 ) : showLocalVideo && localStream && !isCameraOff ? (
                                     <video
-                                        ref={(el) => setVideoStream(el, localStream)}
+                                        ref={(el) => {
+                                            // Handle local mirror video manually since it has no specific ref logic
+                                            if (el && el.srcObject !== localStream) {
+                                                el.srcObject = localStream;
+                                            }
+                                        }}
                                         autoPlay
                                         playsInline
                                         muted

@@ -23,6 +23,7 @@ interface CallContextType {
     isScreenSharing: boolean;
     isRemoteScreenSharing: boolean;
     connectionState: RTCPeerConnectionState | null;
+    ping: number | null;
 
     // Actions
     initiateCall: (contactId: string, contactName: string, callType: 'voice' | 'video') => Promise<void>;
@@ -60,6 +61,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
+    const [ping, setPing] = useState<number | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
     const lastProcessedOfferSdp = useRef<string | null>(null);
@@ -96,6 +98,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
             ringtoneRef.current.currentTime = 0;
         }
     }, [callStatus]);
+
+    // Poll for call stats (ping)
+    useEffect(() => {
+        if (callStatus !== 'active') {
+            setPing(null);
+            return;
+        }
+
+        const interval = setInterval(async () => {
+            const stats = await webrtcManager.getCallStats();
+            setPing(stats.rtt);
+        }, 2000);
+
+        return () => clearInterval(interval);
+    }, [callStatus, webrtcManager]);
 
     /**
      * Initiate a call to a contact
@@ -183,11 +200,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     console.log('[CallContext] Screen stream tracks:', screenStream.getTracks().map(t => `${t.kind}: ${t.label}`));
                     const newStream = new MediaStream(screenStream.getTracks());
                     setRemoteScreenStream(newStream);
-                    // Automatically set the flag when we receive a screen stream
-                    // This ensures UI updates even if the signal arrives late
-                    console.log('[CallContext] Setting isRemoteScreenSharing to TRUE');
-                    setIsRemoteScreenSharing(true);
-                    console.log('[CallContext] ✓ Remote screen stream set successfully');
+                    // REMOVED: setIsRemoteScreenSharing(true);
+                    // We now rely purely on the 'screen-share-started' signal to toggle the UI mode.
+                    // This prevents race conditions where a camera track might be mistaken for a screen share.
+                    console.log('[CallContext] ✓ Remote screen stream updated (waiting for signal to enable UI)');
                 },
                 undefined,  // onRemoteCamera (not used in direct calls)
                 // NEW: Soundpad callback - separate stream
@@ -458,10 +474,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 console.log('[CallContext] Screen stream tracks:', screenStream.getTracks().map(t => `${t.kind}: ${t.label}`));
                                 const newStream = new MediaStream(screenStream.getTracks());
                                 setRemoteScreenStream(newStream);
-                                // Automatically set the flag when we receive a screen stream
-                                console.log('[CallContext] Setting isRemoteScreenSharing to TRUE');
-                                setIsRemoteScreenSharing(true);
-                                console.log('[CallContext] ✓ Remote screen stream set successfully');
+                                // REMOVED: setIsRemoteScreenSharing(true);
+                                // We now rely purely on the 'screen-share-started' signal to toggle the UI mode.
+                                console.log('[CallContext] ✓ Remote screen stream updated (waiting for signal to enable UI)');
                             },
                             undefined,  // onRemoteCamera (not used in direct calls)
                             // NEW: Soundpad callback - separate stream
@@ -989,7 +1004,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                                 (screenStream) => {
                                     console.log('[CallContext] ✓ Remote screen stream received');
                                     setRemoteScreenStream(new MediaStream(screenStream.getTracks()));
-                                    setIsRemoteScreenSharing(true);
+                                    // REMOVED: setIsRemoteScreenSharing(true);
+                                    console.log('[CallContext] Remote screen stream updated');
                                 }
                             );
 
@@ -1183,6 +1199,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         isScreenSharing,
         isRemoteScreenSharing,
         connectionState,
+        ping,
         initiateCall,
         acceptCall,
         rejectCall,
