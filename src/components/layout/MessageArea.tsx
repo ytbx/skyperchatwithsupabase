@@ -7,6 +7,7 @@ import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
 import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
 import { toast } from 'sonner';
+import { GifPicker } from '@/components/chat/GifPicker';
 
 interface MessageAreaProps {
   channelId: number | null;
@@ -281,8 +282,42 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     } finally {
       setSending(false);
       setIsUploading(false);
+      // Focus input after enabled again
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 10);
     }
   }
+
+  const sendGif = async (url: string) => {
+    if (!channelId || !user) return;
+
+    try {
+      const messageData = {
+        message: 'GIF',
+        sender_id: user.id,
+        channel_id: channelId,
+        is_image: true,
+        file_url: url,
+        file_name: 'tenor.gif',
+        file_type: 'image/gif',
+        file_size: 0,
+      };
+
+      const { error } = await supabase
+        .from('channel_messages')
+        .insert(messageData);
+
+      if (error) throw error;
+
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 10);
+    } catch (error) {
+      console.error('Error sending GIF:', error);
+      toast.error('GIF gönderilirken bir hata oluştu');
+    }
+  };
 
   async function deleteMessage(messageId: number) {
     try {
@@ -499,13 +534,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
               />
 
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="text-gray-400 hover:text-gray-300 transition-colors p-1 rounded hover:bg-gray-600"
-                  title="Emoji"
-                >
-                  <Smile className="w-5 h-5" />
-                </button>
+                <GifPicker onGifSelect={sendGif} />
               </div>
             </div>
           </div>
