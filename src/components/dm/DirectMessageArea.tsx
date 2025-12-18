@@ -11,6 +11,7 @@ import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
 import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
 import { toast } from 'sonner';
+import { GifPicker } from '../chat/GifPicker';
 
 interface DirectMessageAreaProps {
   contactId: string;
@@ -35,6 +36,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   // Search functionality states
   const [showSearch, setShowSearch] = useState(false);
@@ -338,13 +340,67 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
       // NOT: Optimistic update kaldırldı! 
       // Realtime subscription zaten INSERT event'i ile mesajı ekleyecek.
       // Bu sayede duplicate mesaj sorunu önleniyor.
+      // Bu sayede duplicate mesaj sorunu önleniyor.
       setNewMessage('');
       setSelectedFile(null);
+
+      // Keep focus on input
+      setTimeout(() => {
+        messageInputRef.current?.focus();
+      }, 10);
     } catch (error) {
       console.error('Error sending message:', error);
       toast.error('Mesaj gönderilirken bir hata oluştu');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const sendGif = async (url: string) => {
+    if (!user || !contactId) return;
+
+    try {
+      const messageData = {
+        message: 'GIF',
+        sender_id: user.id,
+        receiver_id: contactId,
+        is_image: true,
+        is_read: false,
+        file_url: url,
+        file_name: 'tenor.gif',
+        file_type: 'image/gif',
+        file_size: 0,
+      };
+
+      const { data, error } = await supabase
+        .from('chats')
+        .insert(messageData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const isReceiverOnline = isUserOnline(contactId);
+      if (!isReceiverOnline) {
+        await supabase.from('notifications').insert({
+          user_id: contactId,
+          type: 'message',
+          title: 'Yeni Direkt Mesaj',
+          message: `${profile?.username || 'Birisi'}: GIF gönderdi`,
+          metadata: {
+            type: 'dm',
+            senderId: user.id,
+            messageId: data.id
+          }
+        });
+      }
+
+      setTimeout(() => {
+        messageInputRef.current?.focus();
+      }, 10);
+    } catch (error) {
+      console.error('Error sending GIF:', error);
+      toast.error('GIF gönderilirken bir hata oluştu');
     }
   };
 
@@ -800,6 +856,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
           <div className="flex-1 relative">
             <input
+              ref={messageInputRef}
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
@@ -808,12 +865,11 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
               placeholder={`${contactName} ile mesajlaş...`}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
               disabled={isUploading}
+              autoFocus
             />
           </div>
 
-          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-            <Smile size={20} className="text-gray-400" />
-          </button>
+          <GifPicker onGifSelect={sendGif} />
 
           <button
             onClick={sendMessage}

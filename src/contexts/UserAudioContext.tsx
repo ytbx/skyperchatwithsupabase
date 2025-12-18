@@ -20,9 +20,13 @@ interface UserAudioContextType {
     setUserSoundpadVolume: (userId: string, volume: number) => void;
     toggleUserSoundpadMute: (userId: string) => void;
 
-    // Global mute
+    // Global mute (for voice)
     isGlobalMuted: boolean;
     toggleGlobalMute: () => void;
+
+    // Global soundpad mute (separate from voice)
+    isGlobalSoundpadMuted: boolean;
+    toggleGlobalSoundpadMute: () => void;
 
     // Get effective volume (considering mute states)
     getEffectiveVoiceVolume: (userId: string) => number;
@@ -40,6 +44,7 @@ const UserAudioContext = createContext<UserAudioContextType | undefined>(undefin
 
 const STORAGE_KEY = 'userAudioSettings_v2';
 const GLOBAL_MUTE_KEY = 'globalAudioMute';
+const GLOBAL_SOUNDPAD_MUTE_KEY = 'globalSoundpadMute';
 
 interface StoredSettings {
     [userId: string]: UserAudioSettings;
@@ -55,6 +60,7 @@ const DEFAULT_SETTINGS: UserAudioSettings = {
 export function UserAudioProvider({ children }: { children: ReactNode }) {
     const [userSettings, setUserSettings] = useState<StoredSettings>({});
     const [isGlobalMuted, setIsGlobalMuted] = useState(false);
+    const [isGlobalSoundpadMuted, setIsGlobalSoundpadMuted] = useState(false);
 
     // Load settings from localStorage on mount
     useEffect(() => {
@@ -67,6 +73,11 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
             const globalMute = localStorage.getItem(GLOBAL_MUTE_KEY);
             if (globalMute) {
                 setIsGlobalMuted(JSON.parse(globalMute));
+            }
+
+            const globalSoundpadMute = localStorage.getItem(GLOBAL_SOUNDPAD_MUTE_KEY);
+            if (globalSoundpadMute) {
+                setIsGlobalSoundpadMuted(JSON.parse(globalSoundpadMute));
             }
         } catch (error) {
             console.error('[UserAudioContext] Error loading settings:', error);
@@ -89,6 +100,14 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
             console.error('[UserAudioContext] Error saving global mute:', error);
         }
     }, [isGlobalMuted]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(GLOBAL_SOUNDPAD_MUTE_KEY, JSON.stringify(isGlobalSoundpadMuted));
+        } catch (error) {
+            console.error('[UserAudioContext] Error saving global soundpad mute:', error);
+        }
+    }, [isGlobalSoundpadMuted]);
 
     // Voice settings
     const getUserVoiceVolume = useCallback((userId: string): number => {
@@ -158,6 +177,10 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
         setIsGlobalMuted(prev => !prev);
     }, []);
 
+    const toggleGlobalSoundpadMute = useCallback(() => {
+        setIsGlobalSoundpadMuted(prev => !prev);
+    }, []);
+
     const getEffectiveVoiceVolume = useCallback((userId: string): number => {
         if (isGlobalMuted) return 0;
         if (getUserVoiceMuted(userId)) return 0;
@@ -165,10 +188,10 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
     }, [isGlobalMuted, getUserVoiceMuted, getUserVoiceVolume]);
 
     const getEffectiveSoundpadVolume = useCallback((userId: string): number => {
-        if (isGlobalMuted) return 0;
+        if (isGlobalSoundpadMuted) return 0;
         if (getUserSoundpadMuted(userId)) return 0;
         return getUserSoundpadVolume(userId);
-    }, [isGlobalMuted, getUserSoundpadMuted, getUserSoundpadVolume]);
+    }, [isGlobalSoundpadMuted, getUserSoundpadMuted, getUserSoundpadVolume]);
 
     // Legacy compatibility
     const getUserVolume = getUserVoiceVolume;
@@ -190,6 +213,8 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
                 toggleUserSoundpadMute,
                 isGlobalMuted,
                 toggleGlobalMute,
+                isGlobalSoundpadMuted,
+                toggleGlobalSoundpadMute,
                 getEffectiveVoiceVolume,
                 getEffectiveSoundpadVolume,
                 // Legacy
