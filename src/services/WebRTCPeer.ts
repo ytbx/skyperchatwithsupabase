@@ -26,6 +26,11 @@ export class WebRTCPeer {
     private remoteStream: MediaStream | null = null;
     private remoteSoundpadStream: MediaStream | null = null;
 
+    private cameraSender: RTCRtpSender | null = null;
+    private screenSender: RTCRtpSender | null = null;
+
+    private remoteStreamId: string | null = null;
+
     // ICE candidate queue - crucial for handling race conditions
     private pendingCandidates: RTCIceCandidateInit[] = [];
     private hasRemoteDescription = false;
@@ -66,7 +71,7 @@ export class WebRTCPeer {
         // Handle remote tracks
         this.pc.ontrack = (event) => {
             console.log('[WebRTCPeer] Remote track received:', event.track.kind, event.track.label);
-            this.handleRemoteTrack(event.track);
+            this.handleRemoteTrack(event.track, event.streams);
         };
 
         // Handle connection state changes
@@ -88,54 +93,96 @@ export class WebRTCPeer {
         };
     }
 
-    private handleRemoteTrack(track: MediaStreamTrack) {
+    private handleRemoteTrack(track: MediaStreamTrack, streams: readonly MediaStream[]) {
+        const stream = streams[0];
+        if (!stream) {
+            console.warn('[WebRTCPeer] Track received with no stream:', track.kind);
+            return;
+        }
+
+        console.log('[WebRTCPeer] Remote track received:', track.kind, track.label, 'Stream ID:', stream.id);
+
         if (track.kind === 'audio') {
             this.audioTrackCount++;
             console.log('[WebRTCPeer] Audio track #', this.audioTrackCount);
 
             if (this.audioTrackCount === 1) {
-                // First audio track = voice
+                // First audio stream -> Main Voice/Camera Stream
                 if (!this.remoteStream) {
                     this.remoteStream = new MediaStream();
+                    this.remoteStreamId = stream.id;
+                } else if (this.remoteStreamId && this.remoteStreamId !== stream.id) {
+                    // Mismatch? We'll assume the first one we set is the "Main" one.
+                    console.warn('[WebRTCPeer] Audio stream ID mismatch, expected:', this.remoteStreamId, 'got:', stream.id);
                 }
+
                 this.remoteStream.addTrack(track);
                 this.callbacks.onRemoteStream(this.remoteStream);
                 console.log('[WebRTCPeer] ✓ Voice track added');
+
             } else if (this.audioTrackCount === 2) {
                 // Second audio track = soundpad
                 if (!this.remoteSoundpadStream) {
                     this.remoteSoundpadStream = new MediaStream();
                 }
+                // Check if this audio belongs to screen share?
+                // Usually soundpad is separate stream. WebRTCPeer assumes specific order/logic.
+                // Keeping existing logic for Soundpad.
                 this.remoteSoundpadStream.addTrack(track);
                 this.callbacks.onRemoteSoundpad(this.remoteSoundpadStream);
                 console.log('[WebRTCPeer] ✓ Soundpad track added');
             } else {
-                // Additional audio (screen share audio) goes to voice stream
+                // Additional audio (screen share audio)
+                // If it belongs to screen share stream
+                if (stream.id !== this.remoteStreamId && stream.id !== this.remoteSoundpadStream?.id) {
+                    console.log('[WebRTCPeer] Screen share audio track?');
+                    // We don't have a dedicated "RemoteScreenStream" object to add to exposed by callbacks,
+                    // but the video handler handles the screen stream.
+                    // Often screen share audio comes with the video stream.
+                }
+            }
+        } else if (track.kind === 'video') {
+
+            // Logic:
+            // 1. If we have a remoteStreamId, and this stream matches -> Camera
+            // 2. If we DON'T have a remoteStreamId, we assume the first one is Camera (unless we know otherwise?)
+            //    - Actually, if I start a call with NO camera, and they share screen, that might be the first video.
+            //    - But usually Audio comes first and establishes remoteStreamId.
+
+            let isCamera = false;
+
+            if (this.remoteStreamId) {
+                if (stream.id === this.remoteStreamId) {
+                    isCamera = true;
+                }
+            } else {
+                // No audio yet? Fallback.
+                // If it's the first video track...
+                if (!this.remoteStream) {
+                    this.remoteStream = new MediaStream();
+                    this.remoteStreamId = stream.id;
+                    isCamera = true;
+                } else {
+                    // verifying id
+                    if (stream.id === this.remoteStream.id) {
+                        isCamera = true;
+                    }
+                }
+            }
+
+            if (isCamera) {
+                console.log('[WebRTCPeer] Assigning as Primary (Camera) Video');
                 this.remoteStream?.addTrack(track);
                 if (this.remoteStream) {
                     this.callbacks.onRemoteStream(this.remoteStream);
                 }
+            } else {
+                // Different stream ID -> Screen Share
+                console.log('[WebRTCPeer] Assigning as Secondary (Screen) Video');
+                // Create a new stream object for the UI to consume
+                const screenStream = new MediaStream([track]);
+                this.callbacks.onRemoteVideo(screenStream);
             }
-        } else if (track.kind === 'video') {
-            console.log('[WebRTCPeer] Video track received');
-
-            if (!this.remoteStream) {
-                this.remoteStream = new MediaStream();
-            }
-
-            // Replace existing video track
-            const existingVideo = this.remoteStream.getVideoTracks()[0];
-            if (existingVideo) {
-                this.remoteStream.removeTrack(existingVideo);
-            }
-
-            this.remoteStream.addTrack(track);
-            this.callbacks.onRemoteStream(this.remoteStream);
-
-            // Also emit separate video stream for screen share UI
-            const videoStream = new MediaStream([track]);
-            this.callbacks.onRemoteVideo(videoStream);
-            console.log('[WebRTCPeer] ✓ Video track added and emitted');
         }
     }
 
@@ -170,7 +217,11 @@ export class WebRTCPeer {
 
         console.log('[WebRTCPeer] Adding local stream');
         stream.getTracks().forEach(track => {
-            this.pc?.addTrack(track, stream);
+            const sender = this.pc!.addTrack(track, stream);
+            if (track.kind === 'video') {
+                this.cameraSender = sender;
+                console.log('[WebRTCPeer] Camera sender stored');
+            }
         });
     }
 
@@ -299,22 +350,19 @@ export class WebRTCPeer {
         console.log('[WebRTCPeer] Starting screen share');
         this.screenStream = screenStream;
 
-        // Find and remove existing video track
-        const existingSender = this.pc.getSenders().find(s => s.track?.kind === 'video');
-        if (existingSender) {
-            console.log('[WebRTCPeer] Removing existing video sender');
-            this.pc.removeTrack(existingSender);
-        }
-
         // Add screen share video track
         const videoTrack = screenStream.getVideoTracks()[0];
         if (videoTrack) {
             console.log('[WebRTCPeer] Adding screen share video track');
-            this.pc.addTrack(videoTrack, screenStream);
+            // Store the sender so we can remove exactly this one later
+            this.screenSender = this.pc.addTrack(videoTrack, screenStream);
 
             // Handle user stopping screen share via browser UI
             videoTrack.onended = () => {
                 console.log('[WebRTCPeer] Screen share stopped by user');
+                // We should probably notify the session/context here if possible, 
+                // but the current architecture relies on callbacks/events not bubbling up easily for 'ended'.
+                // The `CallContext` adds a listener on the track itself, so that's handled.
             };
         }
 
@@ -334,26 +382,27 @@ export class WebRTCPeer {
 
         console.log('[WebRTCPeer] Stopping screen share');
 
-        // Stop all screen stream tracks
+        // Stop all screen stream tracks locally
         if (this.screenStream) {
             this.screenStream.getTracks().forEach(track => track.stop());
             this.screenStream = null;
         }
 
-        // Remove screen share tracks from peer connection
-        const videoSender = this.pc.getSenders().find(s => s.track?.kind === 'video');
-        if (videoSender) {
-            this.pc.removeTrack(videoSender);
+        // Remove screen share specific sender
+        if (this.screenSender) {
+            try {
+                this.pc.removeTrack(this.screenSender);
+                console.log('[WebRTCPeer] Screen sender removed');
+            } catch (e) {
+                console.warn('[WebRTCPeer] Error removing screen sender:', e);
+            }
+            this.screenSender = null;
+        } else {
+            console.warn('[WebRTCPeer] No screen sender found to remove');
+            // Fallback: don't randomly remove video tracks anymore to prevent removing camera
         }
 
-        // Restore camera track if available
-        if (this.localStream) {
-            const cameraTrack = this.localStream.getVideoTracks()[0];
-            if (cameraTrack) {
-                console.log('[WebRTCPeer] Restoring camera track');
-                this.pc.addTrack(cameraTrack, this.localStream);
-            }
-        }
+        // Note: Camera track is separate and untouched because we used distinct senders.
     }
 
     /**

@@ -45,8 +45,8 @@ export const CallNotification: React.FC = () => {
         await acceptCall(activeCall);
     };
 
-    // Don't show notification if no active call or call is already active
-    if (!activeCall || callStatus === 'active' || callStatus === 'idle') {
+    // Only show notification for ringing states
+    if (!activeCall || (callStatus !== 'ringing_incoming' && callStatus !== 'ringing_outgoing')) {
         return null;
     }
 
@@ -93,7 +93,7 @@ export const CallNotification: React.FC = () => {
                         <p className="text-gray-400 text-sm">
                             {isIncoming && 'Incoming call...'}
                             {isOutgoing && 'Calling...'}
-                            {callStatus === 'connecting' && 'Connecting...'}
+
                         </p>
                     </div>
                 </div>
@@ -133,13 +133,6 @@ export const CallNotification: React.FC = () => {
                                 <span>Cancel</span>
                             </button>
                         </>
-                    )}
-
-                    {callStatus === 'connecting' && (
-                        <div className="flex-1 bg-gray-700 text-white py-3 px-4 rounded-lg flex items-center justify-center">
-                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2" />
-                            <span>Connecting...</span>
-                        </div>
                     )}
                 </div>
             </div>

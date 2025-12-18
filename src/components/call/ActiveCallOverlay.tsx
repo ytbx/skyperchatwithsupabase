@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCall } from '@/contexts/CallContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -280,17 +280,61 @@ export const ActiveCallOverlay: React.FC = () => {
         return null;
     }
 
-    const isVideoCall = activeCall?.call_type === 'video';
+    // Check for active video tracks
+    const hasRemoteVideo = remoteStream && remoteStream.getVideoTracks().length > 0;
+    const hasLocalVideo = localStream && !isCameraOff;
 
-    // Separate video display logic for each participant
-    const showRemoteVideo = (isVideoCall && remoteStream) || isRemoteScreenSharing;
-    const showLocalVideo = (isVideoCall && !isCameraOff) || isScreenSharing;
+    // Calculate active items for grid layout
+    const activeItemCount = [
+        true, // Remote Main is always present (video or avatar)
+        (isRemoteScreenSharing && !!remoteScreenStream),
+        (isScreenSharing && !!screenStream),
+        true // Local Main is always present
+    ].filter(Boolean).length;
+
+    // Resize Logic
+    const [height, setHeight] = useState(450);
+    const [isResizing, setIsResizing] = useState(false);
+    const overlayRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing) return;
+
+            // Constrain height between 450px and 80vh
+            const newHeight = Math.max(450, Math.min(window.innerHeight * 0.8, e.clientY - (overlayRef.current?.getBoundingClientRect().top || 0)));
+            setHeight(newHeight);
+        };
+
+        const handleMouseUp = () => {
+            setIsResizing(false);
+            document.body.style.cursor = 'default';
+        };
+
+        if (isResizing) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'row-resize';
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'default';
+        };
+    }, [isResizing]);
+
+
 
     return (
         <>
-            <div className="relative w-full h-1/2 bg-gray-900 border-b border-gray-700 z-10 flex flex-col">
+            <div
+                ref={overlayRef}
+                className="relative w-full bg-gray-900 z-10 flex flex-col flex-none transition-[height] duration-75 ease-out select-none"
+                style={{ height }}
+            >
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 bg-gray-800/50 backdrop-blur-sm">
+                <div className="flex items-center justify-between p-4 bg-gray-800/50 backdrop-blur-sm z-20 shrink-0">
                     <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
                             <User size={16} className="text-white" />
@@ -308,7 +352,7 @@ export const ActiveCallOverlay: React.FC = () => {
                         {ping !== null && (
                             <div className={`flex items-center space-x-1 ${ping < 100 ? 'text-green-500' :
                                 ping < 200 ? 'text-yellow-500' : 'text-red-500'
-                                }`}>
+                                } `}>
                                 <span className="text-xs font-medium">Ping: {Math.round(ping)}ms</span>
                             </div>
                         )}
@@ -331,163 +375,139 @@ export const ActiveCallOverlay: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Video/Audio Display Area */}
-                <div className="flex-1 relative bg-gray-950">
-                    <div className="w-full h-full flex items-center justify-center p-6 gap-6">
-                        {/* Remote Participant Box */}
+                {/* Main Content Area */}
+                <div className="flex-1 relative bg-gray-950 p-4 min-h-0 overflow-hidden flex flex-wrap justify-center items-center content-center gap-4">
+
+                    {/* 1. Remote Main (Camera or Avatar) */}
+                    <div
+                        className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
+                        style={{ width: '420px', flexShrink: 0 }}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            if (contactId) setVolumeContextMenu({ x: e.clientX, y: e.clientY });
+                        }}
+                    >
+                        {/* Render Remote Video or Avatar */}
+                        {hasRemoteVideo ? (
+                            <video
+                                ref={remoteCameraVideoRef}
+                                autoPlay
+                                playsInline
+                                className="w-full h-full object-cover"
+                            />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center">
+                                {contactProfileImageUrl ? (
+                                    <img src={contactProfileImageUrl} alt={contactName} className="w-24 h-24 rounded-full object-cover border-4 border-gray-700" />
+                                ) : (
+                                    <div className="w-24 h-24 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center border-4 border-gray-700">
+                                        <span className="text-3xl font-bold text-white">{contactName.charAt(0).toUpperCase()}</span>
+                                    </div>
+                                )}
+                                <p className="text-white text-lg font-semibold mt-4">{contactName}</p>
+                            </div>
+                        )}
+
+                        {/* Indicators */}
+                        <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg flex items-center space-x-2">
+                            <span className="text-white text-sm font-medium">{contactName}</span>
+                            {remoteMicMuted && <MicOff size={14} className="text-red-500" />}
+                        </div>
+                        <div className="absolute top-3 right-3 flex space-x-2">
+                            <button onClick={() => openFullscreen('remote-camera')} className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white transition-opacity opacity-0 group-hover:opacity-100">
+                                <Maximize2 size={16} />
+                            </button>
+                        </div>
+                        {isRemoteSpeaking && <div className="absolute inset-0 border-4 border-green-500 rounded-xl pointer-events-none" />}
+                    </div>
+
+                    {/* 2. Remote Screen Share (If Active) */}
+                    {isRemoteScreenSharing && remoteScreenStream && (
                         <div
-                            className="flex-1 max-w-[45%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out cursor-pointer"
-                            onContextMenu={(e) => {
-                                e.preventDefault();
-                                if (contactId) {
-                                    setVolumeContextMenu({ x: e.clientX, y: e.clientY });
-                                }
-                            }}
+                            className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
+                            style={{ width: '420px', flexShrink: 0 }}
                         >
-                            <div className={`relative w-full aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl overflow-hidden shadow-2xl transition-all duration-300 ${isRemoteSpeaking ? 'ring-4 ring-green-500 shadow-green-500/50' : 'border-2 border-gray-700'
-                                }`}>
-                                {/* Remote Screen Share or Camera */}
-                                {isRemoteScreenSharing && remoteScreenStream ? (
-                                    <>
-                                        <video
-                                            ref={remoteScreenVideoRef}
-                                            autoPlay
-                                            playsInline
-                                            className="w-full h-full object-contain bg-black"
-                                        />
-                                        {/* Fullscreen button */}
-                                        <button
-                                            onClick={() => openFullscreen('remote-screen')}
-                                            className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
-                                            title="Tam ekran"
-                                        >
-                                            <Maximize2 className="w-4 h-4 text-white" />
-                                        </button>
-                                    </>
-                                ) : showRemoteVideo && remoteStream ? (
-                                    <>
-                                        <video
-                                            ref={remoteCameraVideoRef}
-                                            autoPlay
-                                            playsInline
-                                            className="w-full h-full object-cover"
-                                        />
-                                        {/* Fullscreen button */}
-                                        <button
-                                            onClick={() => openFullscreen('remote-camera')}
-                                            className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
-                                            title="Tam ekran"
-                                        >
-                                            <Maximize2 className="w-4 h-4 text-white" />
-                                        </button>
-                                    </>
-                                ) : (
-                                    // Avatar/Initial
-                                    <div className="w-full h-full flex flex-col items-center justify-center">
-                                        {contactProfileImageUrl ? (
-                                            <img
-                                                src={contactProfileImageUrl}
-                                                alt={contactName}
-                                                className="w-32 h-32 rounded-full object-cover border-4 border-gray-700"
-                                            />
-                                        ) : (
-                                            <div className="w-32 h-32 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center border-4 border-gray-700">
-                                                <span className="text-5xl font-bold text-white">
-                                                    {contactName.charAt(0).toUpperCase()}
-                                                </span>
-                                            </div>
-                                        )}
-                                        <p className="text-white text-xl font-semibold mt-4">{contactName}</p>
-                                    </div>
-                                )}
-
-                                {/* Mic Muted Indicator */}
-                                {remoteMicMuted && (
-                                    <div className="absolute bottom-3 right-3 bg-red-600 rounded-full p-2 shadow-lg">
-                                        <MicOff size={16} className="text-white" />
-                                    </div>
-                                )}
-
-                                {/* Name Label */}
-                                <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                                    <p className="text-white text-sm font-medium">{contactName}</p>
-                                </div>
+                            <video
+                                ref={remoteScreenVideoRef}
+                                autoPlay
+                                playsInline
+                                className="w-full h-full object-cover bg-black"
+                            />
+                            <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg">
+                                <span className="text-white text-sm font-medium">{contactName}'s Screen</span>
+                            </div>
+                            <div className="absolute top-3 right-3">
+                                <button onClick={() => openFullscreen('remote-screen')} className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white">
+                                    <Maximize2 size={16} />
+                                </button>
                             </div>
                         </div>
+                    )}
 
-                        {/* Local Participant Box */}
-                        <div className="flex-1 max-w-[45%] flex flex-col items-center justify-center transition-all duration-300 ease-in-out">
-                            <div className={`relative w-full aspect-video bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl overflow-hidden shadow-2xl transition-all duration-300 ${isLocalSpeaking ? 'ring-4 ring-green-500 shadow-green-500/50' : 'border-2 border-gray-700'
-                                }`}>
-                                {/* Local Screen Share or Camera */}
-                                {isScreenSharing && screenStream ? (
-                                    <>
-                                        <video
-                                            ref={localScreenVideoRef}
-                                            autoPlay
-                                            playsInline
-                                            muted
-                                            className="w-full h-full object-contain bg-black"
-                                        />
-                                        {/* Fullscreen button */}
-                                        <button
-                                            onClick={() => openFullscreen('local-screen')}
-                                            className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black/90 rounded-lg transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
-                                            title="Tam ekran"
-                                        >
-                                            <Maximize2 className="w-4 h-4 text-white" />
-                                        </button>
-                                    </>
-                                ) : showLocalVideo && localStream && !isCameraOff ? (
-                                    <video
-                                        ref={(el) => {
-                                            // Handle local mirror video manually since it has no specific ref logic
-                                            if (el && el.srcObject !== localStream) {
-                                                el.srcObject = localStream;
-                                            }
-                                        }}
-                                        autoPlay
-                                        playsInline
-                                        muted
-                                        className="w-full h-full object-cover mirror"
-                                    />
-                                ) : (
-                                    // Avatar/Initial
-                                    <div className="w-full h-full flex flex-col items-center justify-center">
-                                        {localProfileImageUrl ? (
-                                            <img
-                                                src={localProfileImageUrl}
-                                                alt="You"
-                                                className="w-32 h-32 rounded-full object-cover border-4 border-gray-700"
-                                            />
-                                        ) : (
-                                            <div className="w-32 h-32 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center border-4 border-gray-700">
-                                                <User size={48} className="text-white" />
-                                            </div>
-                                        )}
-                                        <p className="text-white text-xl font-semibold mt-4">Siz</p>
-                                    </div>
-                                )}
-
-                                {/* Mic Muted Indicator */}
-                                {isMicMuted && (
-                                    <div className="absolute bottom-3 right-3 bg-red-600 rounded-full p-2 shadow-lg">
-                                        <MicOff size={16} className="text-white" />
-                                    </div>
-                                )}
-
-                                {/* Name Label */}
-                                <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                                    <p className="text-white text-sm font-medium">Siz</p>
-                                </div>
+                    {/* 3. Local Screen Share (If Active) */}
+                    {isScreenSharing && screenStream && (
+                        <div
+                            className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
+                            style={{ width: '420px', flexShrink: 0 }}
+                        >
+                            <video
+                                ref={localScreenVideoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className="w-full h-full object-cover bg-black"
+                            />
+                            <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg">
+                                <span className="text-white text-sm font-medium">Your Screen</span>
+                            </div>
+                            <div className="absolute top-3 right-3">
+                                <button onClick={() => openFullscreen('local-screen')} className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white">
+                                    <Maximize2 size={16} />
+                                </button>
                             </div>
                         </div>
+                    )}
+
+                    {/* 4. Local Main (Camera or Avatar) */}
+                    <div
+                        className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
+                        style={{ width: '420px', flexShrink: 0 }}
+                    >
+                        {(!isCameraOff && localStream) ? (
+                            <video
+                                ref={(el) => {
+                                    if (el && el.srcObject !== localStream) el.srcObject = localStream;
+                                }}
+                                autoPlay
+                                playsInline
+                                muted
+                                className="w-full h-full object-cover mirror"
+                            />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center">
+                                {localProfileImageUrl ? (
+                                    <img src={localProfileImageUrl} alt="You" className="w-24 h-24 rounded-full object-cover border-4 border-gray-700" />
+                                ) : (
+                                    <div className="w-24 h-24 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center border-4 border-gray-700">
+                                        <User size={32} className="text-white" />
+                                    </div>
+                                )}
+                                <p className="text-white text-lg font-semibold mt-4">Siz</p>
+                            </div>
+                        )}
+
+                        {/* Indicators */}
+                        <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg flex items-center space-x-2">
+                            <span className="text-white text-sm font-medium">Siz</span>
+                            {isMicMuted && <MicOff size={14} className="text-red-500" />}
+                        </div>
+                        {isLocalSpeaking && <div className="absolute inset-0 border-4 border-green-500 rounded-xl pointer-events-none" />}
                     </div>
 
                 </div>
 
                 {/* Call Controls */}
-                <div className="p-4 flex justify-center">
+                <div className="p-4 flex justify-center bg-gray-900 shrink-0">
                     <CallControls
                         isMicMuted={isMicMuted}
                         isDeafened={isDeafened}
@@ -498,84 +518,96 @@ export const ActiveCallOverlay: React.FC = () => {
                         onCameraToggle={toggleCamera}
                         onScreenShareToggle={toggleScreenShare}
                         onEndCall={endCall}
-                        showCamera={isVideoCall}
+                        showCamera={true}
                         showScreenShare={true}
                         onPlaySound={playSoundboardAudio}
                     />
                 </div>
 
-                {/* Fullscreen Modal */}
-                {fullscreenVideoId && (() => {
-                    let stream: MediaStream | null = null;
-                    let label = '';
-                    let currentVolume = 1.0;
+                {/* Resize Handle */}
+                <div
+                    className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-800 hover:bg-blue-500 cursor-row-resize z-50 transition-colors flex items-center justify-center group"
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        setIsResizing(true);
+                    }}
+                >
+                    <div className="w-20 h-1 rounded-full bg-gray-600 group-hover:bg-blue-300 transition-colors" />
+                </div>
+            </div>
 
-                    if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
-                        stream = remoteScreenStream;
-                        label = `${contactName} - Ekran paylaşımı`;
-                        currentVolume = volumes.get('remote-screen') ?? 1.0;
-                    } else if (fullscreenVideoId === 'local-screen' && screenStream) {
-                        stream = screenStream;
-                        label = 'Sizin ekranınız';
-                        currentVolume = volumes.get('local-screen') ?? 1.0;
-                    } else if (fullscreenVideoId === 'remote-camera' && remoteStream) {
-                        stream = remoteStream;
-                        label = `${contactName} - Kamera`;
-                        currentVolume = volumes.get('remote-camera') ?? 1.0;
-                    }
+            {/* Fullscreen Modal */}
+            {fullscreenVideoId && (() => {
+                let stream: MediaStream | null = null;
+                let label = '';
+                let currentVolume = 1.0;
 
-                    return (
+                if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
+                    stream = remoteScreenStream;
+                    label = `${contactName} - Ekran paylaşımı`;
+                    currentVolume = volumes.get('remote-screen') ?? 1.0;
+                } else if (fullscreenVideoId === 'local-screen' && screenStream) {
+                    stream = screenStream;
+                    label = 'Sizin ekranınız';
+                    currentVolume = volumes.get('local-screen') ?? 1.0;
+                } else if (fullscreenVideoId === 'remote-camera' && remoteStream) {
+                    stream = remoteStream;
+                    label = `${contactName} - Kamera`;
+                    currentVolume = volumes.get('remote-camera') ?? 1.0;
+                }
+
+                return (
+                    <div
+                        className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8"
+                        onClick={closeFullscreen}
+                    >
                         <div
-                            className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8"
-                            onClick={closeFullscreen}
+                            className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            <div
-                                className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
-                                onClick={(e) => e.stopPropagation()}
+                            <video
+                                ref={fullscreenVideoRef}
+                                autoPlay
+                                playsInline
+                                className="w-full h-full object-contain"
+                            />
+
+                            {/* Close button */}
+                            <button
+                                onClick={closeFullscreen}
+                                className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
+                                title="Kapat"
                             >
-                                <video
-                                    ref={fullscreenVideoRef}
-                                    autoPlay
-                                    playsInline
-                                    className="w-full h-full object-contain"
-                                />
+                                <X className="w-6 h-6 text-white" />
+                            </button>
 
-                                {/* Close button */}
-                                <button
-                                    onClick={closeFullscreen}
-                                    className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
-                                    title="Kapat"
-                                >
-                                    <X className="w-6 h-6 text-white" />
-                                </button>
-
-                                {/* Volume control (not for local screen) */}
-                                {fullscreenVideoId !== 'local-screen' && (
-                                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
-                                        <Volume2 className="w-5 h-5 text-white" />
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="1"
-                                            step="0.1"
-                                            value={currentVolume}
-                                            onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
-                                            className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
-                                    </div>
-                                )}
-
-                                {/* Label */}
-                                <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
-                                    <p className="text-sm font-medium text-white">{label}</p>
+                            {/* Volume control (not for local screen) */}
+                            {fullscreenVideoId !== 'local-screen' && (
+                                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
+                                    <Volume2 className="w-5 h-5 text-white" />
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.1"
+                                        value={currentVolume}
+                                        onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
+                                        className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                    <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
                                 </div>
+                            )}
+
+                            {/* Label */}
+                            <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
+                                <p className="text-sm font-medium text-white">{label}</p>
                             </div>
                         </div>
-                    );
-                })()}
+                    </div>
+                );
+            })()}
 
-                <style>{`
+            <style>{`
                 .mirror {
                     transform: scaleX(-1);
                 }
@@ -597,21 +629,18 @@ export const ActiveCallOverlay: React.FC = () => {
                     border: 2px solid white;
                 }
             `}</style>
-            </div>
 
             {/* Volume Context Menu */}
-            {
-                volumeContextMenu && contactId && (
-                    <UserVolumeContextMenu
-                        x={volumeContextMenu.x}
-                        y={volumeContextMenu.y}
-                        userId={contactId}
-                        username={contactName}
-                        profileImageUrl={contactProfileImageUrl || undefined}
-                        onClose={() => setVolumeContextMenu(null)}
-                    />
-                )
-            }
+            {volumeContextMenu && contactId && (
+                <UserVolumeContextMenu
+                    x={volumeContextMenu.x}
+                    y={volumeContextMenu.y}
+                    userId={contactId}
+                    username={contactName}
+                    profileImageUrl={contactProfileImageUrl || undefined}
+                    onClose={() => setVolumeContextMenu(null)}
+                />
+            )}
         </>
     );
 };

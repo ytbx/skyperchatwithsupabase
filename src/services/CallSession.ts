@@ -93,7 +93,7 @@ export class CallSession {
                     console.log('[CallSession] Remote stream received');
                     this.callbacks.onRemoteStream(new MediaStream(stream.getTracks()));
                     // Fallback: if we have remote stream, we should be active
-                    if (this.state === 'connecting' || this.state === 'starting') {
+                    if (this.state === 'connecting' || this.state === 'starting' || this.state === 'ringing') {
                         console.log('[CallSession] Remote stream received - setting state to active');
                         this.setState('active');
                     }

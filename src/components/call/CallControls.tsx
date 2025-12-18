@@ -70,22 +70,20 @@ export const CallControls: React.FC<CallControlsProps> = ({
             </button>
 
             {/* Camera Toggle */}
-            {showCamera && (
-                <button
-                    onClick={onCameraToggle}
-                    className={`p-4 rounded-full transition-all ${isCameraOff
-                        ? 'bg-red-600 hover:bg-red-700'
-                        : 'bg-gray-700 hover:bg-gray-600'
-                        }`}
-                    title={isCameraOff ? 'Kamerayı aç' : 'Kamerayı kapat'}
-                >
-                    {isCameraOff ? (
-                        <VideoOff size={20} className="text-white" />
-                    ) : (
-                        <Video size={20} className="text-white" />
-                    )}
-                </button>
-            )}
+            <button
+                onClick={onCameraToggle}
+                className={`p-4 rounded-full transition-all ${isCameraOff
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                title={isCameraOff ? 'Kamerayı aç' : 'Kamerayı kapat'}
+            >
+                {isCameraOff ? (
+                    <VideoOff size={20} className="text-white" />
+                ) : (
+                    <Video size={20} className="text-white" />
+                )}
+            </button>
 
             {/* Screen Share Toggle */}
             {showScreenShare && (
