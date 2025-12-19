@@ -181,7 +181,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
             },
             onRemoteScreenStream: (stream) => {
                 console.log('[CallContext] Remote screen stream received');
-                setRemoteScreenStream(new MediaStream(stream.getTracks()));
+                setRemoteScreenStream(stream);
+                // Ensure we know they are sharing
+                setIsRemoteScreenSharing(true);
             },
             onRemoteScreenShareStarted: () => {
                 console.log('[CallContext] Remote screen share started');
@@ -190,6 +192,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             onRemoteScreenShareStopped: () => {
                 console.log('[CallContext] Remote screen share stopped');
                 setIsRemoteScreenSharing(false);
+                setRemoteScreenStream(null);
             },
             onCallEnded: (reason) => {
                 console.log('[CallContext] Call ended:', reason);

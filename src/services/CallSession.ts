@@ -422,13 +422,12 @@ export class CallSession {
 
         await this.peer.startScreenShare(stream);
 
-        // Send renegotiation offer
+        // Send signal first so remote is ready for tracks
+        await this.signaling.sendScreenShareStarted();
+
+        // Then negotiate tracks
         await this.sendOffer();
 
-        // Wait for renegotiation to complete, then notify peer
-        await new Promise(r => setTimeout(r, 1500));
-
-        await this.signaling.sendScreenShareStarted();
         console.log('[CallSession] ✓ Screen share started and signaled');
     }
 
@@ -443,9 +442,10 @@ export class CallSession {
         console.log('[CallSession] Stopping screen share');
 
         await this.peer.stopScreenShare();
+        // Send signal first
         await this.signaling.sendScreenShareStopped();
 
-        // Send renegotiation offer
+        // Then negotiate to remove tracks
         await this.sendOffer();
 
         console.log('[CallSession] ✓ Screen share stopped');

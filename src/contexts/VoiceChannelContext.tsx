@@ -56,6 +56,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
+    const peerMetadata = useRef<Map<string, { joined_at: string }>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
     const screenStreamRef = useRef<MediaStream | null>(null);
     const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -99,6 +100,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const cleanupPeerConnections = useCallback(() => {
         peerManagers.current.forEach(manager => manager.cleanup());
         peerManagers.current.clear();
+        peerMetadata.current.clear();
         setParticipants([]);
     }, []);
 
@@ -456,6 +458,45 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             .order('joined_at', { ascending: true });
 
         if (data) {
+            console.log('[VoiceChannelContext] Fetched participants:', data.length);
+
+            // Cleanup stale peer connections
+            const currentParticipantIds = new Set(data.map((p: any) => p.user_id));
+
+            // 1. Cleanup removed users
+            for (const [peerId, manager] of peerManagers.current.entries()) {
+                if (!currentParticipantIds.has(peerId)) {
+                    console.log('[VoiceChannelContext] User no longer in channel, cleaning up peer connection:', peerId);
+                    try {
+                        manager.cleanup();
+                    } catch (e) {
+                        console.error('[VoiceChannelContext] Error cleaning up peer manager:', e);
+                    }
+                    peerManagers.current.delete(peerId);
+                    peerMetadata.current.delete(peerId);
+                }
+            }
+
+            // 2. Cleanup rejoined users (new session)
+            data.forEach((p: any) => {
+                const meta = peerMetadata.current.get(p.user_id);
+                // If we have metadata and the joined_at timestamp changed, it's a new session
+                // We must cleanup the old connection to allow a new one
+                if (meta && meta.joined_at !== p.joined_at) {
+                    console.log('[VoiceChannelContext] User session changed (rejoin), cleaning up old manager:', p.user_id);
+                    if (peerManagers.current.has(p.user_id)) {
+                        try {
+                            peerManagers.current.get(p.user_id)?.cleanup();
+                        } catch (e) {
+                            console.error('[VoiceChannelContext] Error cleaning up peer manager on rejoin:', e);
+                        }
+                        peerManagers.current.delete(p.user_id);
+                    }
+                }
+                // Update metadata
+                peerMetadata.current.set(p.user_id, { joined_at: p.joined_at });
+            });
+
             setParticipants(prev => {
                 // Merge existing streams with new data
                 return data.map((p: any) => {
@@ -466,7 +507,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                         ...p,
                         stream: stream,
                         screenStream: existing?.screenStream,
-                        cameraStream: existing?.cameraStream
+                        cameraStream: existing?.cameraStream,
+                        soundpadStream: existing?.soundpadStream
                     };
                 });
             });

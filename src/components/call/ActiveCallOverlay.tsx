@@ -180,8 +180,13 @@ export const ActiveCallOverlay: React.FC = () => {
     // Effect to handle Remote Screen Stream
     useEffect(() => {
         const video = remoteScreenVideoRef.current;
-        if (video && remoteScreenStream && isRemoteScreenSharing) {
+        if (!video) return;
+
+        if (remoteScreenStream && isRemoteScreenSharing) {
             attachStreamToVideo(video, remoteScreenStream, 'remote-screen');
+        } else {
+            // Clear video if sharing stopped
+            video.srcObject = null;
         }
     }, [remoteScreenStream, isRemoteScreenSharing]);
 
@@ -202,8 +207,12 @@ export const ActiveCallOverlay: React.FC = () => {
     // Effect to handle Local Screen Stream
     useEffect(() => {
         const video = localScreenVideoRef.current;
-        if (video && screenStream && isScreenSharing) {
+        if (!video) return;
+
+        if (screenStream && isScreenSharing) {
             attachStreamToVideo(video, screenStream, 'local-screen');
+        } else {
+            video.srcObject = null;
         }
     }, [screenStream, isScreenSharing]);
 

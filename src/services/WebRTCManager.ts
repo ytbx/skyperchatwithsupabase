@@ -569,14 +569,17 @@ export class WebRTCManager {
         console.log('[WebRTCManager] Cleaning up');
 
         // Stop all local tracks
+        // NOTE: We do NOT stop tracks here because they are managed by VoiceChannelContext
+        // and shared across multiple peer connections. Stopping them here would kill the specific
+        // stream for ALL peers and the local user.
         if (this.localStream) {
-            this.localStream.getTracks().forEach(track => track.stop());
+            // this.localStream.getTracks().forEach(track => track.stop());
             this.localStream = null;
         }
 
         // Stop screen share
         if (this.screenStream) {
-            this.screenStream.getTracks().forEach(track => track.stop());
+            // this.screenStream.getTracks().forEach(track => track.stop());
             this.screenStream = null;
         }
 

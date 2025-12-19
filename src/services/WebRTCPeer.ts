@@ -71,6 +71,14 @@ export class WebRTCPeer {
         // Handle remote tracks
         this.pc.ontrack = (event) => {
             console.log('[WebRTCPeer] Remote track received:', event.track.kind, event.track.label);
+
+            // Monitor track removal on the stream
+            event.streams.forEach(stream => {
+                stream.onremovetrack = (ev) => {
+                    console.log('[WebRTCPeer] Remote track removed:', ev.track.kind, ev.track.label);
+                };
+            });
+
             this.handleRemoteTrack(event.track, event.streams);
         };
 
