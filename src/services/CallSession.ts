@@ -411,6 +411,44 @@ export class CallSession {
     }
 
     /**
+     * Start camera mid-call
+     * Returns the camera stream for local preview
+     */
+    async startCamera(): Promise<MediaStream> {
+        if (!this.peer || !this.signaling) {
+            throw new Error('Cannot start camera - not connected');
+        }
+
+        console.log('[CallSession] Starting camera mid-call');
+
+        const cameraStream = await this.peer.startCamera();
+
+        // Renegotiate to add the new track
+        await this.sendOffer();
+
+        console.log('[CallSession] ✓ Camera started and renegotiated');
+        return cameraStream;
+    }
+
+    /**
+     * Stop camera mid-call
+     */
+    async stopCamera(): Promise<void> {
+        if (!this.peer || !this.signaling) {
+            return;
+        }
+
+        console.log('[CallSession] Stopping camera');
+
+        await this.peer.stopCamera();
+
+        // Renegotiate to remove the track
+        await this.sendOffer();
+
+        console.log('[CallSession] ✓ Camera stopped');
+    }
+
+    /**
      * Start screen sharing
      */
     async startScreenShare(stream: MediaStream): Promise<void> {

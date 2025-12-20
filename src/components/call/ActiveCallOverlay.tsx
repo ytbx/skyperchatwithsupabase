@@ -12,6 +12,7 @@ export const ActiveCallOverlay: React.FC = () => {
         callStatus,
         localStream,
         remoteStream,
+        cameraStream,
         isMicMuted,
         isDeafened,
         isCameraOff,
@@ -482,10 +483,11 @@ export const ActiveCallOverlay: React.FC = () => {
                         className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
                         style={{ width: '420px', flexShrink: 0 }}
                     >
-                        {(!isCameraOff && localStream) ? (
+                        {(!isCameraOff && (cameraStream || localStream)) ? (
                             <video
                                 ref={(el) => {
-                                    if (el && el.srcObject !== localStream) el.srcObject = localStream;
+                                    const streamToUse = cameraStream || localStream;
+                                    if (el && streamToUse && el.srcObject !== streamToUse) el.srcObject = streamToUse;
                                 }}
                                 autoPlay
                                 playsInline

@@ -90,21 +90,12 @@ export function ServerList({
       <button
         onClick={() => onViewChange('friends')}
         className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden hover:shadow-glow ${currentView === 'friends'
-          ? 'rounded-lg shadow-glow-sm ring-2 ring-primary-500'
-          : 'bg-gray-800'
+          ? 'bg-primary-500 rounded-lg shadow-glow-sm'
+          : 'bg-gray-800 hover:bg-gray-700'
           }`}
         title="Ana Sayfa"
       >
-        <img
-          src="/icon.png"
-          alt="Ovox"
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            // Fallback if image fails
-            e.currentTarget.style.display = 'none';
-            e.currentTarget.parentElement!.innerHTML = '<svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
-          }}
-        />
+        <Users className="w-7 h-7 text-white" />
       </button>
 
       <div className="w-8 h-px bg-gray-700 my-1" />

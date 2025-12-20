@@ -22,6 +22,7 @@ export interface WebRTCPeerCallbacks {
 export class WebRTCPeer {
     private pc: RTCPeerConnection | null = null;
     private localStream: MediaStream | null = null;
+    private cameraStream: MediaStream | null = null;
     private screenStream: MediaStream | null = null;
     private remoteStream: MediaStream | null = null;
     private remoteSoundpadStream: MediaStream | null = null;
@@ -350,6 +351,64 @@ export class WebRTCPeer {
     }
 
     /**
+     * Start camera mid-call (for voice calls that need to add video)
+     * Returns the camera stream for local preview
+     */
+    async startCamera(): Promise<MediaStream> {
+        if (!this.pc) throw new Error('Peer connection not initialized');
+
+        console.log('[WebRTCPeer] Starting camera mid-call');
+
+        // Get camera stream
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+            },
+            audio: false
+        });
+
+        // Store reference
+        this.cameraStream = cameraStream;
+
+        // Add video track to peer connection
+        const videoTrack = cameraStream.getVideoTracks()[0];
+        if (videoTrack) {
+            this.cameraSender = this.pc.addTrack(videoTrack, cameraStream);
+            console.log('[WebRTCPeer] ✓ Camera track added mid-call');
+        }
+
+        return cameraStream;
+    }
+
+    /**
+     * Stop camera mid-call
+     */
+    async stopCamera() {
+        if (!this.pc) return;
+
+        console.log('[WebRTCPeer] Stopping camera');
+
+        // Stop camera stream tracks
+        if (this.cameraStream) {
+            this.cameraStream.getTracks().forEach(track => track.stop());
+            this.cameraStream = null;
+        }
+
+        // Remove camera sender from peer connection
+        if (this.cameraSender) {
+            try {
+                this.pc.removeTrack(this.cameraSender);
+                console.log('[WebRTCPeer] ✓ Camera sender removed');
+            } catch (e) {
+                console.warn('[WebRTCPeer] Error removing camera sender:', e);
+            }
+            this.cameraSender = null;
+        }
+    }
+
+    /**
      * Start screen sharing
      */
     async startScreenShare(screenStream: MediaStream) {
@@ -480,6 +539,12 @@ export class WebRTCPeer {
         if (this.screenStream) {
             this.screenStream.getTracks().forEach(track => track.stop());
             this.screenStream = null;
+        }
+
+        // Stop camera stream tracks
+        if (this.cameraStream) {
+            this.cameraStream.getTracks().forEach(track => track.stop());
+            this.cameraStream = null;
         }
 
         // Close peer connection

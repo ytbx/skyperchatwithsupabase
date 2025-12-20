@@ -16,6 +16,7 @@ interface CallContextType {
     remoteStream: MediaStream | null;
     remoteSoundpadStream: MediaStream | null;
     screenStream: MediaStream | null;
+    cameraStream: MediaStream | null;
     remoteScreenStream: MediaStream | null;
     isMicMuted: boolean;
     isDeafened: boolean;
@@ -32,7 +33,7 @@ interface CallContextType {
     endCall: () => Promise<void>;
     toggleMic: () => void;
     toggleDeafen: () => void;
-    toggleCamera: () => void;
+    toggleCamera: () => Promise<void>;
     toggleScreenShare: () => Promise<void>;
     playSoundboardAudio: (audioBuffer: AudioBuffer) => void;
 }
@@ -52,6 +53,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [remoteSoundpadStream, setRemoteSoundpadStream] = useState<MediaStream | null>(null);
     const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+    const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
     const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
     const [isMicMuted, setIsMicMuted] = useState(false);
     const [isDeafened, setIsDeafened] = useState(false);
@@ -140,6 +142,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setRemoteStream(null);
         setRemoteSoundpadStream(null);
         setScreenStream(null);
+        setCameraStream(null);
         setRemoteScreenStream(null);
         setIsMicMuted(false);
         setIsCameraOff(true);
@@ -355,12 +358,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }, [isDeafened]);
 
     /**
-     * Toggle camera on/off
+     * Toggle camera on/off (supports mid-call camera add/remove)
      */
-    const toggleCamera = useCallback(() => {
-        const newCameraState = !isCameraOff;
-        sessionRef.current?.setCameraEnabled(!newCameraState);
-        setIsCameraOff(newCameraState);
+    const toggleCamera = useCallback(async () => {
+        if (!sessionRef.current) return;
+
+        try {
+            if (isCameraOff) {
+                // Turn camera ON - add camera track mid-call
+                console.log('[CallContext] Starting camera mid-call');
+                const stream = await sessionRef.current.startCamera();
+                setCameraStream(stream);
+                setIsCameraOff(false);
+                console.log('[CallContext] ✓ Camera started');
+            } else {
+                // Turn camera OFF - remove camera track
+                console.log('[CallContext] Stopping camera');
+                await sessionRef.current.stopCamera();
+                setCameraStream(null);
+                setIsCameraOff(true);
+                console.log('[CallContext] ✓ Camera stopped');
+            }
+        } catch (error) {
+            console.error('[CallContext] Error toggling camera:', error);
+        }
     }, [isCameraOff]);
 
     /**
@@ -543,6 +564,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         remoteStream,
         remoteSoundpadStream,
         screenStream,
+        cameraStream,
         remoteScreenStream,
         isMicMuted,
         isDeafened,
