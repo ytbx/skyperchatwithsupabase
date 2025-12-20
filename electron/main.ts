@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -83,8 +83,8 @@ function sendUpdateProgress(percent: number) {
 
 function createWindow() {
     const iconPath = isDev
-        ? path.join(__dirname, '..', 'public', 'ovox-large.png')
-        : path.join(__dirname, '..', 'dist', 'ovox-large.png');
+        ? path.join(__dirname, '..', 'public', 'icon.png')
+        : path.join(__dirname, '..', 'dist', 'icon.png');
 
     mainWindow = new BrowserWindow({
         width: 1280,
@@ -168,6 +168,7 @@ function createWindow() {
         return false;
     });
 
+    // Soundboard IPC handlers
     ipcMain.handle('soundboard-get-sound-data', async (_event, id: string) => {
         const meta = loadSoundboardMeta();
         const sound = meta.find(s => s.id === id);
@@ -183,6 +184,48 @@ function createWindow() {
             }
         }
         return null;
+    });
+
+    // Global Shortcut IPC handlers
+    ipcMain.handle('register-global-shortcut', (_event, accelerator: string) => {
+        try {
+            // Unregister if already registered to avoid conflicts
+            if (globalShortcut.isRegistered(accelerator)) {
+                globalShortcut.unregister(accelerator);
+            }
+
+            const ret = globalShortcut.register(accelerator, () => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('global-shortcut-triggered', accelerator);
+                }
+            });
+
+            if (!ret) {
+                console.log('Registration failed for', accelerator);
+                return false;
+            }
+            return true;
+        } catch (error) {
+            console.error('Error registering global shortcut:', error);
+            return false;
+        }
+    });
+
+    ipcMain.handle('unregister-global-shortcut', (_event, accelerator: string) => {
+        try {
+            if (globalShortcut.isRegistered(accelerator)) {
+                globalShortcut.unregister(accelerator);
+            }
+            return true;
+        } catch (error) {
+            console.error('Error unregistering global shortcut:', error);
+            return false;
+        }
+    });
+
+    ipcMain.handle('unregister-all-global-shortcuts', () => {
+        globalShortcut.unregisterAll();
+        return true;
     });
 
     if (isDev) {

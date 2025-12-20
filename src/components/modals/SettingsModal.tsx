@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
-import { X, LogOut, User, Upload, Loader2 } from 'lucide-react';
+import { X, LogOut, User, Upload, Loader2, Video } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { FileUploadService } from '@/services/FileUploadService';
+import { VoiceVideoSettings } from '@/components/settings/VoiceVideoSettings';
 import { toast } from 'sonner';
 
 interface SettingsModalProps {
@@ -11,7 +12,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { profile, signOut, refreshProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'account'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'voice-video'>('profile');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +77,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             >
               Hesap
             </button>
+            <button
+              onClick={() => setActiveTab('voice-video')}
+              className={`w-full px-3 py-2 text-left rounded transition-colors flex items-center gap-2 ${activeTab === 'voice-video'
+                ? 'bg-primary-500/10 text-primary-500'
+                : 'text-gray-200 hover:bg-gray-700'
+                }`}
+            >
+              <Video className="w-4 h-4" />
+              Ses ve Görüntü
+            </button>
           </div>
 
           <div className="mt-auto pt-8">
@@ -93,7 +104,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
             <h2 className="text-2xl font-semibold text-white">
-              {activeTab === 'profile' ? 'Profil' : 'Hesap'}
+              {activeTab === 'profile' && 'Profil'}
+              {activeTab === 'account' && 'Hesap'}
+              {activeTab === 'voice-video' && 'Ses ve Görüntü'}
             </h2>
             <button
               onClick={onClose}
@@ -197,6 +210,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </button>
                 </div>
               </div>
+            )}
+
+            {activeTab === 'voice-video' && (
+              <VoiceVideoSettings />
             )}
           </div>
         </div>

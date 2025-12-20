@@ -29,9 +29,13 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { CallProvider } from '@/contexts/CallContext';
 import { VoiceChannelProvider, useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { UserAudioProvider } from '@/contexts/UserAudioContext';
+import { DeviceSettingsProvider } from '@/contexts/DeviceSettingsContext';
 import { NoiseSuppressionProvider } from '@/contexts/NoiseSuppressionContext';
 import { GlobalAudio } from '@/components/layout/GlobalAudio';
+import { GlobalKeybindListener } from '@/components/GlobalKeybindListener';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+
+import { FriendProvider } from '@/contexts/FriendContext';
 
 function AppContent() {
     const { user, loading } = useAuth();
@@ -274,6 +278,7 @@ function AppContent() {
 
     return (
         <div className="h-screen bg-gray-900 flex overflow-hidden relative">
+            <GlobalKeybindListener />
             {/* Left Sidebar - Always visible */}
             <ServerList
                 selectedServerId={selectedServerId}
@@ -460,23 +465,27 @@ function App() {
     return (
         <AuthProvider>
             <NotificationProvider>
-                <NoiseSuppressionProvider>
-                    <CallProvider>
-                        <VoiceChannelProvider>
-                            <UserAudioProvider>
-                                <SupabaseRealtimeProvider>
-                                    <ErrorBoundary>
-                                        <GlobalAudio />
-                                    </ErrorBoundary>
-                                    <Routes>
-                                        <Route path="/" element={<AppContent />} />
-                                        <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
-                                    </Routes>
-                                </SupabaseRealtimeProvider>
-                            </UserAudioProvider>
-                        </VoiceChannelProvider>
-                    </CallProvider>
-                </NoiseSuppressionProvider>
+                <DeviceSettingsProvider>
+                    <NoiseSuppressionProvider>
+                        <CallProvider>
+                            <VoiceChannelProvider>
+                                <UserAudioProvider>
+                                    <SupabaseRealtimeProvider>
+                                        <FriendProvider>
+                                            <ErrorBoundary>
+                                                <GlobalAudio />
+                                            </ErrorBoundary>
+                                            <Routes>
+                                                <Route path="/" element={<AppContent />} />
+                                                <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
+                                            </Routes>
+                                        </FriendProvider>
+                                    </SupabaseRealtimeProvider>
+                                </UserAudioProvider>
+                            </VoiceChannelProvider>
+                        </CallProvider>
+                    </NoiseSuppressionProvider>
+                </DeviceSettingsProvider>
             </NotificationProvider>
         </AuthProvider>
     );

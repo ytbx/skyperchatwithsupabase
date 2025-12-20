@@ -20,6 +20,24 @@ contextBridge.exposeInMainWorld('electron', {
         getSoundData: async (id: string) => {
             return await ipcRenderer.invoke('soundboard-get-sound-data', id)
         }
+    },
+    globalShortcuts: {
+        register: async (accelerator: string) => {
+            return await ipcRenderer.invoke('register-global-shortcut', accelerator)
+        },
+        unregister: async (accelerator: string) => {
+            return await ipcRenderer.invoke('unregister-global-shortcut', accelerator)
+        },
+        unregisterAll: async () => {
+            return await ipcRenderer.invoke('unregister-all-global-shortcuts')
+        },
+        onTriggered: (callback: (accelerator: string) => void) => {
+            const subscription = (_event: any, accelerator: string) => callback(accelerator)
+            ipcRenderer.on('global-shortcut-triggered', subscription)
+            return () => {
+                ipcRenderer.removeListener('global-shortcut-triggered', subscription)
+            }
+        }
     }
 })
 

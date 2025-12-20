@@ -38,16 +38,25 @@ export function ServerList({
 
     loadServers();
 
-    // Subscribe to server changes
-    const subscription = supabase
+    // Subscribe to server changes (server details updates)
+    const serverSubscription = supabase
       .channel('server_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'servers' }, () => {
         loadServers();
       })
       .subscribe();
 
+    // Subscribe to server_users changes (join/leave events)
+    const membershipSubscription = supabase
+      .channel('server_membership_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'server_users', filter: `user_id=eq.${user.id}` }, () => {
+        loadServers();
+      })
+      .subscribe();
+
     return () => {
-      subscription.unsubscribe();
+      serverSubscription.unsubscribe();
+      membershipSubscription.unsubscribe();
     };
   }, [user]);
 
@@ -77,15 +86,25 @@ export function ServerList({
   return (
     <div className="w-20 bg-gray-900 flex flex-col items-center py-3 gap-2 border-r border-gray-800">
       {/* Friends Button */}
+      {/* Home / Friends Button (Ovox Logo) */}
       <button
         onClick={() => onViewChange('friends')}
-        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg hover:bg-primary-500 hover:shadow-glow ${currentView === 'friends'
-          ? 'bg-primary-500 rounded-lg shadow-glow-sm'
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden hover:shadow-glow ${currentView === 'friends'
+          ? 'rounded-lg shadow-glow-sm ring-2 ring-primary-500'
           : 'bg-gray-800'
           }`}
-        title="Arkadaşlar"
+        title="Ana Sayfa"
       >
-        <Users className={`w-6 h-6 ${currentView === 'friends' ? 'text-white' : 'text-neutral-600'}`} />
+        <img
+          src="/icon.png"
+          alt="Ovox"
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            // Fallback if image fails
+            e.currentTarget.style.display = 'none';
+            e.currentTarget.parentElement!.innerHTML = '<svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
+          }}
+        />
       </button>
 
       <div className="w-8 h-px bg-gray-700 my-1" />

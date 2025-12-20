@@ -2,27 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSupabaseRealtime } from '../../contexts/SupabaseRealtimeContext';
-import { Profile } from '../../lib/types';
+import { Profile, Friend, FriendRequest } from '../../lib/types';
 import { UserPlus, Users, UserMinus, Check, X, Search } from 'lucide-react';
+import { useFriend } from '../../contexts/FriendContext';
 import { UserVolumeContextMenu } from '../voice/UserVolumeContextMenu';
 
-interface Friend {
-  id: string;
-  username: string;
-  profile_image_url: string | null;
-  isOnline: boolean;
-  status: 'online' | 'away' | 'busy' | 'offline';
-}
-
-interface FriendRequest {
-  id: string;
-  requester_id: string;
-  requested_id: string;
-  status: 'pending' | 'accepted' | 'declined';
-  created_at: string;
-  requester: Profile;
-  requested?: Profile;
-}
+// Local interfaces removed in favor of FriendContext types
+import { ExtendedFriend, ExtendedFriendRequest } from '../../contexts/FriendContext';
 
 interface FriendsListProps {
   onStartDM: (friendId: string, friendName: string, profileImageUrl: string | null) => void;
@@ -31,115 +17,22 @@ interface FriendsListProps {
 export const FriendsList: React.FC<FriendsListProps> = ({
   onStartDM
 }) => {
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  /* eslint-disable react-hooks/exhaustive-deps */
   const { user } = useAuth();
   const { isUserOnline } = useSupabaseRealtime();
+  const { friends, friendRequests, sentRequests, loading, acceptFriendRequest, declineFriendRequest, removeFriend, sendFriendRequest } = useFriend();
+
   const [activeTab, setActiveTab] = useState<'friends' | 'pending' | 'add'>('friends');
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
-  const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [newFriendUsername, setNewFriendUsername] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sendingRequest, setSendingRequest] = useState(false);
   const [searchingUsers, setSearchingUsers] = useState(false);
-  const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; friend: Friend } | null>(null);
-
-  useEffect(() => {
-    if (user) {
-      loadFriends();
-      loadFriendRequests();
-      loadSentRequests();
-    }
-  }, [user]);
-
-  const loadFriends = async () => {
-    if (!user) return;
-
-    try {
-      // Get accepted friend relationships
-      const { data: friendships, error } = await supabase
-        .from('friends')
-        .select(`
-          *,
-          requester:profiles!friends_requester_id_fkey(id, username, profile_image_url),
-          requested:profiles!friends_requested_id_fkey(id, username, profile_image_url)
-        `)
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
-
-      if (error) throw error;
-
-      const friendsList: Friend[] = [];
-
-      for (const friendship of friendships || []) {
-        const friend = friendship.requester_id === user.id
-          ? friendship.requested
-          : friendship.requester;
-
-        const isOnline = isUserOnline(friend.id);
-        friendsList.push({
-          id: friend.id,
-          username: friend.username,
-          profile_image_url: friend.profile_image_url,
-          isOnline,
-          status: isOnline ? 'online' : 'offline'
-        });
-      }
-
-      setFriends(friendsList);
-    } catch (error) {
-      console.error('Error loading friends:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadFriendRequests = async () => {
-    if (!user) return;
-
-    try {
-      // Get pending friend requests sent to current user
-      const { data: requests, error } = await supabase
-        .from('friend_requests')
-        .select(`
-          *,
-          requester:profiles!friend_requests_requester_id_fkey(id, username, profile_image_url)
-        `)
-        .eq('requested_id', user.id)
-        .eq('status', 'pending');
-
-      if (error) throw error;
-
-      setFriendRequests(requests || []);
-    } catch (error) {
-      console.error('Error loading friend requests:', error);
-    }
-  };
-
-  const loadSentRequests = async () => {
-    if (!user) return;
-
-    try {
-      // Get pending friend requests sent by current user
-      const { data: requests, error } = await supabase
-        .from('friend_requests')
-        .select(`
-          *,
-          requested:profiles!friend_requests_requested_id_fkey(id, username, profile_image_url)
-        `)
-        .eq('requester_id', user.id)
-        .eq('status', 'pending');
-
-      if (error) throw error;
-
-      setSentRequests(requests || []);
-    } catch (error) {
-      console.error('Error loading sent requests:', error);
-    }
-  };
+  const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; friend: ExtendedFriend } | null>(null);
 
   // Search users - wrapped in useCallback to prevent unnecessary re-renders
+  // Note: Modified slightly to filter out friends from context
   const searchUsers = React.useCallback(async (query: string) => {
     if (!user || !query.trim()) {
       setSearchResults([]);
@@ -156,43 +49,18 @@ export const FriendsList: React.FC<FriendsListProps> = ({
 
       if (error) throw error;
 
-      // Get all pending requests (both directions) and existing friends
-      const { data: pendingRequests } = await supabase
-        .from('friend_requests')
-        .select('requester_id, requested_id')
-        .eq('status', 'pending')
-        .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
-
-      const pendingUserIds = new Set();
-      (pendingRequests || []).forEach(request => {
-        if (request.requester_id === user.id) {
-          pendingUserIds.add(request.requested_id);
-        } else {
-          pendingUserIds.add(request.requester_id);
-        }
-      });
-
-      // Get current friends to filter out
-      const { data: friendships } = await supabase
-        .from('friends')
-        .select('requester_id, requested_id')
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
-
-      const friendIds = new Set();
-      (friendships || []).forEach(friendship => {
-        if (friendship.requester_id === user.id) {
-          friendIds.add(friendship.requested_id);
-        } else {
-          friendIds.add(friendship.requester_id);
-        }
-      });
+      // Filter locally based on context data instead of DB queries
+      const friendIds = new Set(friends.map(f => f.id));
+      const pendingIds = new Set([
+        ...friendRequests.map(r => r.requester_id),
+        ...sentRequests.map(r => r.requested_id)
+      ]);
 
       // Filter out current user, existing friends, and users with pending requests
       const filteredUsers = (users || []).filter(profile => {
         if (profile.id === user.id) return false;
         if (friendIds.has(profile.id)) return false;
-        if (pendingUserIds.has(profile.id)) return false;
+        if (pendingIds.has(profile.id)) return false;
         return true;
       });
 
@@ -202,7 +70,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     } finally {
       setSearchingUsers(false);
     }
-  }, [user]); // ✅ Removed friends dependency - fetch friends in the function instead
+  }, [user, friends, friendRequests, sentRequests]);
 
   // Debounced search
   useEffect(() => {
@@ -215,7 +83,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [newFriendUsername, searchUsers]); // Added searchUsers to dependencies
+  }, [newFriendUsername, searchUsers]);
 
   const handleFriendRequestByUsername = async (username: string) => {
     if (!user || !username.trim() || sendingRequest) return;
@@ -240,46 +108,18 @@ export const FriendsList: React.FC<FriendsListProps> = ({
         return;
       }
 
-      // Check if already friends
-      const { data: existingFriendship } = await supabase
-        .from('friends')
-        .select('*')
-        .eq('status', 'accepted')
-        .or(`
-          and(requester_id.eq.${user.id},requested_id.eq.${targetUser.id}),
-          and(requester_id.eq.${targetUser.id},requested_id.eq.${user.id})
-        `);
-
-      if (existingFriendship && existingFriendship.length > 0) {
+      // Check context for existing relationships to avoid extra DB calls
+      if (friends.some(f => f.id === targetUser.id)) {
         alert('Bu kullanıcı zaten arkadaşınız');
         return;
       }
 
-      // Check if request already exists (both directions)
-      const { data: existingRequest } = await supabase
-        .from('friend_requests')
-        .select('*')
-        .eq('status', 'pending')
-        .or(`
-          and(requester_id.eq.${user.id},requested_id.eq.${targetUser.id}),
-          and(requester_id.eq.${targetUser.id},requested_id.eq.${user.id})
-        `);
-
-      if (existingRequest && existingRequest.length > 0) {
+      if (friendRequests.some(r => r.requester_id === targetUser.id) || sentRequests.some(r => r.requested_id === targetUser.id)) {
         alert('Bu kullanıcıyla zaten bekleyen bir arkadaş isteği var');
         return;
       }
 
-      // Send friend request
-      const { error: requestError } = await supabase
-        .from('friend_requests')
-        .insert({
-          requester_id: user.id,
-          requested_id: targetUser.id,
-          status: 'pending'
-        });
-
-      if (requestError) throw requestError;
+      await sendFriendRequest(targetUser.id);
 
       setNewFriendUsername('');
       setSearchResults([]);
@@ -295,74 +135,20 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   const handleFriendRequest = async (requestId: string, action: 'accept' | 'decline') => {
     try {
       if (action === 'accept') {
-        // Update request status
-        const { error: updateError } = await supabase
-          .from('friend_requests')
-          .update({ status: 'accepted' })
-          .eq('id', requestId);
-
-        if (updateError) throw updateError;
-
-        // Check if friendship already exists before creating
-        const request = friendRequests.find(r => r.id === requestId);
-        if (request) {
-          const { data: existingFriendship } = await supabase
-            .from('friends')
-            .select('*')
-            .eq('status', 'accepted')
-            .or(`
-              and(requester_id.eq.${request.requester_id},requested_id.eq.${request.requested_id}),
-              and(requester_id.eq.${request.requested_id},requested_id.eq.${request.requester_id})
-            `);
-
-          if (!existingFriendship || existingFriendship.length === 0) {
-            const { error: friendshipError } = await supabase
-              .from('friends')
-              .insert({
-                requester_id: request.requester_id,
-                requested_id: request.requested_id,
-                status: 'accepted'
-              });
-
-            if (friendshipError) throw friendshipError;
-          }
-        }
+        await acceptFriendRequest(requestId);
       } else {
-        // Decline request
-        const { error: updateError } = await supabase
-          .from('friend_requests')
-          .update({ status: 'declined' })
-          .eq('id', requestId);
-
-        if (updateError) throw updateError;
+        await declineFriendRequest(requestId);
       }
-
-      // Reload data
-      loadFriends();
-      loadFriendRequests();
-      loadSentRequests();
     } catch (error) {
       console.error('Error handling friend request:', error);
     }
   };
 
-  const removeFriend = async (friendId: string) => {
-    if (!user) return;
-
+  const handleRemoveFriend = async (friendId: string) => {
     try {
-      const { error } = await supabase
-        .from('friends')
-        .delete()
-        .or(`
-          and(requester_id.eq.${user.id},requested_id.eq.${friendId}),
-          and(requester_id.eq.${friendId},requested_id.eq.${user.id})
-        `);
-
-      if (error) throw error;
-
-      loadFriends();
+      await removeFriend(friendId);
     } catch (error) {
-      console.error('Error removing friend:', error);
+      console.error(error);
     }
   };
 
@@ -673,13 +459,12 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                             </div>
                             <button
                               onClick={() => {
-                                setNewFriendUsername(user.username);
-                                setSearchResults([]);
+                                handleFriendRequestByUsername(user.username);
                               }}
-                              className="p-1 hover:bg-green-600 rounded transition-colors"
-                              title="Seç"
+                              className="p-1 hover:bg-green-600 rounded transition-colors group/btn"
+                              title="Arkadaş Ekle"
                             >
-                              <UserPlus size={14} className="text-green-400" />
+                              <UserPlus size={14} className="text-green-400 group-hover/btn:text-white" />
                             </button>
                           </div>
                         ))}
