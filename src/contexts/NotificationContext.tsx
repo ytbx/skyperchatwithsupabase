@@ -124,12 +124,56 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [hasPermission]);
 
   /**
+   * Check if server is muted (via localStorage)
+   */
+  const isServerMuted = useCallback((serverId: string): boolean => {
+    // Check localStorage directly for reliability
+    try {
+      const stored = localStorage.getItem('muted_servers');
+      if (stored) {
+        const mutedServers: string[] = JSON.parse(stored);
+        return mutedServers.includes(serverId);
+      }
+    } catch { }
+    return false;
+  }, []);
+
+  /**
+   * Check if user notifications are muted (via window.isUserNotificationsMuted from UserVolumeContextMenu)
+   */
+  const isUserNotificationsMuted = useCallback((userId: string): boolean => {
+    // Also check localStorage directly since window function might not be initialized yet
+    try {
+      const stored = localStorage.getItem('muted_users_notifications');
+      if (stored) {
+        const mutedUsers: string[] = JSON.parse(stored);
+        return mutedUsers.includes(userId);
+      }
+    } catch { }
+    return false;
+  }, []);
+
+  /**
    * Add notification to local state and show browser notification
    * (Does NOT save to DB - that is handled by the sender)
    */
   const addNotification = useCallback((
     notification: Notification
   ) => {
+    // Check if this notification is from a muted server
+    const serverId = notification.data?.serverId;
+    if (serverId && isServerMuted(serverId)) {
+      console.log('[Notifications] Skipping notification from muted server:', serverId);
+      return; // Completely skip - don't add to state or show anything
+    }
+
+    // Check if this notification is from a muted user (for DMs)
+    const senderId = notification.data?.senderId;
+    if (senderId && isUserNotificationsMuted(senderId)) {
+      console.log('[Notifications] Skipping notification from muted user:', senderId);
+      return; // Completely skip - don't add to state or show anything
+    }
+
     setNotifications((prev) => [notification, ...prev].slice(0, 100)); // Keep last 100
 
     // Play sound
@@ -139,7 +183,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     showBrowserNotification(notification.title, notification.body, notification.data);
 
     console.log('[Notifications] Received:', notification.type, notification.title);
-  }, [playNotificationSound, showBrowserNotification]);
+  }, [playNotificationSound, showBrowserNotification, isServerMuted, isUserNotificationsMuted]);
 
   /**
    * Mark notification as read
@@ -213,9 +257,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           table: 'notifications',
           filter: `user_id=eq.${currentUserId}`,
         },
-        (payload) => {
+        async (payload) => {
           console.log('[Notifications] Received notification INSERT:', payload);
           const newNotification = payload.new as any;
+
+          // Check if this notification is from a muted server
+          const serverId = newNotification.metadata?.serverId;
+          if (serverId && isServerMuted(serverId)) {
+            console.log('[Notifications] Deleting notification from muted server:', serverId);
+            // Delete from DB so it doesn't persist
+            await supabase.from('notifications').delete().eq('id', newNotification.id);
+            return;
+          }
+
+          // Check if this notification is from a muted user
+          const senderId = newNotification.metadata?.senderId;
+          if (senderId && isUserNotificationsMuted(senderId)) {
+            console.log('[Notifications] Deleting notification from muted user:', senderId);
+            // Delete from DB so it doesn't persist
+            await supabase.from('notifications').delete().eq('id', newNotification.id);
+            return;
+          }
 
           // Convert DB record to local Notification object
           const notification: Notification = {
@@ -239,7 +301,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('[Notifications] Cleaning up subscription');
       channel.unsubscribe();
     };
-  }, [currentUserId, addNotification]);
+  }, [currentUserId, addNotification, isServerMuted, isUserNotificationsMuted]);
 
   /**
    * Subscribe to incoming DM messages (receiver-side notification generation)
@@ -267,6 +329,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // Aktif chat'den geliyorsa bildirim gösterme
           if (newMessage.sender_id === activeContactId) {
             console.log('[Notifications] Message from active chat, skipping notification');
+            return;
+          }
+
+          // Check if user notifications are muted (BEFORE creating DB entry)
+          if (isUserNotificationsMuted(newMessage.sender_id)) {
+            console.log('[Notifications] Skipping DM notification from muted user:', newMessage.sender_id);
             return;
           }
 
@@ -306,7 +374,147 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('[Notifications] Cleaning up DM subscription');
       dmChannel.unsubscribe();
     };
-  }, [currentUserId, activeContactId]);
+  }, [currentUserId, activeContactId, isUserNotificationsMuted]);
+
+  /**
+   * State to track current user's profile for mention detection
+   */
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
+  const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
+
+  // Load current user's username
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const loadUsername = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', currentUserId)
+        .single();
+
+      if (data?.username) {
+        setCurrentUsername(data.username);
+      }
+    };
+
+    loadUsername();
+  }, [currentUserId]);
+
+  /**
+   * Subscribe to channel messages for mention detection (receiver-side)
+   */
+  useEffect(() => {
+    if (!currentUserId || !currentUsername) return;
+
+    console.log('[Notifications] Setting up channel message subscription for mentions');
+
+    const channelMessageSub = supabase
+      .channel('channel-message-mentions')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'channel_messages',
+        },
+        async (payload) => {
+          const newMessage = payload.new as any;
+
+          // Skip own messages
+          if (newMessage.sender_id === currentUserId) return;
+
+          // Skip if viewing the same channel (optional - could check activeChannelId)
+
+          const messageContent = newMessage.message || '';
+
+          // Check for @everyone or @username mention
+          const isMentioned = messageContent.includes('@everyone') ||
+            messageContent.toLowerCase().includes(`@${currentUsername.toLowerCase()}`);
+
+          if (!isMentioned) return;
+
+          console.log('[Notifications] Detected mention in message:', newMessage.id);
+
+          // Get channel info to find server_id
+          const { data: channelData } = await supabase
+            .from('channels')
+            .select('server_id, name')
+            .eq('id', newMessage.channel_id)
+            .single();
+
+          if (!channelData) {
+            console.log('[Notifications] Could not find channel for message');
+            return;
+          }
+
+          // Check if user is member of this server
+          const { data: membership } = await supabase
+            .from('server_users')
+            .select('user_id')
+            .eq('server_id', channelData.server_id)
+            .eq('user_id', currentUserId)
+            .single();
+
+          if (!membership) {
+            console.log('[Notifications] User is not member of this server');
+            return;
+          }
+
+          // CHECK MUTE STATUS BEFORE CREATING NOTIFICATION
+          if (isServerMuted(channelData.server_id)) {
+            console.log('[Notifications] Skipping mention notification - server is muted:', channelData.server_id);
+            return;
+          }
+
+          // Get sender info
+          const { data: senderProfile } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', newMessage.sender_id)
+            .single();
+
+          // Create notification data for DB (NotificationSystem reads from DB)
+          // Note: DB constraint only allows 'message', 'friend_request', 'call', 'server_invite'
+          // We use 'message' type and store 'mention' in metadata.type
+          const notificationDbData = {
+            user_id: currentUserId,
+            type: 'message' as const,
+            title: messageContent.includes('@everyone')
+              ? `Everyone (${senderProfile?.username || 'Birisi'})`
+              : 'Sizden bahsedildi',
+            message: `${senderProfile?.username || 'Birisi'}: ${messageContent.substring(0, 100)}`,
+            metadata: {
+              type: 'mention',
+              channelId: newMessage.channel_id,
+              messageId: newMessage.id,
+              serverId: channelData.server_id
+            }
+          };
+
+          console.log('[Notifications] Inserting mention notification to DB:', notificationDbData);
+
+          // Insert to DB so NotificationSystem can display it
+          const { error } = await supabase.from('notifications').insert(notificationDbData);
+
+          if (error) {
+            console.error('[Notifications] Error inserting mention notification:', error);
+          } else {
+            console.log('[Notifications] Mention notification inserted to DB successfully');
+            // We rely on the DB subscription to pick this up and call addNotification
+            // This prevents double sounds/notifications
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Notifications] Channel message subscription status:', status);
+      });
+
+    return () => {
+      console.log('[Notifications] Cleaning up channel message subscription');
+      channelMessageSub.unsubscribe();
+    };
+  }, [currentUserId, currentUsername, addNotification, isServerMuted]);
 
   /**
    * Load initial notifications
@@ -328,7 +536,30 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       if (data) {
-        const loadedNotifications: Notification[] = data.map(n => ({
+        // Filter out muted notifications and collect IDs to delete
+        const mutedNotificationIds: string[] = [];
+        const filteredData = data.filter(n => {
+          const serverId = n.metadata?.serverId;
+          const senderId = n.metadata?.senderId;
+
+          if (serverId && isServerMuted(serverId)) {
+            mutedNotificationIds.push(n.id);
+            return false;
+          }
+          if (senderId && isUserNotificationsMuted(senderId)) {
+            mutedNotificationIds.push(n.id);
+            return false;
+          }
+          return true;
+        });
+
+        // Delete muted notifications from DB
+        if (mutedNotificationIds.length > 0) {
+          console.log('[Notifications] Deleting muted notifications:', mutedNotificationIds.length);
+          await supabase.from('notifications').delete().in('id', mutedNotificationIds);
+        }
+
+        const loadedNotifications: Notification[] = filteredData.map(n => ({
           id: n.id,
           type: n.type,
           title: n.title,

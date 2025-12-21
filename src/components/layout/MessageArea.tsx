@@ -209,69 +209,8 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
       if (error) throw error;
 
-      // Process mentions and send notifications (Sender-side generation)
-      const messageContent = messageInput.trim();
-      if (messageContent && channel) {
-        // 1. Check for @everyone
-        if (messageContent.includes('@everyone')) {
-          // Get all server members except sender
-          const { data: members } = await supabase
-            .from('server_users')
-            .select('user_id')
-            .eq('server_id', channel.server_id)
-            .neq('user_id', user.id);
-
-          if (members && members.length > 0) {
-            const notifications = members.map(member => ({
-              user_id: member.user_id,
-              type: 'message',
-              title: `Everyone (${profile?.username || 'Birisi'})`,
-              message: `${profile?.username || 'Birisi'}: ${messageContent}`,
-              metadata: {
-                type: 'mention',
-                channelId: channelId,
-                messageId: messageData.id,
-                serverId: channel.server_id
-              }
-            }));
-
-            await supabase.from('notifications').insert(notifications);
-          }
-        }
-
-        // 2. Check for @username mentions
-        // Regex to find @username patterns
-        const mentionRegex = /@(\w+)/g;
-        const mentions = [...messageContent.matchAll(mentionRegex)];
-
-        if (mentions.length > 0) {
-          const usernames = mentions.map(m => m[1]);
-
-          // Fetch users with these usernames
-          const { data: mentionedUsers } = await supabase
-            .from('profiles')
-            .select('id, username')
-            .in('username', usernames)
-            .neq('id', user.id); // Don't notify self
-
-          if (mentionedUsers && mentionedUsers.length > 0) {
-            const notifications = mentionedUsers.map(mentionedUser => ({
-              user_id: mentionedUser.id,
-              type: 'message',
-              title: 'Sizden bahsedildi',
-              message: `${profile?.username || 'Birisi'} sizden bahsetti: ${messageContent}`,
-              metadata: {
-                type: 'mention',
-                channelId: channelId,
-                messageId: messageData.id,
-                serverId: channel.server_id
-              }
-            }));
-
-            await supabase.from('notifications').insert(notifications);
-          }
-        }
-      }
+      // NOTE: Mention notifications are now created receiver-side in NotificationContext
+      // This ensures the receiver can check their mute settings before creating notifications
 
       setMessageInput('');
       setSelectedFile(null);

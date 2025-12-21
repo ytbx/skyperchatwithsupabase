@@ -20,15 +20,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load user on mount
+  // Load user on mount - use getSession for faster cache-first check
   useEffect(() => {
     async function loadUser() {
       setLoading(true);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        setUser(user);
-        if (user) {
-          await loadProfile(user.id);
+        // getSession reads from localStorage first (faster), getUser makes network request
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          await loadProfile(currentUser.id);
         }
       } finally {
         setLoading(false);

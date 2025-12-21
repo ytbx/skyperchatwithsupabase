@@ -5,6 +5,14 @@ import { LoginForm } from '@/components/auth/LoginForm';
 import { SignUpForm } from '@/components/auth/SignUpForm';
 import { ServerList } from '@/components/layout/ServerList';
 import { ChannelList } from '@/components/layout/ChannelList';
+
+// Hide initial HTML loader when React mounts
+if (typeof window !== 'undefined') {
+    const initialLoader = document.getElementById('initial-loader');
+    if (initialLoader) {
+        initialLoader.style.display = 'none';
+    }
+}
 import { MessageArea } from '@/components/layout/MessageArea';
 import { MemberList } from '@/components/layout/MemberList';
 import { CreateServerModal } from '@/components/modals/CreateServerModal';

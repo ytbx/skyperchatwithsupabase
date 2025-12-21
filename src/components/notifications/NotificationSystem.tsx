@@ -38,7 +38,7 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
 
       // Setup realtime subscription with proper cleanup
       const subscription = supabase
-        .channel('notifications')
+        .channel('notification-system-ui')
         .on(
           'postgres_changes',
           {
@@ -48,6 +48,7 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
             filter: `user_id=eq.${user.id}`
           },
           (payload) => {
+            console.log('[NotificationSystem] Received notification from DB:', payload.new);
             const newNotification = payload.new as Notification;
             setNotifications(prev => [newNotification, ...prev]);
 
@@ -60,7 +61,9 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log('[NotificationSystem] Subscription status:', status);
+        });
 
       // Return cleanup function
       return () => {
@@ -254,9 +257,11 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
                             if (notification.metadata?.channelId) {
                               onNavigate('channel', notification.metadata.channelId, notification.metadata.serverId);
                               setIsOpen(false);
+                              deleteNotification(notification.id);
                             } else if (notification.metadata?.senderId) {
                               onNavigate('dm', notification.metadata.senderId);
                               setIsOpen(false);
+                              deleteNotification(notification.id);
                             }
                           }
                         }

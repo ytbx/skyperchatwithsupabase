@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Volume2, VolumeX, Volume1, Music2, Mic, MicOff } from 'lucide-react';
+import { Volume2, VolumeX, Volume1, Music2, Mic, MicOff, Bell, BellOff, Check } from 'lucide-react';
 import { useUserAudio } from '@/contexts/UserAudioContext';
+import { toast } from 'sonner';
+
+const MUTED_USERS_NOTIFICATIONS_KEY = 'muted_users_notifications';
 
 interface UserVolumeContextMenuProps {
     x: number;
@@ -39,6 +42,61 @@ export function UserVolumeContextMenu({
     const isVoiceMuted = getUserVoiceMuted(userId);
     const soundpadVolume = getUserSoundpadVolume(userId);
     const isSoundpadMuted = getUserSoundpadMuted(userId);
+
+    // Notification mute state
+    const [isNotificationMuted, setIsNotificationMuted] = useState<boolean>(() => {
+        try {
+            const stored = localStorage.getItem(MUTED_USERS_NOTIFICATIONS_KEY);
+            if (stored) {
+                const mutedUsers: string[] = JSON.parse(stored);
+                return mutedUsers.includes(userId);
+            }
+        } catch { }
+        return false;
+    });
+
+    const toggleNotificationMute = () => {
+        try {
+            const stored = localStorage.getItem(MUTED_USERS_NOTIFICATIONS_KEY);
+            const mutedUsers: string[] = stored ? JSON.parse(stored) : [];
+
+            if (isNotificationMuted) {
+                const updated = mutedUsers.filter(id => id !== userId);
+                localStorage.setItem(MUTED_USERS_NOTIFICATIONS_KEY, JSON.stringify(updated));
+                setIsNotificationMuted(false);
+                toast.success(`${username} kullanıcısından bildirimler açıldı`);
+            } else {
+                mutedUsers.push(userId);
+                localStorage.setItem(MUTED_USERS_NOTIFICATIONS_KEY, JSON.stringify(mutedUsers));
+                setIsNotificationMuted(true);
+                toast.success(`${username} kullanıcısından bildirimler kapatıldı`);
+            }
+
+            // Update window function for NotificationContext to use
+            updateMutedUsersWindowFunction();
+        } catch (error) {
+            console.error('Error toggling notification mute:', error);
+        }
+    };
+
+    // Update window function for checking muted users
+    const updateMutedUsersWindowFunction = () => {
+        (window as any).isUserNotificationsMuted = (checkUserId: string): boolean => {
+            try {
+                const stored = localStorage.getItem(MUTED_USERS_NOTIFICATIONS_KEY);
+                if (stored) {
+                    const mutedUsers: string[] = JSON.parse(stored);
+                    return mutedUsers.includes(checkUserId);
+                }
+            } catch { }
+            return false;
+        };
+    };
+
+    // Initialize window function on mount
+    useEffect(() => {
+        updateMutedUsersWindowFunction();
+    }, []);
 
     // Close on click outside
     useEffect(() => {
@@ -138,8 +196,8 @@ export function UserVolumeContextMenu({
             <button
                 onClick={toggleMute}
                 className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${isMuted
-                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-                        : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600/50'
+                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
+                    : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600/50'
                     }`}
             >
                 {isMuted ? (
@@ -185,8 +243,8 @@ export function UserVolumeContextMenu({
                 <button
                     onClick={() => setActiveTab('voice')}
                     className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${activeTab === 'voice'
-                            ? 'text-blue-400 bg-blue-500/10 border-b-2 border-blue-400'
-                            : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                        ? 'text-blue-400 bg-blue-500/10 border-b-2 border-blue-400'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
                         }`}
                 >
                     <Mic className="w-3.5 h-3.5" />
@@ -196,8 +254,8 @@ export function UserVolumeContextMenu({
                 <button
                     onClick={() => setActiveTab('soundpad')}
                     className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${activeTab === 'soundpad'
-                            ? 'text-purple-400 bg-purple-500/10 border-b-2 border-purple-400'
-                            : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                        ? 'text-purple-400 bg-purple-500/10 border-b-2 border-purple-400'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
                         }`}
                 >
                     <Music2 className="w-3.5 h-3.5" />
@@ -227,6 +285,26 @@ export function UserVolumeContextMenu({
                         'Soundpad Sesi'
                     )
                 )}
+            </div>
+
+            {/* Notification Mute Section */}
+            <div className="px-3 pb-3 border-t border-gray-700/50 pt-3">
+                <button
+                    onClick={toggleNotificationMute}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors hover:bg-gray-800"
+                >
+                    <div className="flex items-center gap-2">
+                        {isNotificationMuted ? (
+                            <BellOff size={16} className="text-red-400" />
+                        ) : (
+                            <Bell size={16} className="text-green-400" />
+                        )}
+                        <span className="text-gray-300">Bildirimleri Engelle</span>
+                    </div>
+                    {isNotificationMuted && (
+                        <Check size={16} className="text-green-400" />
+                    )}
+                </button>
             </div>
 
             {/* Slider Thumb Styles */}

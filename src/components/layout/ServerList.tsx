@@ -4,6 +4,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Server } from '@/lib/types';
 import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
+import { ServerContextMenu } from '@/components/server/ServerContextMenu';
+import { toast } from 'sonner';
+
+const MUTED_SERVERS_KEY = 'muted_servers';
 
 interface ServerListProps {
   selectedServerId: string | null;
@@ -28,6 +32,32 @@ export function ServerList({
   const { user } = useAuth();
   const { isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
   const [isElectron, setIsElectron] = useState(false);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    server: Server;
+  } | null>(null);
+
+  // Muted servers state (stored in localStorage)
+  const [mutedServers, setMutedServers] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(MUTED_SERVERS_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Save muted servers to localStorage when changed
+  useEffect(() => {
+    try {
+      localStorage.setItem(MUTED_SERVERS_KEY, JSON.stringify([...mutedServers]));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [mutedServers]);
 
   // Check if running in Electron
   useEffect(() => {
@@ -83,6 +113,69 @@ export function ServerList({
     }
   }
 
+  // Context menu handlers
+  function handleContextMenu(e: React.MouseEvent, server: Server) {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      server
+    });
+  }
+
+  function handleToggleNotifications(serverId: string) {
+    setMutedServers(prev => {
+      const updated = new Set(prev);
+      if (updated.has(serverId)) {
+        updated.delete(serverId);
+        toast.success('Bu sunucudan bildirimler açıldı');
+      } else {
+        updated.add(serverId);
+        toast.success('Bu sunucudan bildirimler kapatıldı');
+      }
+      return updated;
+    });
+  }
+
+  async function handleLeaveServer(server: Server) {
+    if (!user) return;
+
+    // Owner cannot leave their own server
+    if (server.owner_id === user.id) {
+      toast.error('Sunucu sahibi olarak ayrılamazsınız. Önce sunucuyu başka birine devredin veya silin.');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('server_users')
+        .delete()
+        .eq('server_id', server.id)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Remove from local state
+      setServers(prev => prev.filter(s => s.id !== server.id));
+
+      // If currently viewing this server, go to friends view
+      if (selectedServerId === server.id) {
+        onSelectServer(null);
+        onViewChange('friends');
+      }
+
+      toast.success(`${server.name} sunucusundan ayrıldınız`);
+    } catch (error) {
+      console.error('Leave server error:', error);
+      toast.error('Sunucudan ayrılırken bir hata oluştu');
+    }
+  }
+
+  // Expose muted servers check for other components (via window for now)
+  useEffect(() => {
+    (window as any).isServerMuted = (serverId: string) => mutedServers.has(serverId);
+  }, [mutedServers]);
+
   return (
     <div className="w-20 bg-gray-900 flex flex-col items-center py-3 gap-2 border-r border-gray-800">
       {/* Friends Button */}
@@ -105,11 +198,12 @@ export function ServerList({
         <button
           key={server.id}
           onClick={() => onSelectServer(server.id)}
+          onContextMenu={(e) => handleContextMenu(e, server)}
           className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden ${selectedServerId === server.id && currentView === 'servers'
             ? 'bg-primary-500 rounded-lg shadow-glow-sm'
             : 'bg-gray-800 hover:bg-gray-700'
-            }`}
-          title={server.name}
+            } ${mutedServers.has(server.id) ? 'opacity-60' : ''}`}
+          title={`${server.name}${mutedServers.has(server.id) ? ' (Bildirimler Kapalı)' : ''}`}
         >
           {server.server_image_url ? (
             <img
@@ -184,6 +278,19 @@ export function ServerList({
       >
         <Settings className="w-5 h-5 text-gray-400 group-hover:text-white" />
       </button>
+
+      {/* Server Context Menu */}
+      {contextMenu && (
+        <ServerContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          server={contextMenu.server}
+          isNotificationsMuted={mutedServers.has(contextMenu.server.id)}
+          onClose={() => setContextMenu(null)}
+          onToggleNotifications={handleToggleNotifications}
+          onLeaveServer={handleLeaveServer}
+        />
+      )}
     </div>
   );
 }

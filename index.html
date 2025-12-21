@@ -6,11 +6,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ovox</title>
   <link rel="icon" type="image/png" href="/ovox-large.png" />
-  <!-- SimplePeer CDN -->
-  <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
+  <style>
+    /* Inline loading spinner - shows immediately before React loads */
+    #initial-loader {
+      position: fixed;
+      inset: 0;
+      background: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 9999;
+    }
+    #initial-loader .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid #6366f1;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    #initial-loader .text {
+      margin-top: 16px;
+      color: #9ca3af;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 
 <body>
+  <!-- Loading spinner shown immediately, hidden by React when mounted -->
+  <div id="initial-loader">
+    <div class="spinner"></div>
+    <div class="text">Yükleniyor...</div>
+  </div>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
