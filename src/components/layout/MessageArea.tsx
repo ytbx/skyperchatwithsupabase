@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Hash, Send, Paperclip, Smile, Plus, Gift, Image, Sticker, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSupabaseRealtime } from '@/contexts/SupabaseRealtimeContext';
 import { ChannelMessage, Channel, Profile } from '@/lib/types';
 import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
@@ -30,6 +31,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user, profile } = useAuth();
+  const { isUserOnline } = useSupabaseRealtime();
 
   function formatTime(dateString: string) {
     const date = new Date(dateString);
@@ -209,8 +211,80 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
       if (error) throw error;
 
-      // NOTE: Mention notifications are now created receiver-side in NotificationContext
-      // This ensures the receiver can check their mute settings before creating notifications
+      // Process mentions for OFFLINE users (online users handle via subscription)
+      const messageContent = messageInput.trim();
+      if (messageContent && channel && messageData) {
+        // Check for @everyone
+        if (messageContent.includes('@everyone')) {
+          // Get all server members except sender
+          const { data: members } = await supabase
+            .from('server_users')
+            .select('user_id')
+            .eq('server_id', channel.server_id)
+            .neq('user_id', user.id);
+
+          if (members && members.length > 0) {
+            // Filter for OFFLINE users only
+            const offlineMembers = members.filter(m => !isUserOnline(m.user_id));
+
+            if (offlineMembers.length > 0) {
+              const notifications = offlineMembers.map(member => ({
+                user_id: member.user_id,
+                type: 'message',
+                title: `Everyone (${profile?.username || 'Birisi'})`,
+                message: `${profile?.username || 'Birisi'}: ${messageContent}`,
+                metadata: {
+                  type: 'mention',
+                  channelId: channelId,
+                  messageId: messageData.id,
+                  serverId: channel.server_id
+                }
+              }));
+
+              await supabase.from('notifications').insert(notifications);
+              console.log(`[MessageArea] Created notifications for ${offlineMembers.length} offline @everyone mentions`);
+            }
+          }
+        }
+
+        // Check for @username mentions
+        const mentionRegex = /@(\w+)/g;
+        const mentions = [...messageContent.matchAll(mentionRegex)];
+
+        if (mentions.length > 0) {
+          const usernames = mentions.map(m => m[1]);
+
+          // Fetch users with these usernames
+          const { data: mentionedUsers } = await supabase
+            .from('profiles')
+            .select('id, username')
+            .in('username', usernames)
+            .neq('id', user.id); // Don't notify self
+
+          if (mentionedUsers && mentionedUsers.length > 0) {
+            // Filter for OFFLINE users only
+            const offlineMentioned = mentionedUsers.filter(u => !isUserOnline(u.id));
+
+            if (offlineMentioned.length > 0) {
+              const notifications = offlineMentioned.map(mentionedUser => ({
+                user_id: mentionedUser.id,
+                type: 'message',
+                title: 'Sizden bahsedildi',
+                message: `${profile?.username || 'Birisi'} sizden bahsetti: ${messageContent}`,
+                metadata: {
+                  type: 'mention',
+                  channelId: channelId,
+                  messageId: messageData.id,
+                  serverId: channel.server_id
+                }
+              }));
+
+              await supabase.from('notifications').insert(notifications);
+              console.log(`[MessageArea] Created notifications for ${offlineMentioned.length} offline @username mentions`);
+            }
+          }
+        }
+      }
 
       setMessageInput('');
       setSelectedFile(null);
