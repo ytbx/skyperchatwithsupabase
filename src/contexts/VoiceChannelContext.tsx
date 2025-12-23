@@ -188,6 +188,13 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
         console.log('[VoiceChannelContext] Request to join channel:', channelId);
 
+        // Cooperative cleanup: trigger cleanup of stale users before joining
+        try {
+            await supabase.rpc('cleanup_stale_users');
+        } catch (e) {
+            console.error('[VoiceChannelContext] Error during cooperative cleanup:', e);
+        }
+
         // 1. Handle existing connections
         if (activeCall) {
             console.log('[VoiceChannelContext] Active direct call detected. Ending it...');
@@ -246,15 +253,16 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             soundpadStreamRef.current = soundpadDestinationRef.current.stream;
             console.log('[VoiceChannelContext] Created separate soundpad stream');
 
-            // 3. Add user to voice_channel_users
+            // 3. Add user to voice_channel_users (Use upsert to handle unique constraint)
             const { error } = await supabase
                 .from('voice_channel_users')
-                .insert({
+                .upsert({
                     channel_id: channelId,
                     user_id: user.id,
                     is_muted: isMuted,
-                    is_deafened: isDeafened
-                });
+                    is_deafened: isDeafened,
+                    joined_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
 
             if (error) throw error;
 

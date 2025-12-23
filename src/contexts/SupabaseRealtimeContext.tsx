@@ -159,27 +159,32 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             )
             .subscribe();
 
-        // Update last_seen on window close/refresh - OPTIMIZED
-        let lastSeenUpdated = false;
-        const updateLastSeen = async () => {
-            if (user?.id && !lastSeenUpdated) {
-                lastSeenUpdated = true;
+        // Heartbeat logic to keep user online and cleanup stale sessions
+        const sendHeartbeat = async () => {
+            if (user?.id) {
                 try {
-                    await supabase.rpc('update_user_last_seen', { user_id: user.id });
+                    await supabase.rpc('update_user_heartbeat', { uid: user.id });
+                    console.log('[SupabaseRealtime] Heartbeat sent');
                 } catch (error) {
-                    console.error('[SupabaseRealtime] Error updating last_seen:', error);
+                    console.error('[SupabaseRealtime] Error sending heartbeat:', error);
                 }
             }
         };
 
+        // Send initial heartbeat
+        sendHeartbeat();
+
+        // Set up heartbeat interval (every 30 seconds)
+        const heartbeatInterval = setInterval(sendHeartbeat, 30000);
+
         // Only add listener, don't call immediately
-        window.addEventListener('beforeunload', updateLastSeen);
+        window.addEventListener('beforeunload', sendHeartbeat);
 
         return () => {
             console.log('[SupabaseRealtime] Cleaning up subscriptions');
 
-            // Update last_seen before cleanup
-            updateLastSeen();
+            // Clear heartbeat interval
+            clearInterval(heartbeatInterval);
 
             // Untrack presence
             if (channel) {
@@ -189,7 +194,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
 
             messagesChannel.unsubscribe();
             friendRequestsChannel.unsubscribe();
-            window.removeEventListener('beforeunload', updateLastSeen);
+            window.removeEventListener('beforeunload', sendHeartbeat);
         };
     }, [user?.id]);
 

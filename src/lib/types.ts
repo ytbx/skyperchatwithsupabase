@@ -136,9 +136,6 @@ export const PERMISSIONS = {
   CREATE_INVITE: 1n << 6n,    // (64) Create invites
   VIEW_CHANNEL: 1n << 7n,     // (128) See channel
   SEND_MESSAGES: 1n << 8n,    // (256) Send messages
-  CONNECT: 1n << 9n,          // (512) Connect to voice channels
-  SPEAK: 1n << 10n,           // (1024) Speak in voice channels
-  STREAM: 1n << 11n,          // (2048) Share screen
 };
 
 export interface ServerRole {
