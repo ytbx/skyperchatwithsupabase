@@ -26,6 +26,7 @@ export class WebRTCPeer {
     private screenStream: MediaStream | null = null;
     private remoteStream: MediaStream | null = null;
     private remoteSoundpadStream: MediaStream | null = null;
+    private remoteScreenStream: MediaStream | null = null;
 
     private cameraSender: RTCRtpSender | null = null;
     private screenSender: RTCRtpSender | null = null;
@@ -77,6 +78,7 @@ export class WebRTCPeer {
             event.streams.forEach(stream => {
                 stream.onremovetrack = (ev) => {
                     console.log('[WebRTCPeer] Remote track removed:', ev.track.kind, ev.track.label);
+                    this.handleRemoteTrackRemoved(ev.track, stream);
                 };
             });
 
@@ -189,8 +191,25 @@ export class WebRTCPeer {
                 // Different stream ID -> Screen Share
                 console.log('[WebRTCPeer] Assigning as Secondary (Screen) Video');
                 // Create a new stream object for the UI to consume
-                const screenStream = new MediaStream([track]);
-                this.callbacks.onRemoteVideo(screenStream);
+                this.remoteScreenStream = new MediaStream([track]);
+                this.callbacks.onRemoteVideo(this.remoteScreenStream);
+            }
+        }
+    }
+
+    private handleRemoteTrackRemoved(track: MediaStreamTrack, stream: MediaStream) {
+        if (track.kind === 'video') {
+            if (this.remoteStream && stream.id === this.remoteStreamId) {
+                console.log('[WebRTCPeer] Camera track removed');
+                this.remoteStream.removeTrack(track);
+                // The stream itself is still there (audio), but video is gone.
+                // We notify that the primary stream changed (or UI can watch for track ended)
+                this.callbacks.onRemoteStream(this.remoteStream);
+            } else if (this.remoteScreenStream && stream.id === this.remoteScreenStream.id) {
+                console.log('[WebRTCPeer] Screen share track removed');
+                this.remoteScreenStream.removeTrack(track);
+                // Notify via callback with null or empty stream? 
+                // Usually stopping screen share sends a dedicated signal, but this is a backup.
             }
         }
     }
@@ -354,14 +373,15 @@ export class WebRTCPeer {
      * Start camera mid-call (for voice calls that need to add video)
      * Returns the camera stream for local preview
      */
-    async startCamera(): Promise<MediaStream> {
+    async startCamera(videoDeviceId?: string): Promise<MediaStream> {
         if (!this.pc) throw new Error('Peer connection not initialized');
 
-        console.log('[WebRTCPeer] Starting camera mid-call');
+        console.log('[WebRTCPeer] Starting camera mid-call, deviceId:', videoDeviceId);
 
         // Get camera stream
         const cameraStream = await navigator.mediaDevices.getUserMedia({
             video: {
+                deviceId: videoDeviceId && videoDeviceId !== 'default' ? { ideal: videoDeviceId } : undefined,
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30 }
@@ -375,8 +395,12 @@ export class WebRTCPeer {
         // Add video track to peer connection
         const videoTrack = cameraStream.getVideoTracks()[0];
         if (videoTrack) {
-            this.cameraSender = this.pc.addTrack(videoTrack, cameraStream);
-            console.log('[WebRTCPeer] ✓ Camera track added mid-call');
+            // IMPORTANT: We use the existing localStream (which contains the current audio track)
+            // if it exists, so that the remote peer sees the camera track as belonging to the SAME stream as the audio.
+            // This prevents the remote peer from seeing a new stream ID and assuming it's a screen share.
+            const targetStream = this.localStream || cameraStream;
+            this.cameraSender = this.pc.addTrack(videoTrack, targetStream);
+            console.log('[WebRTCPeer] ✓ Camera track added mid-call to stream:', targetStream.id);
         }
 
         return cameraStream;
@@ -392,8 +416,19 @@ export class WebRTCPeer {
 
         // Stop camera stream tracks
         if (this.cameraStream) {
-            this.cameraStream.getTracks().forEach(track => track.stop());
+            this.cameraStream.getTracks().forEach(track => {
+                track.stop();
+                console.log('[WebRTCPeer] Stopped track:', track.kind, track.label);
+            });
             this.cameraStream = null;
+        }
+
+        // Also check localStream for any video tracks if cameraStream was somehow not tracked
+        if (this.localStream) {
+            this.localStream.getVideoTracks().forEach(track => {
+                track.stop();
+                console.log('[WebRTCPeer] Stopped track from localStream:', track.kind, track.label);
+            });
         }
 
         // Remove camera sender from peer connection
@@ -406,6 +441,85 @@ export class WebRTCPeer {
             }
             this.cameraSender = null;
         }
+    }
+
+    /**
+     * Replace audio track mid-call
+     */
+    async replaceAudioTrack(deviceId: string) {
+        if (!this.pc) return;
+
+        console.log('[WebRTCPeer] Replacing audio track with device:', deviceId);
+
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: false
+        });
+
+        const newTrack = newStream.getAudioTracks()[0];
+        if (!newTrack) throw new Error('No audio track in new stream');
+
+        // Replace track on all audio senders (except screen share audio if we want to be precise)
+        // Usually there's only one main audio sender
+        const senders = this.pc.getSenders().filter(s => s.track?.kind === 'audio');
+        for (const sender of senders) {
+            // Don't replace screen share audio
+            // Screen share tracks usually have a specific label or we can check the stream id
+            // In WebRTCPeer, the main audio sender is part of localStream
+            await sender.replaceTrack(newTrack);
+        }
+
+        // Update localStream
+        if (this.localStream) {
+            const oldTracks = this.localStream.getAudioTracks();
+            oldTracks.forEach(t => {
+                t.stop();
+                this.localStream?.removeTrack(t);
+            });
+            this.localStream.addTrack(newTrack);
+        } else {
+            this.localStream = newStream;
+        }
+
+        console.log('[WebRTCPeer] ✓ Audio track replaced');
+    }
+
+    /**
+     * Replace video track mid-call
+     */
+    async replaceVideoTrack(deviceId: string) {
+        if (!this.pc || !this.cameraSender) return;
+
+        console.log('[WebRTCPeer] Replacing video track with device:', deviceId);
+
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: false
+        });
+
+        const newTrack = newStream.getVideoTracks()[0];
+        if (!newTrack) throw new Error('No video track in new stream');
+
+        if (this.cameraSender) {
+            await this.cameraSender.replaceTrack(newTrack);
+        }
+
+        // Update cameraStream
+        if (this.cameraStream) {
+            this.cameraStream.getTracks().forEach(t => t.stop());
+            this.cameraStream = newStream;
+        }
+
+        console.log('[WebRTCPeer] ✓ Video track replaced');
     }
 
     /**

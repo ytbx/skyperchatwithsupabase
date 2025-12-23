@@ -385,6 +385,94 @@ export class WebRTCManager {
     }
 
     /**
+     * Replace audio track mid-session
+     */
+    async replaceAudioTrack(deviceId: string) {
+        if (!this.peerConnection) return;
+
+        console.log('[WebRTCManager] Replacing audio track with device:', deviceId);
+
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: false
+        });
+
+        const newTrack = newStream.getAudioTracks()[0];
+        if (!newTrack) throw new Error('No audio track in new stream');
+
+        // Replace track on all main audio senders
+        // We look for senders that are NOT screen audio (if we track it)
+        const senders = this.peerConnection.getSenders().filter(s =>
+            s.track?.kind === 'audio' && s !== this.screenAudioSender
+        );
+
+        for (const sender of senders) {
+            await sender.replaceTrack(newTrack);
+        }
+
+        // Update localStream
+        if (this.localStream) {
+            const oldTracks = this.localStream.getAudioTracks();
+            oldTracks.forEach(t => {
+                t.stop();
+                this.localStream?.removeTrack(t);
+            });
+            this.localStream.addTrack(newTrack);
+        } else {
+            this.localStream = newStream;
+        }
+
+        console.log('[WebRTCManager] ✓ Audio track replaced');
+    }
+
+    /**
+     * Replace video track mid-session
+     */
+    async replaceVideoTrack(deviceId: string) {
+        if (!this.peerConnection) return;
+
+        console.log('[WebRTCManager] Replacing video track with device:', deviceId);
+
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: false
+        });
+
+        const newTrack = newStream.getVideoTracks()[0];
+        if (!newTrack) throw new Error('No video track in new stream');
+
+        // Find camera sender
+        const sender = this.peerConnection.getSenders().find(s =>
+            s.track?.kind === 'video' && s.track?.label !== 'Screen' // basic check
+        );
+
+        if (sender) {
+            await sender.replaceTrack(newTrack);
+        }
+
+        // Update localStream
+        if (this.localStream) {
+            const oldTracks = this.localStream.getVideoTracks();
+            oldTracks.forEach(t => {
+                t.stop();
+                this.localStream?.removeTrack(t);
+            });
+            this.localStream.addTrack(newTrack);
+        }
+
+        console.log('[WebRTCManager] ✓ Video track replaced');
+    }
+
+    /**
      * Add a video track to the peer connection
      */
     addVideoTrack(track: MediaStreamTrack, stream: MediaStream) {

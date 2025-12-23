@@ -5,6 +5,7 @@ import { DirectCall } from '@/lib/types';
 import { CallSession, CallSessionState } from '@/services/CallSession';
 import { SignalingChannel } from '@/services/SignalingChannel';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
+import { useDeviceSettings } from './DeviceSettingsContext';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -108,6 +109,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         return () => clearInterval(interval);
     }, [callStatus]);
+
+    // Reactive Device Switching
+    const { audioInputDeviceId, videoInputDeviceId } = useDeviceSettings();
+
+    // Handle microphone change
+    useEffect(() => {
+        if (callStatus === 'active' && sessionRef.current) {
+            console.log('[CallContext] Microphone change detected, replacing track');
+            sessionRef.current.replaceAudioTrack(audioInputDeviceId);
+        }
+    }, [audioInputDeviceId, callStatus]);
+
+    // Handle camera change
+    useEffect(() => {
+        if (callStatus === 'active' && sessionRef.current && !isCameraOff) {
+            console.log('[CallContext] Camera change detected, replacing track');
+            sessionRef.current.replaceVideoTrack(videoInputDeviceId);
+        }
+    }, [videoInputDeviceId, callStatus, isCameraOff]);
 
     /**
      * Map CallSession state to CallStatus

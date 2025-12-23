@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { CallControls } from './CallControls';
 import { User, Wifi, WifiOff, Maximize2, X, Volume2, MicOff } from 'lucide-react';
 import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
+import { useDeviceSettings } from '@/contexts/DeviceSettingsContext';
 
 export const ActiveCallOverlay: React.FC = () => {
     const { user } = useAuth();
@@ -42,6 +43,8 @@ export const ActiveCallOverlay: React.FC = () => {
     const [remoteMicMuted, setRemoteMicMuted] = useState(false);
     const [contactId, setContactId] = useState<string>('');
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+    const { audioOutputDeviceId } = useDeviceSettings();
 
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -283,6 +286,23 @@ export const ActiveCallOverlay: React.FC = () => {
         }
     }, [fullscreenVideoId, remoteScreenStream, screenStream, remoteStream, volumes]);
 
+    // Handle Output Device Change (sinkId)
+    useEffect(() => {
+        const sinkId = audioOutputDeviceId === 'default' ? '' : audioOutputDeviceId;
+        console.log(`[ActiveCallOverlay] Applying output device change: ${sinkId || 'default'}`);
+
+        const applySinkId = (el: any) => {
+            if (el && 'setSinkId' in el) {
+                el.setSinkId(sinkId).catch((e: any) => console.error('[ActiveCallOverlay] Error setting sinkId:', e));
+            }
+        };
+
+        applySinkId(remoteScreenVideoRef.current);
+        applySinkId(localScreenVideoRef.current);
+        applySinkId(remoteCameraVideoRef.current);
+        applySinkId(fullscreenVideoRef.current);
+    }, [audioOutputDeviceId]);
+
     // Call duration timer
     useEffect(() => {
         if (callStatus === 'active') {
@@ -309,8 +329,11 @@ export const ActiveCallOverlay: React.FC = () => {
     }
 
     // Check for active video tracks
-    const hasRemoteVideo = remoteStream && remoteStream.getVideoTracks().length > 0;
-    const hasLocalVideo = localStream && !isCameraOff;
+    const hasRemoteVideo = !!remoteStream && remoteStream.getVideoTracks().some(t => t.readyState === 'live');
+    const hasLocalVideo = !isCameraOff && (
+        (!!cameraStream && cameraStream.getVideoTracks().some(t => t.readyState === 'live')) ||
+        (!!localStream && localStream.getVideoTracks().some(t => t.readyState === 'live'))
+    );
 
     // Define active streams for dynamic mapping
     const activeStreams = [
@@ -352,7 +375,7 @@ export const ActiveCallOverlay: React.FC = () => {
             label: 'Siz',
             isRemote: false,
             stream: cameraStream || localStream,
-            hasVideo: !isCameraOff && (!!cameraStream || !!localStream),
+            hasVideo: hasLocalVideo,
             isMicMuted: isMicMuted,
             isSpeaking: isLocalSpeaking,
             avatar: localProfileImageUrl,

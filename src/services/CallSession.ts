@@ -431,6 +431,22 @@ export class CallSession {
     }
 
     /**
+     * Replace audio track mid-call
+     */
+    async replaceAudioTrack(deviceId: string): Promise<void> {
+        if (!this.peer) return;
+        await this.peer.replaceAudioTrack(deviceId);
+    }
+
+    /**
+     * Replace video track mid-call
+     */
+    async replaceVideoTrack(deviceId: string): Promise<void> {
+        if (!this.peer) return;
+        await this.peer.replaceVideoTrack(deviceId);
+    }
+
+    /**
      * Stop camera mid-call
      */
     async stopCamera(): Promise<void> {

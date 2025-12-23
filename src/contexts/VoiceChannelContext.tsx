@@ -6,6 +6,7 @@ import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 import { useNoiseSuppression } from './NoiseSuppressionContext';
+import { useDeviceSettings } from './DeviceSettingsContext';
 
 interface VoiceParticipant {
     user_id: string;
@@ -631,6 +632,50 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             userSub.unsubscribe();
         };
     }, [user, cleanupPeerConnections]);
+
+    // Reactive Device Switching
+    const { audioInputDeviceId, videoInputDeviceId } = useDeviceSettings();
+
+    // Handle microphone change
+    useEffect(() => {
+        if (isConnected && localStreamRef.current) {
+            console.log('[VoiceChannelContext] Microphone change detected, replacing track for all peers');
+
+            // Replace for all active peer managers
+            const replaceTrackOnPeers = async () => {
+                for (const [peerId, manager] of peerManagers.current.entries()) {
+                    try {
+                        await manager.replaceAudioTrack(audioInputDeviceId);
+                        console.log(`[VoiceChannelContext] ✓ Replaced audio track for peer: ${peerId}`);
+                    } catch (e) {
+                        console.error(`[VoiceChannelContext] Error replacing audio track for peer ${peerId}:`, e);
+                    }
+                }
+            };
+
+            replaceTrackOnPeers();
+        }
+    }, [audioInputDeviceId, isConnected]);
+
+    // Handle camera change
+    useEffect(() => {
+        if (isConnected && isCameraEnabled) {
+            console.log('[VoiceChannelContext] Camera change detected, replacing track for all peers');
+
+            const replaceTrackOnPeers = async () => {
+                for (const [peerId, manager] of peerManagers.current.entries()) {
+                    try {
+                        await manager.replaceVideoTrack(videoInputDeviceId);
+                        console.log(`[VoiceChannelContext] ✓ Replaced video track for peer: ${peerId}`);
+                    } catch (e) {
+                        console.error(`[VoiceChannelContext] Error replacing video track for peer ${peerId}:`, e);
+                    }
+                }
+            };
+
+            replaceTrackOnPeers();
+        }
+    }, [videoInputDeviceId, isConnected, isCameraEnabled]);
 
     // Update local user's stream in participants when localStream changes
     useEffect(() => {

@@ -3,12 +3,14 @@ import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { useCall } from '@/contexts/CallContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserAudio } from '@/contexts/UserAudioContext';
+import { useDeviceSettings } from '@/contexts/DeviceSettingsContext';
 
 export const GlobalAudio: React.FC = () => {
     const { participants: voiceParticipants, isDeafened: isVoiceChannelDeafened } = useVoiceChannel();
     const { remoteStream: callRemoteStream, remoteSoundpadStream: callSoundpadStream, activeCall, isDeafened: isCallDeafened } = useCall();
     const { user } = useAuth();
     const { getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isGlobalMuted } = useUserAudio();
+    const { audioOutputDeviceId } = useDeviceSettings();
 
     // Refs to keep track of audio elements
     const voiceAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -242,6 +244,25 @@ export const GlobalAudio: React.FC = () => {
             }
         }
     }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, callRemoteStream, callSoundpadStream, activeCall, user, isCallDeafened, isGlobalMuted]);
+
+    // Handle Output Device Change (sinkId)
+    useEffect(() => {
+        const sinkId = audioOutputDeviceId === 'default' ? '' : audioOutputDeviceId;
+        console.log(`[GlobalAudio] Applying output device change: ${sinkId || 'default'}`);
+
+        const applySinkId = (audio: any) => {
+            if (audio && 'setSinkId' in audio) {
+                audio.setSinkId(sinkId).catch((e: any) => console.error('[GlobalAudio] Error setting sinkId:', e));
+            }
+        };
+
+        // Apply to all active audio elements
+        voiceAudioRefs.current.forEach(applySinkId);
+        soundpadAudioRefs.current.forEach(applySinkId);
+        applySinkId(callAudioRef.current);
+        applySinkId(callSoundpadAudioRef.current);
+
+    }, [audioOutputDeviceId]);
 
     return null; // This component does not render anything visual
 };
