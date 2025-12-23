@@ -387,7 +387,7 @@ export class WebRTCManager {
     /**
      * Replace audio track mid-session
      */
-    async replaceAudioTrack(deviceId: string) {
+    async replaceAudioTrack(deviceId: string): Promise<MediaStream | null> {
         if (!this.peerConnection) return;
 
         console.log('[WebRTCManager] Replacing audio track with device:', deviceId);
@@ -428,12 +428,13 @@ export class WebRTCManager {
         }
 
         console.log('[WebRTCManager] ✓ Audio track replaced');
+        return this.localStream;
     }
 
     /**
      * Replace video track mid-session
      */
-    async replaceVideoTrack(deviceId: string) {
+    async replaceVideoTrack(deviceId: string): Promise<MediaStream | null> {
         if (!this.peerConnection) return;
 
         console.log('[WebRTCManager] Replacing video track with device:', deviceId);
@@ -470,6 +471,7 @@ export class WebRTCManager {
         }
 
         console.log('[WebRTCManager] ✓ Video track replaced');
+        return this.localStream;
     }
 
     /**

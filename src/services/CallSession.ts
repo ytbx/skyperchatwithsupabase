@@ -23,6 +23,7 @@ export interface CallSessionCallbacks {
     onRemoteScreenStream: (stream: MediaStream) => void;  // New: separate screen stream
     onRemoteScreenShareStarted: () => void;
     onRemoteScreenShareStopped: () => void;
+    onRemoteTrackChanged: () => void;
     onCallEnded: (reason: 'remote_ended' | 'remote_rejected' | 'remote_cancelled' | 'local_ended') => void;
     onError: (error: Error) => void;
 }
@@ -130,6 +131,10 @@ export class CallSession {
                         console.log('[CallSession] Renegotiation needed - sending offer');
                         await this.sendOffer();
                     }
+                },
+                onRemoteTrackChanged: () => {
+                    console.log('[CallSession] Remote tracks changed');
+                    this.callbacks.onRemoteTrackChanged();
                 }
             });
 
@@ -433,17 +438,17 @@ export class CallSession {
     /**
      * Replace audio track mid-call
      */
-    async replaceAudioTrack(deviceId: string): Promise<void> {
-        if (!this.peer) return;
-        await this.peer.replaceAudioTrack(deviceId);
+    async replaceAudioTrack(deviceId: string): Promise<MediaStream | null> {
+        if (!this.peer) return null;
+        return await this.peer.replaceAudioTrack(deviceId);
     }
 
     /**
      * Replace video track mid-call
      */
-    async replaceVideoTrack(deviceId: string): Promise<void> {
-        if (!this.peer) return;
-        await this.peer.replaceVideoTrack(deviceId);
+    async replaceVideoTrack(deviceId: string): Promise<MediaStream | null> {
+        if (!this.peer) return null;
+        return await this.peer.replaceVideoTrack(deviceId);
     }
 
     /**

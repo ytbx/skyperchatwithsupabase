@@ -105,7 +105,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 const stats = await sessionRef.current.getStats();
                 setPing(stats.rtt);
             }
-        }, 2000);
+        }, 1000);
 
         return () => clearInterval(interval);
     }, [callStatus]);
@@ -116,16 +116,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
     // Handle microphone change
     useEffect(() => {
         if (callStatus === 'active' && sessionRef.current) {
-            console.log('[CallContext] Microphone change detected, replacing track');
-            sessionRef.current.replaceAudioTrack(audioInputDeviceId);
+            const updateTrack = async () => {
+                console.log('[CallContext] Microphone change detected, replacing track');
+                const newStream = await sessionRef.current?.replaceAudioTrack(audioInputDeviceId);
+                if (newStream) {
+                    // Create a new MediaStream instance to trigger a state change
+                    // and re-initialize speaking detection in components
+                    setLocalStream(new MediaStream(newStream.getTracks()));
+                }
+            };
+            updateTrack();
         }
     }, [audioInputDeviceId, callStatus]);
 
     // Handle camera change
     useEffect(() => {
         if (callStatus === 'active' && sessionRef.current && !isCameraOff) {
-            console.log('[CallContext] Camera change detected, replacing track');
-            sessionRef.current.replaceVideoTrack(videoInputDeviceId);
+            const updateTrack = async () => {
+                console.log('[CallContext] Camera change detected, replacing track');
+                const newStream = await sessionRef.current?.replaceVideoTrack(videoInputDeviceId);
+                if (newStream) {
+                    setCameraStream(new MediaStream(newStream.getTracks()));
+                }
+            };
+            updateTrack();
         }
     }, [videoInputDeviceId, callStatus, isCameraOff]);
 
@@ -207,6 +221,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 setRemoteScreenStream(stream);
                 // Ensure we know they are sharing
                 setIsRemoteScreenSharing(true);
+            },
+            onRemoteTrackChanged: () => {
+                if (sessionRef.current) {
+                    const stream = sessionRef.current.getRemoteStream();
+                    if (stream) {
+                        console.log('[CallContext] Remote tracks changed, updating stream');
+                        setRemoteStream(new MediaStream(stream.getTracks()));
+                    }
+                }
             },
             onRemoteScreenShareStarted: () => {
                 console.log('[CallContext] Remote screen share started');

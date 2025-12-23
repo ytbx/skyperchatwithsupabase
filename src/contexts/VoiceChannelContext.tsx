@@ -643,13 +643,19 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
             // Replace for all active peer managers
             const replaceTrackOnPeers = async () => {
+                let updatedStream: MediaStream | null = null;
                 for (const [peerId, manager] of peerManagers.current.entries()) {
                     try {
-                        await manager.replaceAudioTrack(audioInputDeviceId);
+                        const s = await manager.replaceAudioTrack(audioInputDeviceId);
+                        if (s) updatedStream = s;
                         console.log(`[VoiceChannelContext] ✓ Replaced audio track for peer: ${peerId}`);
                     } catch (e) {
                         console.error(`[VoiceChannelContext] Error replacing audio track for peer ${peerId}:`, e);
                     }
+                }
+
+                if (updatedStream) {
+                    setLocalStream(new MediaStream(updatedStream.getTracks()));
                 }
             };
 
@@ -663,13 +669,19 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             console.log('[VoiceChannelContext] Camera change detected, replacing track for all peers');
 
             const replaceTrackOnPeers = async () => {
+                let updatedStream: MediaStream | null = null;
                 for (const [peerId, manager] of peerManagers.current.entries()) {
                     try {
-                        await manager.replaceVideoTrack(videoInputDeviceId);
+                        const s = await manager.replaceVideoTrack(videoInputDeviceId);
+                        if (s) updatedStream = s;
                         console.log(`[VoiceChannelContext] ✓ Replaced video track for peer: ${peerId}`);
                     } catch (e) {
                         console.error(`[VoiceChannelContext] Error replacing video track for peer ${peerId}:`, e);
                     }
+                }
+
+                if (updatedStream) {
+                    setLocalStream(new MediaStream(updatedStream.getTracks()));
                 }
             };
 
