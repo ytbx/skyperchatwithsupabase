@@ -160,6 +160,24 @@ export const ActiveCallOverlay: React.FC = () => {
         };
     }, [localStream, isMicMuted]);
 
+    // Container size tracking for responsive layout
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    const contentAreaRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!contentAreaRef.current) return;
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setContainerSize({
+                    width: entry.contentRect.width,
+                    height: entry.contentRect.height
+                });
+            }
+        });
+        observer.observe(contentAreaRef.current);
+        return () => observer.disconnect();
+    }, []);
+
 
     // Helper to set video stream - handles race conditions with play
     // Refactored to be used inside useEffect
@@ -294,13 +312,101 @@ export const ActiveCallOverlay: React.FC = () => {
     const hasRemoteVideo = remoteStream && remoteStream.getVideoTracks().length > 0;
     const hasLocalVideo = localStream && !isCameraOff;
 
-    // Calculate active items for grid layout
-    const activeItemCount = [
-        true, // Remote Main is always present (video or avatar)
-        (isRemoteScreenSharing && !!remoteScreenStream),
-        (isScreenSharing && !!screenStream),
-        true // Local Main is always present
-    ].filter(Boolean).length;
+    // Define active streams for dynamic mapping
+    const activeStreams = [
+        {
+            id: 'remote-camera',
+            label: contactName,
+            isRemote: true,
+            stream: remoteStream,
+            hasVideo: hasRemoteVideo,
+            isMicMuted: remoteMicMuted,
+            isSpeaking: isRemoteSpeaking,
+            avatar: contactProfileImageUrl,
+            initial: contactName.charAt(0).toUpperCase(),
+            videoRef: remoteCameraVideoRef
+        },
+        (isRemoteScreenSharing && !!remoteScreenStream) ? {
+            id: 'remote-screen',
+            label: `${contactName}'s Screen`,
+            isRemote: true,
+            stream: remoteScreenStream,
+            hasVideo: true,
+            isMicMuted: false,
+            isSpeaking: false,
+            videoRef: remoteScreenVideoRef
+        } : null,
+        (isScreenSharing && !!screenStream) ? {
+            id: 'local-screen',
+            label: 'Your Screen',
+            isRemote: false,
+            stream: screenStream,
+            hasVideo: true,
+            isMicMuted: false,
+            isSpeaking: false,
+            muted: true,
+            videoRef: localScreenVideoRef
+        } : null,
+        {
+            id: 'local-camera',
+            label: 'Siz',
+            isRemote: false,
+            stream: cameraStream || localStream,
+            hasVideo: !isCameraOff && (!!cameraStream || !!localStream),
+            isMicMuted: isMicMuted,
+            isSpeaking: isLocalSpeaking,
+            avatar: localProfileImageUrl,
+            muted: true,
+            isMirror: true
+        }
+    ].filter((s): s is any => s !== null);
+
+    // Calculate optimal grid layout
+    const calculateLayout = () => {
+        const n = activeStreams.length;
+        if (n === 0 || containerSize.width === 0) return { cols: 1, rows: 1, itemWidth: 0, itemHeight: 0 };
+
+        const gap = 16;
+        const padding = 32;
+        const availableWidth = containerSize.width - padding;
+        const availableHeight = containerSize.height - padding;
+
+        let bestWidth = 0;
+        let bestLayout = { cols: 1, rows: n };
+
+        // Test all possible column counts from 1 to n
+        for (let cols = 1; cols <= n; cols++) {
+            const rows = Math.ceil(n / cols);
+
+            const cellWidth = (availableWidth - (cols - 1) * gap) / cols;
+            const cellHeight = (availableHeight - (rows - 1) * gap) / rows;
+
+            let itemWidth, itemHeight;
+            if (cellWidth / (16 / 9) <= cellHeight) {
+                // Width is the limiting factor
+                itemWidth = cellWidth;
+                itemHeight = cellWidth / (16 / 9);
+            } else {
+                // Height is the limiting factor
+                itemHeight = cellHeight;
+                itemWidth = cellHeight * (16 / 9);
+            }
+
+            // We want to maximize the area (and thus width) of each item
+            if (itemWidth > bestWidth) {
+                bestWidth = itemWidth;
+                bestLayout = { cols, rows };
+            }
+        }
+
+        return {
+            ...bestLayout,
+            itemWidth: bestWidth,
+            itemHeight: bestWidth / (16 / 9)
+        };
+    };
+
+    const layout = calculateLayout();
 
     // Resize Logic
     const [height, setHeight] = useState(450);
@@ -386,135 +492,74 @@ export const ActiveCallOverlay: React.FC = () => {
                 </div>
 
                 {/* Main Content Area */}
-                <div className="flex-1 relative bg-gray-950 p-4 min-h-0 overflow-hidden flex flex-wrap justify-center items-center content-center gap-4">
-
-                    {/* 1. Remote Main (Camera or Avatar) */}
-                    <div
-                        className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
-                        style={{ width: '420px', flexShrink: 0 }}
-                        onContextMenu={(e) => {
-                            e.preventDefault();
-                            if (contactId) setVolumeContextMenu({ x: e.clientX, y: e.clientY });
-                        }}
-                    >
-                        {/* Render Remote Video or Avatar */}
-                        {hasRemoteVideo ? (
-                            <video
-                                ref={remoteCameraVideoRef}
-                                autoPlay
-                                playsInline
-                                className="w-full h-full object-cover"
-                            />
-                        ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center">
-                                {contactProfileImageUrl ? (
-                                    <img src={contactProfileImageUrl} alt={contactName} className="w-24 h-24 rounded-full object-cover border-4 border-gray-700" />
-                                ) : (
-                                    <div className="w-24 h-24 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center border-4 border-gray-700">
-                                        <span className="text-3xl font-bold text-white">{contactName.charAt(0).toUpperCase()}</span>
-                                    </div>
-                                )}
-                                <p className="text-white text-lg font-semibold mt-4">{contactName}</p>
-                            </div>
-                        )}
-
-                        {/* Indicators */}
-                        <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg flex items-center space-x-2">
-                            <span className="text-white text-sm font-medium">{contactName}</span>
-                            {remoteMicMuted && <MicOff size={14} className="text-red-500" />}
-                        </div>
-                        <div className="absolute top-3 right-3 flex space-x-2">
-                            <button onClick={() => openFullscreen('remote-camera')} className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white transition-opacity opacity-0 group-hover:opacity-100">
-                                <Maximize2 size={16} />
-                            </button>
-                        </div>
-                        {isRemoteSpeaking && <div className="absolute inset-0 border-4 border-green-500 rounded-xl pointer-events-none" />}
-                    </div>
-
-                    {/* 2. Remote Screen Share (If Active) */}
-                    {isRemoteScreenSharing && remoteScreenStream && (
+                <div
+                    ref={contentAreaRef}
+                    className="flex-1 relative bg-gray-950 p-4 min-h-0 overflow-hidden flex flex-wrap justify-center items-center content-center gap-4"
+                >
+                    {activeStreams.map((streamInfo) => (
                         <div
-                            className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
-                            style={{ width: '420px', flexShrink: 0 }}
+                            key={streamInfo.id}
+                            className={`relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 shadow-lg group transition-all duration-300`}
+                            style={{
+                                width: `${layout.itemWidth}px`,
+                                height: `${layout.itemHeight}px`,
+                                flexShrink: 0
+                            }}
+                            onContextMenu={(e) => {
+                                if (streamInfo.isRemote) {
+                                    e.preventDefault();
+                                    if (contactId) setVolumeContextMenu({ x: e.clientX, y: e.clientY });
+                                }
+                            }}
                         >
-                            <video
-                                ref={remoteScreenVideoRef}
-                                autoPlay
-                                playsInline
-                                className="w-full h-full object-cover bg-black"
-                            />
-                            <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg">
-                                <span className="text-white text-sm font-medium">{contactName}'s Screen</span>
-                            </div>
-                            <div className="absolute top-3 right-3">
-                                <button onClick={() => openFullscreen('remote-screen')} className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white">
-                                    <Maximize2 size={16} />
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                            {/* Render Video or Avatar */}
+                            {streamInfo.hasVideo ? (
+                                <video
+                                    ref={streamInfo.videoRef ? streamInfo.videoRef : (el) => {
+                                        if (el && streamInfo.stream && el.srcObject !== streamInfo.stream) {
+                                            el.srcObject = streamInfo.stream;
+                                        }
+                                    }}
+                                    autoPlay
+                                    playsInline
+                                    muted={streamInfo.muted}
+                                    className={`w-full h-full object-cover bg-black ${streamInfo.isMirror ? 'mirror' : ''}`}
+                                />
+                            ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center">
+                                    {streamInfo.avatar ? (
+                                        <img src={streamInfo.avatar} alt={streamInfo.label} className="w-[25%] min-w-[64px] max-w-[128px] aspect-square rounded-full object-cover border-4 border-gray-700 shadow-2xl" />
+                                    ) : (
+                                        <div className="w-[25%] min-w-[64px] max-w-[128px] aspect-square bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center border-4 border-gray-700 shadow-2xl">
+                                            <span className="text-3xl font-bold text-white">{streamInfo.initial || '?'}</span>
+                                        </div>
+                                    )}
+                                    <p className="text-white text-lg font-semibold mt-4">{streamInfo.label}</p>
+                                </div>
+                            )}
 
-                    {/* 3. Local Screen Share (If Active) */}
-                    {isScreenSharing && screenStream && (
-                        <div
-                            className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
-                            style={{ width: '420px', flexShrink: 0 }}
-                        >
-                            <video
-                                ref={localScreenVideoRef}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="w-full h-full object-cover bg-black"
-                            />
-                            <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg">
-                                <span className="text-white text-sm font-medium">Your Screen</span>
+                            {/* Indicators */}
+                            <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg flex items-center space-x-2 z-10">
+                                <span className="text-white text-sm font-medium">{streamInfo.label}</span>
+                                {streamInfo.isMicMuted && <MicOff size={14} className="text-red-500" />}
                             </div>
-                            <div className="absolute top-3 right-3">
-                                <button onClick={() => openFullscreen('local-screen')} className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white">
-                                    <Maximize2 size={16} />
-                                </button>
-                            </div>
-                        </div>
-                    )}
 
-                    {/* 4. Local Main (Camera or Avatar) */}
-                    <div
-                        className="relative bg-gray-900 rounded-xl overflow-hidden border-2 border-gray-800 aspect-video shadow-lg"
-                        style={{ width: '420px', flexShrink: 0 }}
-                    >
-                        {(!isCameraOff && (cameraStream || localStream)) ? (
-                            <video
-                                ref={(el) => {
-                                    const streamToUse = cameraStream || localStream;
-                                    if (el && streamToUse && el.srcObject !== streamToUse) el.srcObject = streamToUse;
-                                }}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="w-full h-full object-cover mirror"
-                            />
-                        ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center">
-                                {localProfileImageUrl ? (
-                                    <img src={localProfileImageUrl} alt="You" className="w-24 h-24 rounded-full object-cover border-4 border-gray-700" />
-                                ) : (
-                                    <div className="w-24 h-24 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center border-4 border-gray-700">
-                                        <User size={32} className="text-white" />
-                                    </div>
+                            {/* Controls Layer */}
+                            <div className="absolute top-3 right-3 flex space-x-2 z-10">
+                                {streamInfo.id !== 'local-camera' && (
+                                    <button
+                                        onClick={() => openFullscreen(streamInfo.id)}
+                                        className="p-2 bg-black/60 hover:bg-black/80 rounded-lg text-white transition-opacity opacity-0 group-hover:opacity-100"
+                                    >
+                                        <Maximize2 size={16} />
+                                    </button>
                                 )}
-                                <p className="text-white text-lg font-semibold mt-4">Siz</p>
                             </div>
-                        )}
 
-                        {/* Indicators */}
-                        <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg flex items-center space-x-2">
-                            <span className="text-white text-sm font-medium">Siz</span>
-                            {isMicMuted && <MicOff size={14} className="text-red-500" />}
+                            {/* Voice Activity Indicator */}
+                            {streamInfo.isSpeaking && <div className="absolute inset-0 border-4 border-green-500 rounded-xl pointer-events-none z-20" />}
                         </div>
-                        {isLocalSpeaking && <div className="absolute inset-0 border-4 border-green-500 rounded-xl pointer-events-none" />}
-                    </div>
-
+                    ))}
                 </div>
 
                 {/* Call Controls */}
