@@ -46,7 +46,9 @@ jobs:
           $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
           git add package.json
           git commit -m "chore: bump version to $newVersion [skip ci]"
-          git push
+          git tag v$newVersion
+          git push origin main
+          git push origin v$newVersion
           echo "NEW_VERSION=$newVersion" >> $env:GITHUB_ENV
 
       - name: Build & Release
