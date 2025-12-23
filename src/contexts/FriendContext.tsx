@@ -146,7 +146,7 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             friendsSubscription.unsubscribe();
             requestsSubscription.unsubscribe();
         };
-    }, [user]);
+    }, [user?.id]);
 
     // Update online status when it changes (since we derive it in loading, but want it reactive)
     // Actually simpler: we can re-evaluate 'isOnline' in the component or rely on a wrapper.

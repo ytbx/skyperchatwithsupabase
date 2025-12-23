@@ -88,7 +88,7 @@ export function ServerList({
       serverSubscription.unsubscribe();
       membershipSubscription.unsubscribe();
     };
-  }, [user]);
+  }, [user?.id]);
 
   async function loadServers() {
     if (!user) return;

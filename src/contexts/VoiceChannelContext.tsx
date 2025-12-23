@@ -568,7 +568,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             console.log('[VoiceChannelContext] Unsubscribing from channel updates');
             channelSub.unsubscribe();
         };
-    }, [activeChannelId, user]);
+    }, [activeChannelId, user?.id]);
 
     // Subscription for signals and user movement (STABLE - depends only on user)
     useEffect(() => {
@@ -631,7 +631,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             signalSub.unsubscribe();
             userSub.unsubscribe();
         };
-    }, [user, cleanupPeerConnections]);
+    }, [user?.id, cleanupPeerConnections]);
 
     // Reactive Device Switching
     const { audioInputDeviceId, videoInputDeviceId } = useDeviceSettings();
@@ -716,7 +716,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     if (error) console.error('Error updating mute state:', error);
                 });
         }
-    }, [isMuted, activeChannelId, user, isConnected]);
+    }, [isMuted, activeChannelId, user?.id, isConnected]);
 
     // Handle deafen toggle
     useEffect(() => {
@@ -730,7 +730,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     if (error) console.error('Error updating deafen state:', error);
                 });
         }
-    }, [isDeafened, activeChannelId, user, isConnected]);
+    }, [isDeafened, activeChannelId, user?.id, isConnected]);
 
     // Start screen share with a specific stream
     const startScreenShareWithStream = async (screenStream: MediaStream) => {

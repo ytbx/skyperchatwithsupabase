@@ -38,12 +38,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     loadUser();
 
-    // Set up auth listener - KEEP SIMPLE, no async operations
+    // Set up auth listener - prevent duplicate updates on window focus
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user || null);
-        if (session?.user) {
-          loadProfile(session.user.id);
+        const newUser = session?.user || null;
+
+        setUser(prevUser => {
+          // Only update if the user has actually changed (different ID or Nullness changed)
+          if (prevUser?.id === newUser?.id) return prevUser;
+          return newUser;
+        });
+
+        if (newUser) {
+          // Only reload profile if user ID changed
+          setProfile(prevProfile => {
+            if (prevProfile?.id === newUser.id) return prevProfile;
+            loadProfile(newUser.id);
+            return prevProfile; // loadProfile will eventually call setProfile
+          });
         } else {
           setProfile(null);
         }

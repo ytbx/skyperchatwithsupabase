@@ -70,7 +70,7 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
         subscription.unsubscribe();
       };
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     setNotificationCount(notifications.length);

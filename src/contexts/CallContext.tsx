@@ -252,7 +252,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         sessionRef.current = session;
         return session;
-    }, [user, mapSessionStateToStatus, resetCallState]);
+    }, [user?.id, mapSessionStateToStatus, resetCallState]);
 
     /**
      * Initiate a call to a contact
@@ -291,7 +291,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             console.error('[CallContext] Error initiating call:', error);
             resetCallState();
         }
-    }, [user, createSession, resetCallState]);
+    }, [user?.id, createSession, resetCallState]);
 
     /**
      * Accept an incoming call
@@ -324,7 +324,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             console.error('[CallContext] Error accepting call:', error);
             resetCallState();
         }
-    }, [user, createSession, resetCallState]);
+    }, [user?.id, createSession, resetCallState]);
 
     /**
      * Reject an incoming call

@@ -111,7 +111,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
         subscription.unsubscribe();
       };
     }
-  }, [contactId, user]);
+  }, [contactId, user?.id]);
 
   useEffect(() => {
     scrollToBottom();

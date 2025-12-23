@@ -44,7 +44,7 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
       loadConversations();
       setupRealtimeSubscription();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const loadConversations = async () => {
     if (!user) return;
@@ -64,7 +64,7 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
 
       for (const chat of chats || []) {
         const contactId = chat.sender_id === user.id ? chat.receiver_id : chat.sender_id;
-        
+
         if (!conversationMap.has(contactId)) {
           // Get contact profile
           const { data: profile } = await supabase
@@ -181,7 +181,7 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
             <Plus size={18} className="text-gray-400" />
           </button>
         </div>
-        
+
         {/* Search */}
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -232,11 +232,10 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
             {filteredConversations.map((conversation) => (
               <div
                 key={conversation.contactId}
-                className={`p-3 rounded-lg cursor-pointer transition-colors group ${
-                  selectedContactId === conversation.contactId
+                className={`p-3 rounded-lg cursor-pointer transition-colors group ${selectedContactId === conversation.contactId
                     ? 'bg-blue-600/20 border border-blue-600/30'
                     : 'hover:bg-gray-800'
-                }`}
+                  }`}
                 onClick={() => onConversationSelect(conversation.contactId, conversation.contactName)}
               >
                 <div className="flex items-center space-x-3">
@@ -265,17 +264,17 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
                         </span>
                       )}
                     </div>
-                    
+
                     <div className="flex items-center justify-between mt-1">
                       <p className="text-gray-400 text-xs truncate">
-                        {conversation.lastMessage 
-                          ? conversation.lastMessage.is_image 
-                            ? '📷 Fotoğraf' 
+                        {conversation.lastMessage
+                          ? conversation.lastMessage.is_image
+                            ? '📷 Fotoğraf'
                             : truncateMessage(conversation.lastMessage.message)
                           : 'Mesaj yok'
                         }
                       </p>
-                      
+
                       {/* Unread badge */}
                       {conversation.unreadCount > 0 && (
                         <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full min-w-[20px] text-center">
