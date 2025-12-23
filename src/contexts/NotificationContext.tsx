@@ -20,8 +20,9 @@ interface NotificationContextType {
   clearAll: () => void;
   requestPermission: () => Promise<boolean>;
   hasPermission: boolean;
-  // Set active chat to prevent notifications from current conversation
+  // Set active chat/channel to prevent notifications from current conversation
   setActiveChat: (contactId: string | null) => void;
+  setActiveChannel: (channelId: number | null) => void;
   // Debug functions
   createTestNotification: () => void;
 }
@@ -36,6 +37,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<{ type: string; id?: string } | null>(null);
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
+  const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -174,6 +177,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return; // Completely skip - don't add to state or show anything
     }
 
+    // NEW: Check if this notification is from the CURRENTLY ACTIVE chat/channel
+    const channelId = notification.data?.channelId;
+    if (
+      (senderId && senderId === activeContactId) ||
+      (channelId && Number(channelId) === activeChannelId)
+    ) {
+      console.log('[Notifications] Suppression: Notification from active conversation, skipping alert');
+      return;
+    }
+
     setNotifications((prev) => [notification, ...prev].slice(0, 100)); // Keep last 100
 
     // Play sound
@@ -183,7 +196,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     showBrowserNotification(notification.title, notification.body, notification.data);
 
     console.log('[Notifications] Received:', notification.type, notification.title);
-  }, [playNotificationSound, showBrowserNotification, isServerMuted, isUserNotificationsMuted]);
+  }, [playNotificationSound, showBrowserNotification, isServerMuted, isUserNotificationsMuted, activeContactId, activeChannelId]);
 
   /**
    * Mark notification as read
@@ -237,7 +250,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const setActiveChat = useCallback((contactId: string | null) => {
     console.log('[Notifications] Active chat set to:', contactId);
     setActiveContactId(contactId);
-  }, []);
+
+    if (contactId && currentUserId) {
+      // Clear notifications from this sender when opening chat
+      setNotifications(prev => prev.filter(n => n.data?.senderId !== contactId));
+      // Also delete from DB so they don't persist in NotificationSystem
+      supabase.from('notifications')
+        .delete()
+        .eq('user_id', currentUserId)
+        .eq('metadata->>senderId', contactId)
+        .then(({ error }) => {
+          if (error) console.log('[Notifications] Info: Clearing DM notifications from DB:', error.message);
+        });
+    }
+  }, [currentUserId]);
 
   /**
    * Subscribe to my notifications
@@ -377,10 +403,26 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [currentUserId, activeContactId, isUserNotificationsMuted]);
 
   /**
-   * State to track current user's profile for mention detection
+   * Subscribe to channel messages for mention detection (receiver-side)
    */
-  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
-  const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
+
+  const setActiveChannel = useCallback((channelId: number | null) => {
+    console.log('[Notifications] Active channel set to:', channelId);
+    setActiveChannelId(channelId);
+
+    if (channelId && currentUserId) {
+      // Clear notifications for this channel when opening
+      setNotifications(prev => prev.filter(n => Number(n.data?.channelId) !== channelId));
+      // Also delete from DB
+      supabase.from('notifications')
+        .delete()
+        .eq('user_id', currentUserId)
+        .eq('metadata->>channelId', channelId.toString())
+        .then(({ error }) => {
+          if (error) console.error('[Notifications] Error clearing channel notifications from DB:', error);
+        });
+    }
+  }, [currentUserId]);
 
   // Load current user's username
   useEffect(() => {
@@ -424,7 +466,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // Skip own messages
           if (newMessage.sender_id === currentUserId) return;
 
-          // Skip if viewing the same channel (optional - could check activeChannelId)
+          // Skip if viewing the same channel
+          if (newMessage.channel_id === activeChannelId) {
+            console.log('[Notifications] Mention in active channel, skipping');
+            return;
+          }
 
           const messageContent = newMessage.message || '';
 
@@ -514,7 +560,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('[Notifications] Cleaning up channel message subscription');
       channelMessageSub.unsubscribe();
     };
-  }, [currentUserId, currentUsername, addNotification, isServerMuted]);
+  }, [currentUserId, currentUsername, addNotification, isServerMuted, activeChannelId]);
 
   /**
    * Load initial notifications
@@ -620,6 +666,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     requestPermission,
     hasPermission,
     setActiveChat,
+    setActiveChannel,
     createTestNotification,
   };
 

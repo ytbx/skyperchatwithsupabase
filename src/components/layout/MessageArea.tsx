@@ -3,6 +3,7 @@ import { Hash, Send, Paperclip, Smile, Plus, Gift, Image, Sticker, Trash2 } from
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSupabaseRealtime } from '@/contexts/SupabaseRealtimeContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { ChannelMessage, Channel, Profile } from '@/lib/types';
 import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
@@ -32,6 +33,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user, profile } = useAuth();
   const { isUserOnline } = useSupabaseRealtime();
+  const { setActiveChannel } = useNotifications();
 
   function formatTime(dateString: string) {
     const date = new Date(dateString);
@@ -130,6 +132,19 @@ export function MessageArea({ channelId }: MessageAreaProps) {
       subscription.unsubscribe();
     };
   }, [channelId]);
+
+  // Set active channel to prevent notifications for it
+  useEffect(() => {
+    if (channelId) {
+      console.log('[MessageArea] Setting active channel to:', channelId);
+      setActiveChannel(channelId);
+    }
+
+    return () => {
+      console.log('[MessageArea] Clearing active channel');
+      setActiveChannel(null);
+    };
+  }, [channelId, setActiveChannel]);
 
   useEffect(() => {
     scrollToBottom();
