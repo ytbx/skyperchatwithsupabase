@@ -23,6 +23,7 @@ export interface ExtendedFriend {
     status: 'online' | 'away' | 'busy' | 'offline';
     isOnline: boolean;
     tableId?: string; // The friend record ID
+    lastInteractionAt: string | null; // For sorting
 }
 
 export interface ExtendedFriendRequest extends FriendRequest {
@@ -58,17 +59,36 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (!user) return;
 
         try {
+            // First, get basic friendship data
             const { data: friendships, error } = await supabase
                 .from('friends')
                 .select(`
-          *,
-          requester:profiles!friends_requester_id_fkey(id, username, profile_image_url),
-          requested:profiles!friends_requested_id_fkey(id, username, profile_image_url)
-        `)
+                  *,
+                  requester:profiles!friends_requester_id_fkey(id, username, profile_image_url),
+                  requested:profiles!friends_requested_id_fkey(id, username, profile_image_url)
+                `)
                 .eq('status', 'accepted')
                 .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
 
             if (error) throw error;
+
+            // Get last message timestamps for all potential friends
+            const { data: latestChats } = await supabase
+                .from('chats')
+                .select('sender_id, receiver_id, created_at')
+                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+                .order('created_at', { ascending: false });
+
+            // Map friend ID to their latest interaction timestamp
+            const interactionMap = new Map<string, string>();
+            if (latestChats) {
+                for (const chat of latestChats) {
+                    const friendId = chat.sender_id === user.id ? chat.receiver_id : chat.sender_id;
+                    if (!interactionMap.has(friendId)) {
+                        interactionMap.set(friendId, chat.created_at);
+                    }
+                }
+            }
 
             const friendsList: ExtendedFriend[] = (friendships || []).map((friendship) => {
                 const friend = friendship.requester_id === user.id ? friendship.requested : friendship.requester;
@@ -78,9 +98,20 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                     username: friend.username,
                     profile_image_url: friend.profile_image_url,
                     isOnline,
-                    status: isOnline ? 'online' : 'offline', // Simplified status for now
-                    tableId: friendship.id
+                    status: isOnline ? 'online' : 'offline',
+                    tableId: friendship.id,
+                    lastInteractionAt: interactionMap.get(friend.id) || null
                 };
+            });
+
+            // Sort by last interaction date, then by username
+            friendsList.sort((a, b) => {
+                if (a.lastInteractionAt && b.lastInteractionAt) {
+                    return new Date(b.lastInteractionAt).getTime() - new Date(a.lastInteractionAt).getTime();
+                }
+                if (a.lastInteractionAt) return -1;
+                if (b.lastInteractionAt) return 1;
+                return a.username.localeCompare(b.username);
             });
 
             setFriends(friendsList);
@@ -142,9 +173,17 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             .on('postgres_changes', { event: '*', schema: 'public', table: 'friend_requests', filter: `requested_id=eq.${user.id}` }, loadRequests)
             .subscribe();
 
+        // Subscribe to chat changes to re-sort friends
+        const chatsSubscription = supabase
+            .channel('public:chats_sorting')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats', filter: `sender_id=eq.${user.id}` }, loadFriends)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats', filter: `receiver_id=eq.${user.id}` }, loadFriends)
+            .subscribe();
+
         return () => {
             friendsSubscription.unsubscribe();
             requestsSubscription.unsubscribe();
+            chatsSubscription.unsubscribe();
         };
     }, [user?.id]);
 
