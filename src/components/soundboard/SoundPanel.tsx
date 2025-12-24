@@ -165,7 +165,8 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
                     Ses panelini kullanmak için masaüstü uygulamasını indirmeniz gerekmektedir.
                 </p>
                 <a
-                    href="/download"
+                    href={`${import.meta.env.BASE_URL}OvoxSetup.exe`}
+                    download="OvoxSetup.exe"
                     className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
