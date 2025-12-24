@@ -19,6 +19,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
   const { user } = useAuth();
   const [channelName, setChannelName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isReadonly, setIsReadonly] = useState(false);
   const [isVoice, setIsVoice] = useState(false);
   const [creating, setCreating] = useState(false);
 
@@ -38,13 +39,15 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
           name: channelName.trim(),
           server_id: serverId,
           is_voice: isVoice,
-          is_private: isPrivate
+          is_private: isPrivate,
+          is_readonly: isReadonly
         });
 
       if (channelError) throw channelError;
 
       setChannelName('');
       setIsPrivate(false);
+      setIsReadonly(false);
       onClose();
 
       if (onChannelCreated) {
@@ -144,6 +147,31 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
               />
             </button>
           </div>
+
+          {/* Read-only Channel */}
+          {!isVoice && (
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium text-gray-300">
+                  Salt Okunur Kanal
+                </label>
+                <p className="text-xs text-gray-400">
+                  Sadece yetkili kişiler mesaj gönderebilir
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReadonly(!isReadonly)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isReadonly ? 'bg-blue-600' : 'bg-gray-600'
+                  }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isReadonly ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                />
+              </button>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex space-x-3 pt-4">

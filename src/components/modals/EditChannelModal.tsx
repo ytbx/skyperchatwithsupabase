@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Hash, Volume2, Save, Trash2, Plus, Search } from 'lucide-react';
+import { X, Hash, Volume2, Save, Trash2, Plus, Search, Check, Slash } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Channel, ServerRole, ChannelPermission, PERMISSIONS } from '@/lib/types';
 
@@ -15,6 +15,7 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
     const [channel, setChannel] = useState<Channel | null>(null);
     const [channelName, setChannelName] = useState('');
     const [isPrivate, setIsPrivate] = useState(false);
+    const [isReadonly, setIsReadonly] = useState(false);
     const [roles, setRoles] = useState<ServerRole[]>([]);
     const [permissions, setPermissions] = useState<ChannelPermission[]>([]);
     const [showAddDropdown, setShowAddDropdown] = useState(false);
@@ -35,6 +36,7 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
             setChannel(data);
             setChannelName(data.name);
             setIsPrivate(data.is_private);
+            setIsReadonly(data.is_readonly || false);
         }
     }
 
@@ -52,7 +54,7 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
         if (!channel) return;
         const { error } = await supabase
             .from('channels')
-            .update({ name: channelName, is_private: isPrivate })
+            .update({ name: channelName, is_private: isPrivate, is_readonly: isReadonly })
             .eq('id', channelId);
 
         if (!error) {
@@ -70,7 +72,7 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
     async function handleAddPermission(targetId: number | string, type: 'role' | 'member') {
         const payload: any = {
             channel_id: channelId,
-            allow: PERMISSIONS.VIEW_CHANNEL.toString(),
+            allow: (PERMISSIONS.VIEW_CHANNEL | PERMISSIONS.SEND_MESSAGES).toString(),
             deny: '0'
         };
 
@@ -96,6 +98,36 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
     async function handleRemovePermission(permissionId: number) {
         await supabase.from('channel_permissions').delete().eq('id', permissionId);
         setPermissions(permissions.filter(p => p.id !== permissionId));
+    }
+
+    async function updatePermissionBits(permission: ChannelPermission, bit: bigint, action: 'allow' | 'deny' | 'neutral') {
+        let newAllow = BigInt(permission.allow);
+        let newDeny = BigInt(permission.deny);
+
+        if (action === 'allow') {
+            newAllow |= bit;
+            newDeny &= ~bit;
+        } else if (action === 'deny') {
+            newDeny |= bit;
+            newAllow &= ~bit;
+        } else {
+            newAllow &= ~bit;
+            newDeny &= ~bit;
+        }
+
+        const { data, error } = await supabase
+            .from('channel_permissions')
+            .update({
+                allow: newAllow.toString(),
+                deny: newDeny.toString()
+            })
+            .eq('id', permission.id)
+            .select()
+            .single();
+
+        if (data) {
+            setPermissions(permissions.map(p => p.id === data.id ? data : p));
+        }
     }
 
     useEffect(() => {
@@ -196,6 +228,21 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
                                 </button>
                             </div>
 
+                            {!channel?.is_voice && (
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <label className="text-white font-medium">Salt Okunur Kanal</label>
+                                        <p className="text-sm text-gray-400">Sadece yetkili kişiler mesaj gönderebilir.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsReadonly(!isReadonly)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isReadonly ? 'bg-green-500' : 'bg-gray-600'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isReadonly ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="pt-4">
                                 <button onClick={handleSaveOverview} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded flex items-center gap-2">
                                     <Save size={18} /> Değişiklikleri Kaydet
@@ -288,34 +335,31 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
 
                             <div className="space-y-2">
                                 {permissions.map(perm => {
+                                    let label = "";
+                                    let icon = null;
+                                    let color = "";
+
                                     if (perm.role_id) {
                                         const role = roles.find(r => r.id === perm.role_id);
-                                        if (!role) return null;
-                                        return (
-                                            <div key={perm.id} className="bg-gray-850 p-4 rounded flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: role.color }} />
-                                                    <span className="text-white font-medium">{role.name}</span>
-                                                    <span className="text-xs text-gray-500 ml-2">(Rol)</span>
-                                                </div>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="text-sm text-gray-400">Kanalı Görebilir</div>
-                                                    <button onClick={() => handleRemovePermission(perm.id)} className="text-gray-400 hover:text-red-400">
-                                                        <Trash2 size={18} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
+                                        if (role) {
+                                            label = role.name;
+                                            color = role.color;
+                                            icon = <div className="w-3 h-3 rounded-full" style={{ backgroundColor: role.color }} />;
+                                        }
                                     } else if (perm.user_id) {
-                                        return (
-                                            <PermissionItem
-                                                key={perm.id}
-                                                permission={perm}
-                                                onRemove={() => handleRemovePermission(perm.id)}
-                                            />
-                                        );
+                                        label = "Üye";
+                                        icon = <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden" />;
                                     }
-                                    return null;
+
+                                    return (
+                                        <PermissionItem
+                                            key={perm.id}
+                                            permission={perm}
+                                            roles={roles}
+                                            onRemove={() => handleRemovePermission(perm.id)}
+                                            onUpdate={(bit, action) => updatePermissionBits(perm, bit, action)}
+                                        />
+                                    );
                                 })}
                                 {permissions.length === 0 && (
                                     <div className="text-center text-gray-500 py-8">
@@ -331,7 +375,17 @@ export function EditChannelModal({ isOpen, onClose, channelId, serverId }: EditC
     );
 }
 
-function PermissionItem({ permission, onRemove }: { permission: ChannelPermission, onRemove: () => void }) {
+function PermissionItem({
+    permission,
+    roles,
+    onRemove,
+    onUpdate
+}: {
+    permission: ChannelPermission,
+    roles: ServerRole[],
+    onRemove: () => void,
+    onUpdate: (bit: bigint, action: 'allow' | 'deny' | 'neutral') => void
+}) {
     const [userProfile, setUserProfile] = useState<any>(null);
 
     useEffect(() => {
@@ -342,26 +396,76 @@ function PermissionItem({ permission, onRemove }: { permission: ChannelPermissio
         }
     }, [permission.user_id]);
 
-    if (!userProfile) return null;
+    const role = permission.role_id ? roles.find(r => r.id === permission.role_id) : null;
+    if (permission.user_id && !userProfile) return null;
+    if (permission.role_id && !role) return null;
+
+    const renderToggle = (bit: bigint) => {
+        const isAllowed = (BigInt(permission.allow) & bit) === bit;
+        const isDenied = (BigInt(permission.deny) & bit) === bit;
+
+        return (
+            <div className="flex items-center bg-gray-900 rounded p-1">
+                <button
+                    onClick={() => onUpdate(bit, 'deny')}
+                    className={`p-1 rounded transition-colors ${isDenied ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-800'}`}
+                >
+                    <X size={14} />
+                </button>
+                <button
+                    onClick={() => onUpdate(bit, 'neutral')}
+                    className={`p-1 rounded transition-colors ${!isAllowed && !isDenied ? 'bg-gray-700 text-white' : 'text-gray-500 hover:bg-gray-800'}`}
+                >
+                    <Slash size={14} />
+                </button>
+                <button
+                    onClick={() => onUpdate(bit, 'allow')}
+                    className={`p-1 rounded transition-colors ${isAllowed ? 'bg-green-500 text-white' : 'text-gray-500 hover:bg-gray-800'}`}
+                >
+                    <Check size={14} />
+                </button>
+            </div>
+        );
+    };
 
     return (
-        <div className="bg-gray-850 p-4 rounded flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
-                    {userProfile.profile_image_url ? (
-                        <img src={userProfile.profile_image_url} alt="" className="w-full h-full object-cover" />
+        <div className="bg-gray-850 p-4 rounded flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    {permission.user_id ? (
+                        <>
+                            <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
+                                {userProfile.profile_image_url ? (
+                                    <img src={userProfile.profile_image_url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="text-xs text-white">{userProfile.username?.charAt(0).toUpperCase()}</span>
+                                )}
+                            </div>
+                            <span className="text-white font-medium">{userProfile.username}</span>
+                            <span className="text-xs text-gray-500 ml-2">(Üye)</span>
+                        </>
                     ) : (
-                        <span className="text-xs text-white">{userProfile.username?.charAt(0).toUpperCase()}</span>
+                        <>
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: role?.color }} />
+                            <span className="text-white font-medium">{role?.name}</span>
+                            <span className="text-xs text-gray-500 ml-2">(Rol)</span>
+                        </>
                     )}
                 </div>
-                <span className="text-white font-medium">{userProfile.username}</span>
-                <span className="text-xs text-gray-500 ml-2">(Üye)</span>
-            </div>
-            <div className="flex items-center gap-4">
-                <div className="text-sm text-gray-400">Kanalı Görebilir</div>
-                <button onClick={onRemove} className="text-gray-400 hover:text-red-400">
+                <button onClick={onRemove} className="text-gray-500 hover:text-red-400 transition-colors">
                     <Trash2 size={18} />
                 </button>
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-gray-800">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-300">Kanalı Görüntüle</span>
+                    {renderToggle(PERMISSIONS.VIEW_CHANNEL)}
+                </div>
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-300">Mesaj Gönder</span>
+                    {renderToggle(PERMISSIONS.SEND_MESSAGES)}
+                </div>
             </div>
         </div>
     );

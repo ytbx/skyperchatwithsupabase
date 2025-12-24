@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSupabaseRealtime } from '@/contexts/SupabaseRealtimeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { ChannelMessage, Channel, Profile } from '@/lib/types';
+import { ChannelMessage, Channel, Profile, PERMISSIONS, ServerRole, ChannelPermission, Server } from '@/lib/types';
+import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
 import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
 import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
@@ -28,6 +29,9 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [server, setServer] = useState<Server | null>(null);
+  const [userRoles, setUserRoles] = useState<ServerRole[]>([]);
+  const [currentChannelPermissions, setCurrentChannelPermissions] = useState<ChannelPermission[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,6 +166,29 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
     if (channelData) {
       setChannel(channelData);
+
+      // Load server
+      const { data: serverData } = await supabase
+        .from('servers')
+        .select('*')
+        .eq('id', channelData.server_id)
+        .maybeSingle();
+      if (serverData) setServer(serverData);
+
+      // Load user roles
+      const { data: userRolesData } = await supabase
+        .from('server_user_roles')
+        .select('role_id, server_roles(*)')
+        .eq('user_id', user?.id)
+        .eq('server_id', channelData.server_id);
+      setUserRoles(userRolesData?.map((ur: any) => ur.server_roles) || []);
+
+      // Load channel permissions
+      const { data: permissionsData } = await supabase
+        .from('channel_permissions')
+        .select('*')
+        .eq('channel_id', channelId);
+      setCurrentChannelPermissions(permissionsData || []);
     }
 
     // Load messages
@@ -398,12 +425,28 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     }
   }
 
+  const basePermissions = computeBasePermissions(userRoles, server?.owner_id || '', user?.id || '');
+  const channelPermsBitmask = computeChannelPermissions(
+    basePermissions,
+    userRoles,
+    currentChannelPermissions,
+    user?.id || '',
+    server?.owner_id || ''
+  );
+
+  const canSendMessages = !channel?.is_readonly ||
+    user?.id === server?.owner_id ||
+    hasPermission(channelPermsBitmask, PERMISSIONS.ADMINISTRATOR) ||
+    hasPermission(channelPermsBitmask, PERMISSIONS.MANAGE_CHANNELS) ||
+    hasPermission(channelPermsBitmask, PERMISSIONS.SEND_MESSAGES);
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage(e as any);
     }
   }
+
 
   if (!channelId) {
     return (
@@ -542,9 +585,9 @@ export function MessageArea({ channelId }: MessageAreaProps) {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="text-gray-400 hover:text-gray-300 transition-colors p-1 rounded hover:bg-gray-600"
-                title="Dosya ekle"
-                disabled={isUploading}
+                className={`text-gray-400 p-1 rounded transition-colors ${!canSendMessages ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-300 hover:bg-gray-600'}`}
+                title={canSendMessages ? "Dosya ekle" : "Mesaj gönderme yetkiniz yok"}
+                disabled={isUploading || !canSendMessages}
               >
                 <Paperclip className="w-5 h-5" />
               </button>
@@ -556,13 +599,13 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                 onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder={`#${channel?.name || 'kanal'} kanalına mesaj gönder`}
-                className="flex-1 mx-2 bg-transparent text-white placeholder:text-gray-500 focus:outline-none text-sm"
-                disabled={sending || isUploading}
+                placeholder={canSendMessages ? `#${channel?.name || 'kanal'} kanalına mesaj gönder` : "Bu kanalda sadece yetkili kişiler mesaj gönderebilir"}
+                className={`flex-1 mx-2 bg-transparent text-white placeholder:text-gray-500 focus:outline-none text-sm ${!canSendMessages ? 'cursor-not-allowed' : ''}`}
+                disabled={sending || isUploading || !canSendMessages}
               />
 
               <div className="flex items-center gap-1">
-                <GifPicker onGifSelect={sendGif} />
+                <GifPicker onGifSelect={canSendMessages ? sendGif : () => { }} />
               </div>
             </div>
           </div>

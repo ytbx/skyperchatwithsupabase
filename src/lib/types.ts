@@ -34,6 +34,7 @@ export interface Channel {
   is_owner_only: boolean;
   server_id: string;
   is_private: boolean;
+  is_readonly: boolean;
 }
 
 export interface ChannelMessage {
