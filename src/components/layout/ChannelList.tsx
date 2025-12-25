@@ -516,12 +516,12 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               <span>Metin Kanalları</span>
             </button>
             {textChannelsExpanded && (
-              <div className="mt-0.5 space-y-0.5">
+              <div className="mt-0.5 space-y-0.5 px-2">
                 {channels.map((channel) => (
                   <button
                     key={channel.id}
                     onClick={() => onSelectChannel(channel.id)}
-                    className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${selectedChannelId === channel.id
+                    className={`w-full px-2 py-1.5 flex items-center gap-2 rounded transition-all duration-150 group ${selectedChannelId === channel.id
                       ? 'bg-gray-700 text-white'
                       : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
                       }`}
@@ -555,7 +555,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
               <span>Ses Kanalları</span>
             </button>
             {voiceChannelsExpanded && (
-              <div className="mt-0.5 space-y-0.5">
+              <div className="mt-0.5 space-y-0.5 px-2">
                 {voiceChannels.map((channel) => (
                   <div
                     key={channel.id}
@@ -567,7 +567,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                         joinChannel(channel.id);
                         onSelectChannel(channel.id);
                       }}
-                      className={`w-full px-2 py-1.5 mx-2 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
+                      className={`w-full px-2 py-1.5 flex items-center gap-2 rounded transition-all duration-150 group ${activeChannelId === channel.id
                         ? 'bg-gray-700 text-white'
                         : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
                         }`}
@@ -591,7 +591,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                     {voiceParticipants[channel.id]?.map((participant) => (
                       <div
                         key={participant.id}
-                        className={`ml-8 mr-2 py-1 flex items-center gap-2 group rounded px-1 ${canMoveMembers ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:bg-gray-800/50`}
+                        className={`ml-8 py-1 flex items-center gap-2 group rounded px-1 ${canMoveMembers ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:bg-gray-800/50`}
                         draggable={canMoveMembers}
                         onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
                         onContextMenu={(e) => {
@@ -640,7 +640,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
           {onCreateChannel && (server?.owner_id === user?.id || hasPermission(computeBasePermissions(userRoles, server?.owner_id, user?.id), PERMISSIONS.MANAGE_CHANNELS)) && (
             <button
               onClick={onCreateChannel}
-              className="w-full px-2 py-1.5 mx-2 mt-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150"
+              className="w-[calc(100%-1rem)] mx-auto mt-2 flex items-center gap-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded transition-all duration-150 px-2 py-1.5"
             >
               <Plus className="w-4 h-4" />
               <span className="text-sm font-medium">Kanal Ekle</span>
