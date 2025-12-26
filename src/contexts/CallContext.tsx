@@ -24,6 +24,8 @@ interface CallContextType {
     isCameraOff: boolean;
     isScreenSharing: boolean;
     isRemoteScreenSharing: boolean;
+    remoteMicMuted: boolean;
+    remoteDeafened: boolean;
     connectionState: RTCPeerConnectionState | null;
     ping: number | null;
 
@@ -61,6 +63,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
+    const [remoteMicMuted, setRemoteMicMuted] = useState(false);
+    const [remoteDeafened, setRemoteDeafened] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
     const [ping, setPing] = useState<number | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
@@ -182,6 +186,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setIsCameraOff(true);
         setIsScreenSharing(false);
         setIsRemoteScreenSharing(false);
+        setRemoteMicMuted(false);
+        setRemoteDeafened(false);
         setConnectionState(null);
         setPing(null);
         sessionRef.current = null;
@@ -239,6 +245,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 console.log('[CallContext] Remote screen share stopped');
                 setIsRemoteScreenSharing(false);
                 setRemoteScreenStream(null);
+            },
+            onRemoteAudioStateChanged: (isMuted, isDeafened) => {
+                console.log('[CallContext] Remote audio state changed signal received:', { isMuted, isDeafened });
+                setRemoteMicMuted(isMuted);
+                setRemoteDeafened(isDeafened);
             },
             onCallEnded: (reason) => {
                 console.log('[CallContext] Call ended:', reason);
@@ -389,7 +400,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
         const newMutedState = !isMicMuted;
         sessionRef.current?.setMicMuted(newMutedState);
         setIsMicMuted(newMutedState);
-    }, [isMicMuted]);
+        // Broadcast the change
+        sessionRef.current?.sendAudioState(newMutedState, isDeafened);
+    }, [isMicMuted, isDeafened]);
 
     /**
      * Toggle deafen (mute incoming audio)
@@ -398,7 +411,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
         const newDeafenState = !isDeafened;
         setIsDeafened(newDeafenState);
         console.log('[CallContext] Deafen toggled:', newDeafenState);
-    }, [isDeafened]);
+
+        // Usually deafen also implies muted mic, but we let the user decide.
+        // Discord style: deafen => muted.
+        const newMicState = newDeafenState ? true : isMicMuted;
+        if (newDeafenState && !isMicMuted) {
+            setIsMicMuted(true);
+            sessionRef.current?.setMicMuted(true);
+        }
+
+        // Broadcast the change
+        sessionRef.current?.sendAudioState(newMicState, newDeafenState);
+    }, [isDeafened, isMicMuted]);
 
     /**
      * Toggle camera on/off (supports mid-call camera add/remove)
@@ -625,6 +649,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
+        remoteMicMuted,
+        remoteDeafened,
         connectionState,
         ping,
         initiateCall,

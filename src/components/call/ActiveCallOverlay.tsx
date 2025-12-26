@@ -3,7 +3,7 @@ import { useCall } from '@/contexts/CallContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { CallControls } from './CallControls';
-import { User, Wifi, WifiOff, Maximize2, X, Volume2, MicOff } from 'lucide-react';
+import { User, Wifi, WifiOff, Maximize2, X, Volume2, MicOff, VolumeX } from 'lucide-react';
 import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
 
 export const ActiveCallOverlay: React.FC = () => {
@@ -18,6 +18,8 @@ export const ActiveCallOverlay: React.FC = () => {
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
+        remoteMicMuted: contextRemoteMicMuted,
+        remoteDeafened: contextRemoteDeafened,
         connectionState,
         toggleMic,
         toggleDeafen,
@@ -39,7 +41,6 @@ export const ActiveCallOverlay: React.FC = () => {
     const [localProfileImageUrl, setLocalProfileImageUrl] = useState<string | null>(null);
     const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
     const [isLocalSpeaking, setIsLocalSpeaking] = useState(false);
-    const [remoteMicMuted, setRemoteMicMuted] = useState(false);
     const [contactId, setContactId] = useState<string>('');
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -118,12 +119,6 @@ export const ActiveCallOverlay: React.FC = () => {
 
         detectVoice();
 
-        // Check if remote audio track is muted
-        const audioTrack = remoteStream.getAudioTracks()[0];
-        if (audioTrack) {
-            setRemoteMicMuted(!audioTrack.enabled);
-        }
-
         return () => {
             cancelAnimationFrame(animationFrame);
             audioContext.close();
@@ -197,7 +192,8 @@ export const ActiveCallOverlay: React.FC = () => {
             video.srcObject = stream;
             // Common volume handling
             const vol = volumes.get(videoId) ?? 1.0;
-            video.volume = vol;
+            video.volume = isDeafened ? 0 : vol;
+            video.muted = isDeafened;
             try {
                 await video.play();
             } catch (e) {
@@ -244,6 +240,22 @@ export const ActiveCallOverlay: React.FC = () => {
             video.srcObject = null;
         }
     }, [screenStream, isScreenSharing]);
+
+    // Handle deafen state changes for existing streams
+    useEffect(() => {
+        const audioElements = [
+            { ref: remoteCameraVideoRef, id: 'remote-camera' },
+            { ref: remoteScreenVideoRef, id: 'remote-screen' }
+        ];
+
+        audioElements.forEach(({ ref, id }) => {
+            if (ref.current) {
+                const vol = volumes.get(id) ?? 1.0;
+                ref.current.volume = isDeafened ? 0 : vol;
+                ref.current.muted = isDeafened;
+            }
+        });
+    }, [isDeafened, volumes]);
 
     const handleVolumeChange = (videoId: string, volume: number) => {
         const videoRefs = [remoteScreenVideoRef, localScreenVideoRef, remoteCameraVideoRef];
@@ -330,7 +342,8 @@ export const ActiveCallOverlay: React.FC = () => {
             isRemote: true,
             stream: remoteStream,
             hasVideo: hasRemoteVideo,
-            isMicMuted: remoteMicMuted,
+            isMicMuted: contextRemoteMicMuted,
+            isDeafened: contextRemoteDeafened,
             isSpeaking: isRemoteSpeaking,
             avatar: contactProfileImageUrl,
             initial: contactName.charAt(0).toUpperCase(),
@@ -343,6 +356,7 @@ export const ActiveCallOverlay: React.FC = () => {
             stream: remoteScreenStream,
             hasVideo: true,
             isMicMuted: false,
+            isDeafened: false,
             isSpeaking: false,
             videoRef: remoteScreenVideoRef
         } : null,
@@ -353,6 +367,7 @@ export const ActiveCallOverlay: React.FC = () => {
             stream: screenStream,
             hasVideo: true,
             isMicMuted: false,
+            isDeafened: false,
             isSpeaking: false,
             muted: true,
             videoRef: localScreenVideoRef
@@ -364,6 +379,7 @@ export const ActiveCallOverlay: React.FC = () => {
             stream: cameraStream || localStream,
             hasVideo: !isCameraOff && (!!cameraStream || !!localStream),
             isMicMuted: isMicMuted,
+            isDeafened: isDeafened,
             isSpeaking: isLocalSpeaking,
             avatar: localProfileImageUrl,
             muted: true,
@@ -551,7 +567,16 @@ export const ActiveCallOverlay: React.FC = () => {
                             {/* Indicators */}
                             <div className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-lg flex items-center space-x-2 z-10">
                                 <span className="text-white text-sm font-medium">{streamInfo.label}</span>
-                                {streamInfo.isMicMuted && <MicOff size={14} className="text-red-500" />}
+                                {streamInfo.isMicMuted && (
+                                    <div className="flex items-center" title="Mikrofon Kapalı">
+                                        <MicOff size={14} className="text-red-500" />
+                                    </div>
+                                )}
+                                {streamInfo.isDeafened && (
+                                    <div className="flex items-center" title="Sağırlaştırıldı (Sesi Kapalı)">
+                                        <VolumeX size={14} className="text-red-500" />
+                                    </div>
+                                )}
                             </div>
 
                             {/* Controls Layer */}

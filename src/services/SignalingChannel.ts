@@ -17,7 +17,8 @@ export type SignalType =
     | 'call-rejected'
     | 'call-cancelled'
     | 'screen-share-started'
-    | 'screen-share-stopped';
+    | 'screen-share-stopped'
+    | 'audio-state-change';
 
 export interface CallSignal {
     id: string;
@@ -25,7 +26,7 @@ export interface CallSignal {
     from_user_id: string;
     to_user_id: string;
     signal_type: SignalType;
-    payload: RTCSessionDescriptionInit | RTCIceCandidateInit | Record<string, never>;
+    payload: RTCSessionDescriptionInit | RTCIceCandidateInit | Record<string, any>;
     created_at: string;
 }
 
@@ -94,6 +95,7 @@ export class SignalingChannel {
             },
             async (payload) => {
                 const signal = payload.new as CallSignal;
+                console.log('[SignalingChannel] Received signal:', signal.signal_type, 'from:', signal.from_user_id);
 
                 // Only process signals meant for us and not already processed
                 if (signal.to_user_id === this.userId &&
@@ -189,6 +191,14 @@ export class SignalingChannel {
     async sendScreenShareStopped(): Promise<void> {
         console.log('[SignalingChannel] Sending screen-share-stopped');
         await this.sendSignal('screen-share-stopped', {});
+    }
+
+    /**
+     * Send audio state change signal
+     */
+    async sendAudioState(isMuted: boolean, isDeafened: boolean): Promise<void> {
+        console.log('[SignalingChannel] Sending audio-state-change:', { isMuted, isDeafened });
+        await this.sendSignal('audio-state-change', { isMuted, isDeafened } as any);
     }
 
     /**

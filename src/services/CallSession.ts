@@ -24,6 +24,7 @@ export interface CallSessionCallbacks {
     onRemoteScreenShareStarted: () => void;
     onRemoteScreenShareStopped: () => void;
     onRemoteTrackChanged: () => void;
+    onRemoteAudioStateChanged: (isMuted: boolean, isDeafened: boolean) => void;
     onCallEnded: (reason: 'remote_ended' | 'remote_rejected' | 'remote_cancelled' | 'local_ended') => void;
     onError: (error: Error) => void;
 }
@@ -227,6 +228,12 @@ export class CallSession {
                     console.log('[CallSession] Remote stopped screen sharing');
                     this.callbacks.onRemoteScreenShareStopped();
                     break;
+
+                case 'audio-state-change':
+                    const { isMuted, isDeafened } = signal.payload as any;
+                    console.log('[CallSession] Remote audio state changed:', { isMuted, isDeafened });
+                    this.callbacks.onRemoteAudioStateChanged(isMuted, isDeafened);
+                    break;
             }
         } catch (error) {
             console.error('[CallSession] Error handling signal:', error);
@@ -406,6 +413,15 @@ export class CallSession {
      */
     setMicMuted(muted: boolean): void {
         this.peer?.setMicMuted(muted);
+    }
+
+    /**
+     * Send audio state to remote
+     */
+    async sendAudioState(isMuted: boolean, isDeafened: boolean): Promise<void> {
+        if (this.signaling) {
+            await this.signaling.sendAudioState(isMuted, isDeafened);
+        }
     }
 
     /**
