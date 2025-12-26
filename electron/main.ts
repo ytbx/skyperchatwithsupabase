@@ -1,4 +1,7 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut } from 'electron';
+
+// Enable loopback capture exclusion to prevent app audio from being captured in screen share
+app.commandLine.appendSwitch('enable-loopback-capture-exclusion', 'true');
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';

@@ -7,6 +7,7 @@ export class WebRTCManager {
     private localStream: MediaStream | null = null;
     private remoteStream: MediaStream | null = null;
     private remoteSoundpadStream: MediaStream | null = null;  // Separate soundpad stream
+    private remoteScreenStream: MediaStream | null = null;    // Unified screen share stream (audio+video)
     private screenStream: MediaStream | null = null;
     private screenAudioSender: RTCRtpSender | null = null;
     private audioTrackCount: number = 0;  // Track how many audio tracks we've received
@@ -75,6 +76,9 @@ export class WebRTCManager {
                 // Audio track - differentiate between voice and soundpad
                 this.audioTrackCount++;
                 console.log('[WebRTCManager] Processing audio track #', this.audioTrackCount);
+                console.log('[WebRTCManager] Track ID:', event.track.id);
+                console.log('[WebRTCManager] Track label:', event.track.label);
+                console.log('[WebRTCManager] Stream ID:', event.streams[0]?.id);
 
                 if (this.audioTrackCount === 1) {
                     // First audio track is VOICE (microphone)
@@ -95,12 +99,15 @@ export class WebRTCManager {
                     this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
                     console.log('[WebRTCManager] ✓ Soundpad audio track added to separate stream');
                 } else {
-                    // Additional audio tracks (screen share audio, etc.) - add to voice stream
-                    console.log('[WebRTCManager] Additional audio track, adding to voice stream');
-                    if (this.remoteStream) {
-                        this.remoteStream.addTrack(event.track);
-                        this.onRemoteStreamCallback?.(this.remoteStream);
+                    // Additional audio tracks (screen share audio)
+                    console.log('[WebRTCManager] Additional audio track (Screen Share), adding to remoteScreenStream');
+
+                    if (!this.remoteScreenStream) {
+                        this.remoteScreenStream = new MediaStream();
                     }
+                    this.remoteScreenStream.addTrack(event.track);
+                    console.log('[WebRTCManager] ✓ Screen audio track added to remoteScreenStream');
+                    // We don't trigger callback here, wait for video to trigger UI
                 }
             } else if (event.track.kind === 'video') {
                 // Video track - could be camera or screen share
@@ -144,13 +151,21 @@ export class WebRTCManager {
                     // Small delay to ensure track is fully initialized before callbacks
                     await new Promise(resolve => setTimeout(resolve, 100));
 
-                    // Note: We used to automatically call onRemoteScreenCallback here.
-                    // Now we rely on the signal state in CallContext to determine if this is a screen share.
-                    // We still update the screen stream just in case it's needed, but we don't trigger the UI mode change here.
-                    const screenStream = new MediaStream([track]);
-                    this.onRemoteScreenCallback?.(screenStream);
+                    // Use the unified remoteScreenStream
+                    if (!this.remoteScreenStream) {
+                        this.remoteScreenStream = new MediaStream();
+                    }
+                    // Check if video track already exists (avoid duplicates)
+                    const existingScreenVideo = this.remoteScreenStream.getVideoTracks()[0];
+                    if (existingScreenVideo) {
+                        this.remoteScreenStream.removeTrack(existingScreenVideo);
+                    }
+                    this.remoteScreenStream.addTrack(track);
 
-                    // Also treat as camera stream
+                    // Trigger callback with the stream (which might now have audio too)
+                    this.onRemoteScreenCallback?.(this.remoteScreenStream);
+
+                    // Also treat as camera stream (legacy support or if camera)
                     const cameraStream = new MediaStream([track]);
                     this.onRemoteCameraCallback?.(cameraStream);
 
@@ -680,5 +695,8 @@ export class WebRTCManager {
         }
 
         this.remoteStream = null;
+        this.remoteSoundpadStream = null;
+        this.remoteScreenStream = null;
+        this.pendingCandidates = [];
     }
 }

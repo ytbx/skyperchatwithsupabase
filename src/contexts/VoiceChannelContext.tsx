@@ -799,7 +799,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     // Web implementation
                     const screenStream = await navigator.mediaDevices.getDisplayMedia({
                         video: true,
-                        audio: false
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
                     });
                     await startScreenShareWithStream(screenStream);
                 }
@@ -813,11 +817,13 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const handleScreenShareSelect = async (sourceId: string, withAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
+            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'withAudio:', withAudio);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: sourceId
+                        // For system audio to work with specific source, we often need to just request it
+                        // attempting to bind it to the same sourceId as video
                     }
                 } : false,
                 video: {
@@ -825,12 +831,18 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
                         minWidth: 1280,
-                        maxWidth: 1280,
+                        maxWidth: 1920, // Increased max width
                         minHeight: 720,
-                        maxHeight: 720
+                        maxHeight: 1080 // Increased max height
                     }
                 }
             });
+
+            console.log('[VoiceChannelContext] Got screen stream:', stream.id);
+            console.log('[VoiceChannelContext] Audio tracks found:', stream.getAudioTracks().length);
+            stream.getAudioTracks().forEach(t => console.log('[VoiceChannelContext] Audio track:', t.label, t.enabled, t.readyState));
+            console.log('[VoiceChannelContext] Video tracks found:', stream.getVideoTracks().length);
+
             await startScreenShareWithStream(stream);
         } catch (e) {
             console.error('Error getting electron screen stream:', e);
