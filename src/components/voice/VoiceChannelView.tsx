@@ -126,7 +126,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         cameraParticipants.forEach(participant => {
             const videoId = `camera-${participant.user_id}`;
             const video = videoRefs.current.get(videoId);
-            if (video && participant.cameraStream && video.srcObject !== participant.cameraStream) {
+            if (video && participant.cameraStream && video.srcObject !== participant.cameraStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.cameraStream;
                 video.volume = volumes.get(videoId) ?? 1.0;
                 video.play().catch(e => console.error('Error playing video:', e));
@@ -137,13 +137,13 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         screenSharingParticipants.forEach(participant => {
             const videoId = `screen-${participant.user_id}`;
             const video = videoRefs.current.get(videoId);
-            if (video && participant.screenStream && video.srcObject !== participant.screenStream) {
+            if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.screenStream;
                 video.volume = volumes.get(videoId) ?? 1.0;
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
-    }, [cameraParticipants, screenSharingParticipants, volumes]);
+    }, [cameraParticipants, screenSharingParticipants, volumes, ignoredStreams]);
 
     // Get the current fullscreen stream
     const getFullscreenStream = useCallback((): { stream: MediaStream | null; isLocalUser: boolean } => {
@@ -249,21 +249,45 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     key={videoId}
                                     className="relative bg-gray-800 rounded-lg overflow-hidden group"
                                     style={{ maxHeight: '400px' }}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        setVolumeContextMenu({
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            userId: participant.user_id,
+                                            username: participant.profile?.username || 'Unknown',
+                                            profileImageUrl: participant.profile?.profile_image_url,
+                                            streamId: videoId
+                                        });
+                                    }}
                                 >
-                                    <video
-                                        ref={(el) => {
-                                            if (el) {
-                                                videoRefs.current.set(videoId, el);
-                                                el.volume = currentVolume;
-                                            } else {
-                                                videoRefs.current.delete(videoId);
-                                            }
-                                        }}
-                                        autoPlay
-                                        playsInline
-                                        className="w-full h-auto object-contain bg-black"
-                                        style={{ maxHeight: '400px' }}
-                                    />
+                                    {ignoredStreams.has(videoId) ? (
+                                        <div
+                                            className="w-full aspect-video flex flex-col items-center justify-center bg-black cursor-pointer group/placeholder"
+                                            onClick={() => toggleIgnoreStream(videoId)}
+                                        >
+                                            <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4 transition-transform group-hover/placeholder:scale-110">
+                                                <User size={32} className="text-blue-500" />
+                                            </div>
+                                            <p className="text-white font-medium">İzlemek için tıklayın</p>
+                                            <p className="text-gray-400 text-sm mt-1">Görüntü gizlendi</p>
+                                        </div>
+                                    ) : (
+                                        <video
+                                            ref={(el) => {
+                                                if (el) {
+                                                    videoRefs.current.set(videoId, el);
+                                                    el.volume = currentVolume;
+                                                } else {
+                                                    videoRefs.current.delete(videoId);
+                                                }
+                                            }}
+                                            autoPlay
+                                            playsInline
+                                            className="w-full h-auto object-contain bg-black"
+                                            style={{ maxHeight: '400px' }}
+                                        />
+                                    )}
 
                                     {/* Controls overlay */}
                                     <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -339,22 +363,46 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     key={videoId}
                                     className="relative bg-gray-800 rounded-lg overflow-hidden group"
                                     style={{ maxHeight: '400px' }}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        setVolumeContextMenu({
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            userId: participant.user_id,
+                                            username: participant.profile?.username || 'Unknown',
+                                            profileImageUrl: participant.profile?.profile_image_url,
+                                            streamId: videoId
+                                        });
+                                    }}
                                 >
-                                    <video
-                                        ref={(el) => {
-                                            if (el) {
-                                                videoRefs.current.set(videoId, el);
-                                                el.volume = currentVolume;
-                                            } else {
-                                                videoRefs.current.delete(videoId);
-                                            }
-                                        }}
-                                        autoPlay
-                                        playsInline
-                                        muted={participant.user_id === user?.id} // Mute if local user
-                                        className="w-full h-auto object-contain bg-black"
-                                        style={{ maxHeight: '400px' }}
-                                    />
+                                    {ignoredStreams.has(videoId) ? (
+                                        <div
+                                            className="w-full aspect-video flex flex-col items-center justify-center bg-black cursor-pointer group/placeholder"
+                                            onClick={() => toggleIgnoreStream(videoId)}
+                                        >
+                                            <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4 transition-transform group-hover/placeholder:scale-110">
+                                                <Maximize2 size={32} className="text-green-500" />
+                                            </div>
+                                            <p className="text-white font-medium">İzlemek için tıklayın</p>
+                                            <p className="text-gray-400 text-sm mt-1">Yayın gizlendi</p>
+                                        </div>
+                                    ) : (
+                                        <video
+                                            ref={(el) => {
+                                                if (el) {
+                                                    videoRefs.current.set(videoId, el);
+                                                    el.volume = currentVolume;
+                                                } else {
+                                                    videoRefs.current.delete(videoId);
+                                                }
+                                            }}
+                                            autoPlay
+                                            playsInline
+                                            muted={participant.user_id === user?.id} // Mute if local user
+                                            className="w-full h-auto object-contain bg-black"
+                                            style={{ maxHeight: '400px' }}
+                                        />
+                                    )}
 
                                     {/* Controls overlay */}
                                     <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

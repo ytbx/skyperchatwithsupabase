@@ -226,7 +226,7 @@ export const ActiveCallOverlay: React.FC = () => {
             // Clear video if sharing stopped
             video.srcObject = null;
         }
-    }, [remoteScreenStream, isRemoteScreenSharing]);
+    }, [remoteScreenStream, isRemoteScreenSharing, ignoredStreams]);
 
     // Effect to handle Remote Camera Stream
     useEffect(() => {
@@ -240,7 +240,7 @@ export const ActiveCallOverlay: React.FC = () => {
                 video.srcObject = null;
             }
         }
-    }, [remoteStream]);
+    }, [remoteStream, ignoredStreams]);
 
     // Effect to handle Local Screen Stream
     useEffect(() => {
@@ -252,7 +252,7 @@ export const ActiveCallOverlay: React.FC = () => {
         } else {
             video.srcObject = null;
         }
-    }, [screenStream, isScreenSharing]);
+    }, [screenStream, isScreenSharing, ignoredStreams]);
 
     // Handle deafen state changes for existing streams
     useEffect(() => {
