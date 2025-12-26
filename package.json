@@ -1,7 +1,7 @@
 {
   "name": "ovox",
   "private": true,
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "A modern voice and text chat application",
   "author": "Yusuf",
   "main": "dist-electron/main.js",
