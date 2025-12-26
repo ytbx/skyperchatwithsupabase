@@ -42,7 +42,20 @@ export const ActiveCallOverlay: React.FC = () => {
     const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
     const [isLocalSpeaking, setIsLocalSpeaking] = useState(false);
     const [contactId, setContactId] = useState<string>('');
-    const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number } | null>(null);
+    const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; streamId?: string } | null>(null);
+    const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
+
+    const toggleIgnoreStream = (streamId: string) => {
+        setIgnoredStreams(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(streamId)) {
+                newSet.delete(streamId);
+            } else {
+                newSet.add(streamId);
+            }
+            return newSet;
+        });
+    };
 
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -534,12 +547,23 @@ export const ActiveCallOverlay: React.FC = () => {
                             onContextMenu={(e) => {
                                 if (streamInfo.isRemote) {
                                     e.preventDefault();
-                                    if (contactId) setVolumeContextMenu({ x: e.clientX, y: e.clientY });
+                                    if (contactId) setVolumeContextMenu({ x: e.clientX, y: e.clientY, streamId: streamInfo.id });
                                 }
                             }}
                         >
-                            {/* Render Video or Avatar */}
-                            {streamInfo.hasVideo ? (
+                            {/* Render Video or Avatar or Placeholder */}
+                            {ignoredStreams.has(streamInfo.id) ? (
+                                <div
+                                    className="w-full h-full flex flex-col items-center justify-center bg-black cursor-pointer group/placeholder"
+                                    onClick={() => toggleIgnoreStream(streamInfo.id)}
+                                >
+                                    <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4 transition-transform group-hover/placeholder:scale-110">
+                                        <Maximize2 size={32} className="text-blue-500" />
+                                    </div>
+                                    <p className="text-white font-medium">İzlemek için tıklayın</p>
+                                    <p className="text-gray-400 text-sm mt-1">Yayın duraklatıldı</p>
+                                </div>
+                            ) : streamInfo.hasVideo ? (
                                 <video
                                     ref={streamInfo.videoRef ? streamInfo.videoRef : (el) => {
                                         if (el && streamInfo.stream && el.srcObject !== streamInfo.stream) {
@@ -730,6 +754,9 @@ export const ActiveCallOverlay: React.FC = () => {
                     username={contactName}
                     profileImageUrl={contactProfileImageUrl || undefined}
                     onClose={() => setVolumeContextMenu(null)}
+                    streamId={volumeContextMenu.streamId}
+                    isIgnored={volumeContextMenu.streamId ? ignoredStreams.has(volumeContextMenu.streamId) : false}
+                    onToggleIgnore={toggleIgnoreStream}
                 />
             )}
         </>

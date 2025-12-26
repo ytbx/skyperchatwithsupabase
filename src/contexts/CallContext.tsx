@@ -5,6 +5,7 @@ import { DirectCall } from '@/lib/types';
 import { CallSession, CallSessionState } from '@/services/CallSession';
 import { SignalingChannel } from '@/services/SignalingChannel';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
+import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
 import { useDeviceSettings } from './DeviceSettingsContext';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
@@ -68,6 +69,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
     const [ping, setPing] = useState<number | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+    const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
 
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
@@ -497,16 +499,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 if (isElectron) {
                     setIsScreenShareModalOpen(true);
                 } else {
-                    // Web implementation
-                    const stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: true,
-                        audio: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true
-                        }
-                    });
-                    await startScreenShareWithStream(stream);
+                    // Web implementation - show quality picker first
+                    setIsQualityModalOpen(true);
                 }
             }
         } catch (error) {
@@ -514,26 +508,48 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing]);
 
-    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean) => {
+    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
+        setIsQualityModalOpen(false);
+        try {
+            const constraints = {
+                video: {
+                    width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
+                    height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
+                    frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
+                },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            };
+            const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+            await startScreenShareWithStream(stream);
+        } catch (error) {
+            console.error('[CallContext] Error starting web screen share:', error);
+        }
+    };
+
+    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'withAudio:', withAudio);
+            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'withAudio:', withAudio, 'quality:', quality);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        // For system audio to work with specific source, we often need to just request it
-                        // attempting to bind it to the same sourceId as video
                     }
                 } : false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: 1280,
-                        maxWidth: 1920, // Increased max width
-                        minHeight: 720,
-                        maxHeight: 1080 // Increased max height
+                        minWidth: quality === 'fullhd' ? 1920 : 1280,
+                        maxWidth: quality === 'fullhd' ? 1920 : 1280,
+                        minHeight: quality === 'fullhd' ? 1080 : 720,
+                        maxHeight: quality === 'fullhd' ? 1080 : 720,
+                        minFrameRate: quality === 'fullhd' ? 60 : 30,
+                        maxFrameRate: quality === 'fullhd' ? 60 : 30
                     }
                 }
             });
@@ -671,6 +687,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 isOpen={isScreenShareModalOpen}
                 onClose={() => setIsScreenShareModalOpen(false)}
                 onSelect={handleScreenShareSelect}
+            />
+            <ScreenShareQualityModal
+                isOpen={isQualityModalOpen}
+                onClose={() => setIsQualityModalOpen(false)}
+                onSelect={handleWebScreenShareSelect}
             />
         </CallContext.Provider>
     );

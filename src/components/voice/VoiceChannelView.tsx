@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2 } from 'lucide-react';
+import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2, User } from 'lucide-react';
+import { UserVolumeContextMenu } from './UserVolumeContextMenu';
 
 interface VoiceParticipant {
     user_id: string;
@@ -29,6 +30,20 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
     const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
+    const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
+    const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string; streamId: string } | null>(null);
+
+    const toggleIgnoreStream = (streamId: string) => {
+        setIgnoredStreams(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(streamId)) {
+                newSet.delete(streamId);
+            } else {
+                newSet.add(streamId);
+            }
+            return newSet;
+        });
+    };
 
     // Stable ref for fullscreen video to prevent flickering
     const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -492,6 +507,21 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                     </div>
                 );
             })()}
+
+            {/* Volume Context Menu */}
+            {volumeContextMenu && (
+                <UserVolumeContextMenu
+                    x={volumeContextMenu.x}
+                    y={volumeContextMenu.y}
+                    userId={volumeContextMenu.userId}
+                    username={volumeContextMenu.username}
+                    profileImageUrl={volumeContextMenu.profileImageUrl}
+                    onClose={() => setVolumeContextMenu(null)}
+                    streamId={volumeContextMenu.streamId}
+                    isIgnored={ignoredStreams.has(volumeContextMenu.streamId)}
+                    onToggleIgnore={toggleIgnoreStream}
+                />
+            )}
 
             <style>{`
                 input[type="range"]::-webkit-slider-thumb {

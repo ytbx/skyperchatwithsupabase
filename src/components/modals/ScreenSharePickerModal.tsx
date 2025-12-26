@@ -5,13 +5,14 @@ import { DesktopCapturerSource } from '@/types/electron';
 interface ScreenSharePickerModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (sourceId: string, withAudio: boolean) => void;
+    onSelect: (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => void;
 }
 
 export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenSharePickerModalProps) {
     const [sources, setSources] = useState<DesktopCapturerSource[]>([]);
     const [activeTab, setActiveTab] = useState<'screen' | 'window'>('screen');
     const [withAudio, setWithAudio] = useState(false);
+    const [quality, setQuality] = useState<'standard' | 'fullhd'>('standard');
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -89,7 +90,7 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                             {filteredSources.map((source) => (
                                 <button
                                     key={source.id}
-                                    onClick={() => onSelect(source.id, withAudio)}
+                                    onClick={() => onSelect(source.id, withAudio, quality)}
                                     className="group flex flex-col gap-2 p-3 rounded-xl bg-gray-800 hover:bg-gray-700 transition-all hover:scale-[1.02] border border-transparent hover:border-primary-500/50"
                                 >
                                     <div className="relative aspect-video w-full bg-black rounded-lg overflow-hidden">
@@ -129,6 +130,27 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                             Sistem sesini paylaş
                         </span>
                     </label>
+
+                    <div className="flex bg-gray-800 p-1 rounded-lg">
+                        <button
+                            onClick={() => setQuality('standard')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === 'standard'
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-gray-200'
+                                }`}
+                        >
+                            Standart (720p)
+                        </button>
+                        <button
+                            onClick={() => setQuality('fullhd')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === 'fullhd'
+                                ? 'bg-green-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-gray-200'
+                                }`}
+                        >
+                            Full HD (1080p)
+                        </button>
+                    </div>
 
                     <button
                         onClick={onClose}

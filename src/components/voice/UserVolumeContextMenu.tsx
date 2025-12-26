@@ -12,6 +12,9 @@ interface UserVolumeContextMenuProps {
     username: string;
     profileImageUrl?: string;
     onClose: () => void;
+    streamId?: string;
+    isIgnored?: boolean;
+    onToggleIgnore?: (streamId: string) => void;
 }
 
 type TabType = 'voice' | 'soundpad';
@@ -22,7 +25,10 @@ export function UserVolumeContextMenu({
     userId,
     username,
     profileImageUrl,
-    onClose
+    onClose,
+    streamId,
+    isIgnored,
+    onToggleIgnore
 }: UserVolumeContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<TabType>('voice');
@@ -306,6 +312,24 @@ export function UserVolumeContextMenu({
                     )}
                 </button>
             </div>
+
+            {/* Stream Ignore Section */}
+            {streamId && onToggleIgnore && (
+                <div className="px-3 pb-3 border-t border-gray-700/50 pt-3">
+                    <button
+                        onClick={() => {
+                            onToggleIgnore(streamId);
+                            onClose();
+                        }}
+                        className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${isIgnored
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600/50'
+                            }`}
+                    >
+                        {isIgnored ? 'Yayını İzle' : 'İzlemeyi Bırak'}
+                    </button>
+                </div>
+            )}
 
             {/* Slider Thumb Styles */}
             <style>{`

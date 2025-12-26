@@ -5,6 +5,7 @@ import { useCall } from './CallContext';
 import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
+import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
 import { useNoiseSuppression } from './NoiseSuppressionContext';
 import { useDeviceSettings } from './DeviceSettingsContext';
 
@@ -54,6 +55,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const [isCameraEnabled, setIsCameraEnabled] = useState(false);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+    const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
@@ -796,16 +798,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 if (isElectron) {
                     setIsScreenShareModalOpen(true);
                 } else {
-                    // Web implementation
-                    const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: true,
-                        audio: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true
-                        }
-                    });
-                    await startScreenShareWithStream(screenStream);
+                    // Web implementation - show quality picker first
+                    setIsQualityModalOpen(true);
                 }
             }
         } catch (error) {
@@ -813,27 +807,50 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing, user, activeChannelId, isConnected]);
 
+    // Handle web quality selection
+    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
+        setIsQualityModalOpen(false);
+        try {
+            const constraints = {
+                video: {
+                    width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
+                    height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
+                    frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
+                },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            };
+            const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+            await startScreenShareWithStream(screenStream);
+        } catch (error) {
+            console.error('[VoiceChannelContext] Error starting web screen share:', error);
+        }
+    };
+
     // Handle screen share selection from modal
-    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean) => {
+    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'withAudio:', withAudio);
+            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'withAudio:', withAudio, 'quality:', quality);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        // For system audio to work with specific source, we often need to just request it
-                        // attempting to bind it to the same sourceId as video
                     }
                 } : false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: 1280,
-                        maxWidth: 1920, // Increased max width
-                        minHeight: 720,
-                        maxHeight: 1080 // Increased max height
+                        minWidth: quality === 'fullhd' ? 1920 : 1280,
+                        maxWidth: quality === 'fullhd' ? 1920 : 1280,
+                        minHeight: quality === 'fullhd' ? 1080 : 720,
+                        maxHeight: quality === 'fullhd' ? 1080 : 720,
+                        minFrameRate: quality === 'fullhd' ? 60 : 30,
+                        maxFrameRate: quality === 'fullhd' ? 60 : 30
                     }
                 }
             });
@@ -980,6 +997,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 isOpen={isScreenShareModalOpen}
                 onClose={() => setIsScreenShareModalOpen(false)}
                 onSelect={handleScreenShareSelect}
+            />
+            <ScreenShareQualityModal
+                isOpen={isQualityModalOpen}
+                onClose={() => setIsQualityModalOpen(false)}
+                onSelect={handleWebScreenShareSelect}
             />
         </VoiceChannelContext.Provider>
     );
