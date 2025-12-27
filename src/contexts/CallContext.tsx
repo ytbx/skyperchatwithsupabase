@@ -222,10 +222,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
             },
             onRemoteSoundpad: (stream) => {
                 console.log('[CallContext] Remote soundpad received');
-                setRemoteSoundpadStream(new MediaStream(stream.getTracks()));
+                setRemoteSoundpadStream(stream);
             },
             onRemoteScreenStream: (stream) => {
-                console.log('[CallContext] Remote screen stream received');
+                console.log('[CallContext] Remote screen stream received (with audio)');
                 setRemoteScreenStream(stream);
                 // Ensure we know they are sharing
                 setIsRemoteScreenSharing(true);

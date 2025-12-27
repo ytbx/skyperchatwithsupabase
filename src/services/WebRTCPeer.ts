@@ -115,42 +115,37 @@ export class WebRTCPeer {
         console.log('[WebRTCPeer] Remote track received:', track.kind, track.label, 'Stream ID:', stream.id);
 
         if (track.kind === 'audio') {
-            this.audioTrackCount++;
-            console.log('[WebRTCPeer] Audio track #', this.audioTrackCount);
+            console.log('[WebRTCPeer] Processing audio track:', track.label, 'Stream ID:', stream.id);
 
-            if (this.audioTrackCount === 1) {
-                // First audio stream -> Main Voice/Camera Stream
-                if (!this.remoteStream) {
-                    this.remoteStream = new MediaStream();
-                    this.remoteStreamId = stream.id;
-                } else if (this.remoteStreamId && this.remoteStreamId !== stream.id) {
-                    // Mismatch? We'll assume the first one we set is the "Main" one.
-                    console.warn('[WebRTCPeer] Audio stream ID mismatch, expected:', this.remoteStreamId, 'got:', stream.id);
-                }
+            // Check if this stream has a video track (Screen Share)
+            const hasVideo = stream.getVideoTracks().length > 0;
 
-                this.remoteStream.addTrack(track);
-                this.callbacks.onRemoteStream(this.remoteStream);
-                console.log('[WebRTCPeer] ✓ Voice track added');
-
-            } else if (this.audioTrackCount === 2) {
-                // Second audio track = soundpad
-                if (!this.remoteSoundpadStream) {
-                    this.remoteSoundpadStream = new MediaStream();
-                }
-                // Check if this audio belongs to screen share?
-                // Usually soundpad is separate stream. WebRTCPeer assumes specific order/logic.
-                // Keeping existing logic for Soundpad.
-                this.remoteSoundpadStream.addTrack(track);
-                this.callbacks.onRemoteSoundpad(this.remoteSoundpadStream);
-                console.log('[WebRTCPeer] ✓ Soundpad track added');
+            if (hasVideo) {
+                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video)');
+                // Create/Update screen stream
+                const screenStream = new MediaStream(stream.getTracks());
+                this.callbacks.onRemoteVideo(screenStream);
             } else {
-                // Additional audio (screen share audio)
-                // If it belongs to screen share stream
-                if (stream.id !== this.remoteStreamId && stream.id !== this.remoteSoundpadStream?.id) {
-                    console.log('[WebRTCPeer] Screen share audio track?');
-                    // We don't have a dedicated "RemoteScreenStream" object to add to exposed by callbacks,
-                    // but the video handler handles the screen stream.
-                    // Often screen share audio comes with the video stream.
+                this.audioTrackCount++;
+                console.log('[WebRTCPeer] Audio track #', this.audioTrackCount);
+
+                if (this.audioTrackCount === 1) {
+                    // First audio stream -> Main Voice/Camera Stream
+                    if (!this.remoteStream) {
+                        this.remoteStream = new MediaStream();
+                        this.remoteStreamId = stream.id;
+                    }
+                    this.remoteStream.addTrack(track);
+                    this.callbacks.onRemoteStream(this.remoteStream);
+                    console.log('[WebRTCPeer] ✓ Voice track added');
+                } else {
+                    // Subsequent audio without video -> Soundpad
+                    if (!this.remoteSoundpadStream) {
+                        this.remoteSoundpadStream = new MediaStream();
+                    }
+                    this.remoteSoundpadStream.addTrack(track);
+                    this.callbacks.onRemoteSoundpad(this.remoteSoundpadStream);
+                    console.log('[WebRTCPeer] ✓ Soundpad track added');
                 }
             }
         } else if (track.kind === 'video') {

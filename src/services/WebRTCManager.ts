@@ -73,41 +73,44 @@ export class WebRTCManager {
             console.log('[WebRTCManager] Track readyState:', event.track.readyState);
 
             if (event.track.kind === 'audio') {
-                // Audio track - differentiate between voice and soundpad
-                this.audioTrackCount++;
-                console.log('[WebRTCManager] Processing audio track #', this.audioTrackCount);
-                console.log('[WebRTCManager] Track ID:', event.track.id);
-                console.log('[WebRTCManager] Track label:', event.track.label);
-                console.log('[WebRTCManager] Stream ID:', event.streams[0]?.id);
+                const stream = event.streams[0];
+                if (!stream) return;
 
-                if (this.audioTrackCount === 1) {
-                    // First audio track is VOICE (microphone)
-                    console.log('[WebRTCManager] This is VOICE track');
-                    if (!this.remoteStream) {
-                        this.remoteStream = new MediaStream();
-                    }
-                    this.remoteStream.addTrack(event.track);
-                    this.onRemoteStreamCallback?.(this.remoteStream);
-                    console.log('[WebRTCManager] ✓ Voice audio track added to remote stream');
-                } else if (this.audioTrackCount === 2) {
-                    // Second audio track is SOUNDPAD
-                    console.log('[WebRTCManager] This is SOUNDPAD track');
-                    if (!this.remoteSoundpadStream) {
-                        this.remoteSoundpadStream = new MediaStream();
-                    }
-                    this.remoteSoundpadStream.addTrack(event.track);
-                    this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
-                    console.log('[WebRTCManager] ✓ Soundpad audio track added to separate stream');
-                } else {
-                    // Additional audio tracks (screen share audio)
-                    console.log('[WebRTCManager] Additional audio track (Screen Share), adding to remoteScreenStream');
+                console.log('[WebRTCManager] Processing audio track:', event.track.label, 'Stream ID:', stream.id);
 
+                // Check if this stream has a video track (likely screen share)
+                const hasVideo = stream.getVideoTracks().length > 0;
+
+                // Logic based on stream purpose
+                if (hasVideo) {
+                    // This is SCREEN SHARE audio
+                    console.log('[WebRTCManager] Identified as SCREEN SHARE audio (associated with video)');
                     if (!this.remoteScreenStream) {
                         this.remoteScreenStream = new MediaStream();
                     }
                     this.remoteScreenStream.addTrack(event.track);
-                    console.log('[WebRTCManager] ✓ Screen audio track added to remoteScreenStream');
-                    // We don't trigger callback here, wait for video to trigger UI
+                    this.onRemoteScreenCallback?.(this.remoteScreenStream);
+                } else {
+                    // Differentiate between main Voice and Soundpad
+                    // We still use count for non-video streams as a fallback, 
+                    // or better: the first non-video stream is voice, second is soundpad.
+                    this.audioTrackCount++;
+
+                    if (this.audioTrackCount === 1) {
+                        console.log('[WebRTCManager] Identified as VOICE audio');
+                        if (!this.remoteStream) {
+                            this.remoteStream = new MediaStream();
+                        }
+                        this.remoteStream.addTrack(event.track);
+                        this.onRemoteStreamCallback?.(this.remoteStream);
+                    } else {
+                        console.log('[WebRTCManager] Identified as SOUNDPAD audio');
+                        if (!this.remoteSoundpadStream) {
+                            this.remoteSoundpadStream = new MediaStream();
+                        }
+                        this.remoteSoundpadStream.addTrack(event.track);
+                        this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
+                    }
                 }
             } else if (event.track.kind === 'video') {
                 // Video track - could be camera or screen share
