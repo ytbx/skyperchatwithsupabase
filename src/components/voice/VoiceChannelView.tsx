@@ -171,6 +171,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                 video.muted = isLocalUser; // Mute local user's stream to prevent feedback
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
+            // CRITICAL: Ensure local user is ALWAYS muted even if video element is reused
+            if (isLocalUser && !video.muted) {
+                video.muted = true;
+            }
             // Always update volume
             const currentVolume = volumes.get(fullscreenVideoId!) ?? 1.0;
             video.volume = isLocalUser ? 0 : currentVolume;
@@ -392,6 +396,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
                                                     el.volume = currentVolume;
+                                                    // CRITICAL: Always force mute local stream
+                                                    if (participant.user_id === user?.id) {
+                                                        el.muted = true;
+                                                    }
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }

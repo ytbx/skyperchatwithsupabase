@@ -312,6 +312,10 @@ export const ActiveCallOverlay: React.FC = () => {
                 video.muted = isLocalStream; // Mute local stream to prevent feedback
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
+            // CRITICAL: Ensure local user is ALWAYS muted even if video element is reused
+            if (isLocalStream && !video.muted) {
+                video.muted = true;
+            }
             // Always update volume for remote streams
             const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
             video.volume = isLocalStream ? 0 : currentVolume;
@@ -566,8 +570,14 @@ export const ActiveCallOverlay: React.FC = () => {
                             ) : streamInfo.hasVideo ? (
                                 <video
                                     ref={streamInfo.videoRef ? streamInfo.videoRef : (el) => {
-                                        if (el && streamInfo.stream && el.srcObject !== streamInfo.stream) {
-                                            el.srcObject = streamInfo.stream;
+                                        if (el && streamInfo.stream) {
+                                            if (el.srcObject !== streamInfo.stream) {
+                                                el.srcObject = streamInfo.stream;
+                                            }
+                                            // CRITICAL: Always force mute local stream
+                                            if (streamInfo.muted) {
+                                                el.muted = true;
+                                            }
                                         }
                                     }}
                                     autoPlay

@@ -101,10 +101,16 @@ export function DeviceSettingsProvider({ children }: { children: ReactNode }) {
     }, [keybinds]);
 
     // Device Enumeration
-    const refreshDevices = useCallback(async () => {
+    const refreshDevices = useCallback(async (includeVideo = false) => {
         try {
             // Request permission to list labels
-            await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(s => s.getTracks().forEach(t => t.stop())).catch(() => { });
+            // PRIVACY FIX: Only request audio by default. 
+            // In most browsers, granting mic access allows seeing labels for all devices (including cameras).
+            // This prevents the camera light from turning on unnecessarily.
+            await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: includeVideo
+            }).then(s => s.getTracks().forEach(t => t.stop())).catch(() => { });
 
             const devices = await navigator.mediaDevices.enumerateDevices();
             setAudioInputs(devices.filter(d => d.kind === 'audioinput'));
@@ -118,8 +124,9 @@ export function DeviceSettingsProvider({ children }: { children: ReactNode }) {
     // Initial Refresh
     useEffect(() => {
         refreshDevices();
-        navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
-        return () => navigator.mediaDevices.removeEventListener('devicechange', refreshDevices);
+        const handleDeviceChange = () => refreshDevices();
+        navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+        return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     }, [refreshDevices]);
 
     // Keybind Management
