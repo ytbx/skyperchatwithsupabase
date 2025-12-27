@@ -261,8 +261,8 @@ export function ServerList({
       {/* Download Desktop App Button - Only visible in web version */}
       {!isElectron && (
         <a
-          href={`${import.meta.env.BASE_URL}OvoxSetup.exe`}
-          download="OvoxSetup.exe"
+          href="https://github.com/ytbx/skyperchatwithsupabase/releases/download/v0.3.10/Ovox-Setup-0.3.10.exe"
+          download="Ovox-Setup-0.3.10.exe"
           className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-gpu duration-normal hover:bg-green-500 hover:shadow-glow-sm group"
           title="Masaüstü Uygulamasını İndir"
         >
