@@ -66,6 +66,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
     const isRemoteScreenSharingRef = useRef(false);
+    const misclassifiedCameraTrackRef = useRef<MediaStreamTrack | null>(null);
     const [isRemoteCameraOn, setIsRemoteCameraOn] = useState(false);
     const [remoteMicMuted, setRemoteMicMuted] = useState(false);
     const [remoteDeafened, setRemoteDeafened] = useState(false);
@@ -201,6 +202,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setRemoteDeafened(false);
         setConnectionState(null);
         setPing(null);
+        setPing(null);
+        misclassifiedCameraTrackRef.current = null;
         sessionRef.current = null;
     }, []);
 
@@ -244,20 +247,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     console.warn('[CallContext] Received "screen" stream but no screen share signal. Treating as Camera.');
                     // This is a camera track that was misclassified due to ID mismatch. 
                     // Merge it into the primary remoteStream.
-                    setRemoteStream(prev => {
-                        if (prev) {
-                            // Clone tracks to new stream to force React update
-                            const newStream = new MediaStream(prev.getTracks());
-                            stream.getTracks().forEach(t => {
-                                // Prevent duplicates
-                                if (!newStream.getTrackById(t.id)) {
-                                    newStream.addTrack(t);
+                    // Merge it into the primary remoteStream.
+                    const videoTrack = stream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        console.log('[CallContext] Storing misclassified camera track');
+                        misclassifiedCameraTrackRef.current = videoTrack;
+
+                        setRemoteStream(prev => {
+                            if (prev) {
+                                const newStream = new MediaStream(prev.getTracks());
+                                if (!newStream.getTrackById(videoTrack.id)) {
+                                    newStream.addTrack(videoTrack);
                                 }
-                            });
-                            return newStream;
-                        }
-                        return stream;
-                    });
+                                return newStream;
+                            }
+                            return new MediaStream([videoTrack]);
+                        });
+                    }
                     // Ensure camera state is ON
                     setIsRemoteCameraOn(true);
                 }
@@ -267,7 +273,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const stream = sessionRef.current.getRemoteStream();
                     if (stream) {
                         console.log('[CallContext] Remote tracks changed, updating stream');
-                        setRemoteStream(new MediaStream(stream.getTracks()));
+                        // Create fresh stream from session stream
+                        const newStream = new MediaStream(stream.getTracks());
+
+                        // Re-inject misclassified camera track if it exists and is live
+                        if (misclassifiedCameraTrackRef.current && misclassifiedCameraTrackRef.current.readyState === 'live') {
+                            console.log('[CallContext] Re-injecting misclassified camera track');
+                            if (!newStream.getTrackById(misclassifiedCameraTrackRef.current.id)) {
+                                newStream.addTrack(misclassifiedCameraTrackRef.current);
+                            }
+                        }
+
+                        setRemoteStream(newStream);
                     }
                 }
             },
@@ -291,7 +308,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
             },
             onRemoteCameraStopped: () => {
                 console.log('[CallContext] Remote camera stopped');
+                misclassifiedCameraTrackRef.current = null;
                 setIsRemoteCameraOn(false);
+
+                // Refresh stream to remove the track effectively
+                if (sessionRef.current) {
+                    const stream = sessionRef.current.getRemoteStream();
+                    if (stream) {
+                        setRemoteStream(new MediaStream(stream.getTracks()));
+                    }
+                }
             },
             onCallEnded: (reason) => {
                 console.log('[CallContext] Call ended:', reason);
@@ -582,10 +608,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         echoCancellation: true,
                         noiseSuppression: true,
                         googEchoCancellation: true,
-                        googNoiseSuppression: true,
-                        // Electron/Chromium specific constraints to reduce echo from system audio
-                        suppressLocalAudioPlayback: true,
-                        googAudioMirroring: false
+                        googNoiseSuppression: true
                     }
                 } : false,
                 video: {
@@ -605,6 +628,28 @@ export function CallProvider({ children }: { children: ReactNode }) {
             console.log('[CallContext] Audio tracks found:', stream.getAudioTracks().length);
             stream.getAudioTracks().forEach(t => console.log('[CallContext] Audio track:', t.label, t.enabled, t.readyState));
             console.log('[CallContext] Video tracks found:', stream.getVideoTracks().length);
+
+            // Attempt to apply echo suppression to the track directly
+            const audioTrack = stream.getAudioTracks()[0];
+            if (audioTrack) {
+                try {
+                    console.log('[CallContext] Applying strict audio constraints to track');
+                    await audioTrack.applyConstraints({
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        // @ts-ignore - non-standard constraint
+                        suppressLocalAudioPlayback: true
+                    });
+                    console.log('[CallContext] Applied audio track constraints successfully');
+
+                    // Log the actual settings to verify
+                    const settings = audioTrack.getSettings();
+                    console.log('[CallContext] Actual audio track settings:', settings);
+                } catch (err) {
+                    console.error('[CallContext] Failed to apply audio track constraints:', err);
+                }
+            }
 
             await startScreenShareWithStream(stream);
         } catch (e) {
