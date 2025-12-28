@@ -23,6 +23,8 @@ export interface CallSessionCallbacks {
     onRemoteScreenStream: (stream: MediaStream) => void;  // New: separate screen stream
     onRemoteScreenShareStarted: () => void;
     onRemoteScreenShareStopped: () => void;
+    onRemoteCameraStarted: () => void;
+    onRemoteCameraStopped: () => void;
     onRemoteTrackChanged: () => void;
     onRemoteAudioStateChanged: (isMuted: boolean, isDeafened: boolean) => void;
     onCallEnded: (reason: 'remote_ended' | 'remote_rejected' | 'remote_cancelled' | 'local_ended') => void;
@@ -234,6 +236,16 @@ export class CallSession {
                     console.log('[CallSession] Remote audio state changed:', { isMuted, isDeafened });
                     this.callbacks.onRemoteAudioStateChanged(isMuted, isDeafened);
                     break;
+
+                case 'camera-started':
+                    console.log('[CallSession] Remote started camera');
+                    this.callbacks.onRemoteCameraStarted();
+                    break;
+
+                case 'camera-stopped':
+                    console.log('[CallSession] Remote stopped camera');
+                    this.callbacks.onRemoteCameraStopped();
+                    break;
             }
         } catch (error) {
             console.error('[CallSession] Error handling signal:', error);
@@ -444,6 +456,9 @@ export class CallSession {
 
         const cameraStream = await this.peer.startCamera();
 
+        // Send signal first so remote knows camera is starting
+        await this.signaling.sendCameraStarted();
+
         // Renegotiate to add the new track
         await this.sendOffer();
 
@@ -478,6 +493,9 @@ export class CallSession {
         console.log('[CallSession] Stopping camera');
 
         await this.peer.stopCamera();
+
+        // Send signal first so remote knows camera is stopping
+        await this.signaling.sendCameraStopped();
 
         // Renegotiate to remove the track
         await this.sendOffer();

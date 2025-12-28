@@ -25,6 +25,7 @@ interface CallContextType {
     isCameraOff: boolean;
     isScreenSharing: boolean;
     isRemoteScreenSharing: boolean;
+    isRemoteCameraOn: boolean;
     remoteMicMuted: boolean;
     remoteDeafened: boolean;
     connectionState: RTCPeerConnectionState | null;
@@ -64,6 +65,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
+    const [isRemoteCameraOn, setIsRemoteCameraOn] = useState(false);
     const [remoteMicMuted, setRemoteMicMuted] = useState(false);
     const [remoteDeafened, setRemoteDeafened] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
@@ -188,6 +190,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setIsCameraOff(true);
         setIsScreenSharing(false);
         setIsRemoteScreenSharing(false);
+        setIsRemoteCameraOn(false);
         setRemoteMicMuted(false);
         setRemoteDeafened(false);
         setConnectionState(null);
@@ -252,6 +255,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 console.log('[CallContext] Remote audio state changed signal received:', { isMuted, isDeafened });
                 setRemoteMicMuted(isMuted);
                 setRemoteDeafened(isDeafened);
+            },
+            onRemoteCameraStarted: () => {
+                console.log('[CallContext] Remote camera started');
+                setIsRemoteCameraOn(true);
+            },
+            onRemoteCameraStopped: () => {
+                console.log('[CallContext] Remote camera stopped');
+                setIsRemoteCameraOn(false);
             },
             onCallEnded: (reason) => {
                 console.log('[CallContext] Call ended:', reason);
@@ -665,6 +676,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
+        isRemoteCameraOn,
         remoteMicMuted,
         remoteDeafened,
         connectionState,
