@@ -41,6 +41,9 @@ export class WebRTCPeer {
     // Track audio count to differentiate voice from soundpad
     private audioTrackCount = 0;
 
+    // Flag to expect next video track as screen share
+    private expectScreenShare = false;
+
     // Callbacks
     private callbacks: WebRTCPeerCallbacks;
 
@@ -193,7 +196,19 @@ export class WebRTCPeer {
 
             let isCamera = false;
 
-            if (this.remoteStreamId && stream.id === this.remoteStreamId) {
+            // Priority 1: Are we expecting a screen share?
+            if (this.expectScreenShare) {
+                console.log('[WebRTCPeer] Expected screen share flag set -> Treating as Screen Share');
+                isCamera = false;
+                this.expectScreenShare = false; // Reset flag after use
+            }
+            // Priority 2: Does the track label indicate it's a screen share?
+            else if (track.label.toLowerCase().includes('screen')) {
+                console.log('[WebRTCPeer] Track label contains "screen" -> Treating as Screen Share');
+                isCamera = false;
+            }
+            // Priority 3: Stream ID matching
+            else if (this.remoteStreamId && stream.id === this.remoteStreamId) {
                 isCamera = true;
             } else {
                 // Fallback: If default remoteStream has NO video tracks, assume this IS the camera.
@@ -637,6 +652,14 @@ export class WebRTCPeer {
             console.error('[WebRTCPeer] Error getting stats:', e);
             return { rtt: null };
         }
+    }
+
+    /**
+     * Signal that the next video track should be treated as screen share
+     */
+    setExpectScreenShare() {
+        console.log('[WebRTCPeer] Expecting screen share on next video track');
+        this.expectScreenShare = true;
     }
 
     /**

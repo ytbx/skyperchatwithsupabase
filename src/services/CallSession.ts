@@ -221,6 +221,7 @@ export class CallSession {
 
                 case 'screen-share-started':
                     console.log('[CallSession] Remote started screen sharing');
+                    this.peer?.setExpectScreenShare(); // Signal to expect screen share track
                     this.callbacks.onRemoteScreenShareStarted();
                     break;
 
