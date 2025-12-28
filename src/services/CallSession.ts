@@ -23,6 +23,8 @@ export interface CallSessionCallbacks {
     onRemoteScreenStream: (stream: MediaStream) => void;  // New: separate screen stream
     onRemoteScreenShareStarted: () => void;
     onRemoteScreenShareStopped: () => void;
+    onRemoteCameraStarted: () => void;
+    onRemoteCameraStopped: () => void;
     onRemoteTrackChanged: () => void;
     onRemoteAudioStateChanged: (isMuted: boolean, isDeafened: boolean) => void;
     onCallEnded: (reason: 'remote_ended' | 'remote_rejected' | 'remote_cancelled' | 'local_ended') => void;
@@ -227,6 +229,16 @@ export class CallSession {
                 case 'screen-share-stopped':
                     console.log('[CallSession] Remote stopped screen sharing');
                     this.callbacks.onRemoteScreenShareStopped();
+                    break;
+
+                case 'camera-started':
+                    console.log('[CallSession] Remote started camera');
+                    this.callbacks.onRemoteCameraStarted();
+                    break;
+
+                case 'camera-stopped':
+                    console.log('[CallSession] Remote stopped camera');
+                    this.callbacks.onRemoteCameraStopped();
                     break;
 
                 case 'audio-state-change':
@@ -444,10 +456,13 @@ export class CallSession {
 
         const cameraStream = await this.peer.startCamera();
 
+        // Send signal first
+        await this.signaling.sendCameraStarted();
+
         // Renegotiate to add the new track
         await this.sendOffer();
 
-        console.log('[CallSession] ✓ Camera started and renegotiated');
+        console.log('[CallSession] ✓ Camera started and signaled');
         return cameraStream;
     }
 
@@ -479,10 +494,13 @@ export class CallSession {
 
         await this.peer.stopCamera();
 
+        // Send signal first 
+        await this.signaling.sendCameraStopped();
+
         // Renegotiate to remove the track
         await this.sendOffer();
 
-        console.log('[CallSession] ✓ Camera stopped');
+        console.log('[CallSession] ✓ Camera stopped and signaled');
     }
 
     /**

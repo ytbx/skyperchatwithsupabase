@@ -18,6 +18,7 @@ export const ActiveCallOverlay: React.FC = () => {
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
+        isRemoteCameraOff,
         remoteMicMuted: contextRemoteMicMuted,
         remoteDeafened: contextRemoteDeafened,
         connectionState,
@@ -231,7 +232,9 @@ export const ActiveCallOverlay: React.FC = () => {
     // Effect to handle Remote Camera Stream
     useEffect(() => {
         const video = remoteCameraVideoRef.current;
-        if (video && remoteStream) {
+        if (!video) return;
+
+        if (remoteStream && !isRemoteCameraOff) {
             // Check if there are any video tracks
             const hasVideo = remoteStream.getVideoTracks().length > 0;
             if (hasVideo) {
@@ -239,8 +242,10 @@ export const ActiveCallOverlay: React.FC = () => {
             } else {
                 video.srcObject = null;
             }
+        } else {
+            video.srcObject = null;
         }
-    }, [remoteStream, ignoredStreams]);
+    }, [remoteStream, isRemoteCameraOff, ignoredStreams]);
 
     // Effect to handle Local Screen Stream
     useEffect(() => {
@@ -348,7 +353,7 @@ export const ActiveCallOverlay: React.FC = () => {
     }
 
     // Check for active video tracks
-    const hasRemoteVideo = remoteStream && remoteStream.getVideoTracks().length > 0;
+    const hasRemoteVideo = remoteStream && !isRemoteCameraOff && remoteStream.getVideoTracks().length > 0;
     const hasLocalVideo = localStream && !isCameraOff;
 
     // Define active streams for dynamic mapping

@@ -25,6 +25,7 @@ interface CallContextType {
     isCameraOff: boolean;
     isScreenSharing: boolean;
     isRemoteScreenSharing: boolean;
+    isRemoteCameraOff: boolean;
     remoteMicMuted: boolean;
     remoteDeafened: boolean;
     connectionState: RTCPeerConnectionState | null;
@@ -64,6 +65,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
+    const [isRemoteCameraOff, setIsRemoteCameraOff] = useState(true);
     const [remoteMicMuted, setRemoteMicMuted] = useState(false);
     const [remoteDeafened, setRemoteDeafened] = useState(false);
     const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
@@ -188,6 +190,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setIsCameraOff(true);
         setIsScreenSharing(false);
         setIsRemoteScreenSharing(false);
+        setIsRemoteCameraOff(true);
         setRemoteMicMuted(false);
         setRemoteDeafened(false);
         setConnectionState(null);
@@ -247,6 +250,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 console.log('[CallContext] Remote screen share stopped');
                 setIsRemoteScreenSharing(false);
                 setRemoteScreenStream(null);
+            },
+            onRemoteCameraStarted: () => {
+                console.log('[CallContext] Remote camera started');
+                setIsRemoteCameraOff(false);
+            },
+            onRemoteCameraStopped: () => {
+                console.log('[CallContext] Remote camera stopped');
+                setIsRemoteCameraOff(true);
             },
             onRemoteAudioStateChanged: (isMuted, isDeafened) => {
                 console.log('[CallContext] Remote audio state changed signal received:', { isMuted, isDeafened });
@@ -538,7 +549,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                    }
+                    },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
                 } : false,
                 video: {
                     mandatory: {
@@ -665,6 +679,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         isCameraOff,
         isScreenSharing,
         isRemoteScreenSharing,
+        isRemoteCameraOff,
         remoteMicMuted,
         remoteDeafened,
         connectionState,

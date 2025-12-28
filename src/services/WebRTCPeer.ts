@@ -161,25 +161,34 @@ export class WebRTCPeer {
             if (this.remoteStreamId) {
                 if (stream.id === this.remoteStreamId) {
                     isCamera = true;
+                } else if (!this.remoteStream?.getVideoTracks().length) {
+                    // If we have an established remote stream but NO video track yet,
+                    // and a new stream with video arrives, it's highly likely to be the camera
+                    // (since screen shares usually arrive with signaling first, but let's be safe)
+                    console.log('[WebRTCPeer] New stream ID received, but primary remote stream has no video. Assigning as Camera.');
+                    isCamera = true;
+                    // Update remoteStreamId to this new stream so future tracks from it match
+                    // Note: This might be controversial if multiple streams are used, 
+                    // but for 1:1 calls it's usually correct for mid-call camera adds.
                 }
             } else {
                 // No audio yet? Fallback.
-                // If it's the first video track...
                 if (!this.remoteStream) {
                     this.remoteStream = new MediaStream();
                     this.remoteStreamId = stream.id;
                     isCamera = true;
-                } else {
-                    // verifying id
-                    if (stream.id === this.remoteStream.id) {
-                        isCamera = true;
-                    }
+                } else if (stream.id === this.remoteStream.id || !this.remoteStream.getVideoTracks().length) {
+                    isCamera = true;
                 }
             }
 
             if (isCamera) {
                 console.log('[WebRTCPeer] Assigning as Primary (Camera) Video');
-                this.remoteStream?.addTrack(track);
+                // Ensure we don't have duplicate tracks in remoteStream
+                const existingTracks = this.remoteStream?.getVideoTracks() || [];
+                if (!existingTracks.some(t => t.id === track.id)) {
+                    this.remoteStream?.addTrack(track);
+                }
                 if (this.remoteStream) {
                     this.callbacks.onRemoteStream(this.remoteStream);
                 }
@@ -473,8 +482,19 @@ export class WebRTCPeer {
 
         // Stop camera stream tracks
         if (this.cameraStream) {
-            this.cameraStream.getTracks().forEach(track => track.stop());
+            this.cameraStream.getTracks().forEach(track => {
+                console.log('[WebRTCPeer] Stopping cameraStream track:', track.kind);
+                track.stop();
+            });
             this.cameraStream = null;
+        }
+
+        // Also stop any video tracks in localStream (if call started with video)
+        if (this.localStream) {
+            this.localStream.getVideoTracks().forEach(track => {
+                console.log('[WebRTCPeer] Stopping localStream video track:', track.label);
+                track.stop();
+            });
         }
 
         // Remove camera sender from peer connection

@@ -18,6 +18,8 @@ export type SignalType =
     | 'call-cancelled'
     | 'screen-share-started'
     | 'screen-share-stopped'
+    | 'camera-started'
+    | 'camera-stopped'
     | 'audio-state-change';
 
 export interface CallSignal {
@@ -191,6 +193,22 @@ export class SignalingChannel {
     async sendScreenShareStopped(): Promise<void> {
         console.log('[SignalingChannel] Sending screen-share-stopped');
         await this.sendSignal('screen-share-stopped', {});
+    }
+
+    /**
+     * Send camera started signal
+     */
+    async sendCameraStarted(): Promise<void> {
+        console.log('[SignalingChannel] Sending camera-started');
+        await this.sendSignal('camera-started', {});
+    }
+
+    /**
+     * Send camera stopped signal
+     */
+    async sendCameraStopped(): Promise<void> {
+        console.log('[SignalingChannel] Sending camera-stopped');
+        await this.sendSignal('camera-stopped', {});
     }
 
     /**

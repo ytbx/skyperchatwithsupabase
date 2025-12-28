@@ -839,7 +839,10 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                    }
+                    },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
                 } : false,
                 video: {
                     mandatory: {
