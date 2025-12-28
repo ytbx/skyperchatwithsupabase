@@ -65,6 +65,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isCameraOff, setIsCameraOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
+    const isRemoteScreenSharingRef = useRef(false);
     const [isRemoteCameraOn, setIsRemoteCameraOn] = useState(false);
     const [remoteMicMuted, setRemoteMicMuted] = useState(false);
     const [remoteDeafened, setRemoteDeafened] = useState(false);
@@ -151,6 +152,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [videoInputDeviceId, callStatus, isCameraOff]);
 
+    // Keep ref in sync with state for callbacks
+    useEffect(() => {
+        isRemoteScreenSharingRef.current = isRemoteScreenSharing;
+    }, [isRemoteScreenSharing]);
+
     /**
      * Map CallSession state to CallStatus
      */
@@ -228,10 +234,33 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 setRemoteSoundpadStream(stream);
             },
             onRemoteScreenStream: (stream) => {
-                console.log('[CallContext] Remote screen stream received (with audio)');
-                setRemoteScreenStream(stream);
-                // Ensure we know they are sharing
-                setIsRemoteScreenSharing(true);
+                console.log('[CallContext] Remote video stream received. Expecting Screen Share:', isRemoteScreenSharingRef.current);
+
+                if (isRemoteScreenSharingRef.current) {
+                    console.log('[CallContext] Confirmed Screen Share stream');
+                    setRemoteScreenStream(stream);
+                    // Do NOT auto-set isRemoteScreenSharing(true), rely on signal
+                } else {
+                    console.warn('[CallContext] Received "screen" stream but no screen share signal. Treating as Camera.');
+                    // This is a camera track that was misclassified due to ID mismatch. 
+                    // Merge it into the primary remoteStream.
+                    setRemoteStream(prev => {
+                        if (prev) {
+                            // Clone tracks to new stream to force React update
+                            const newStream = new MediaStream(prev.getTracks());
+                            stream.getTracks().forEach(t => {
+                                // Prevent duplicates
+                                if (!newStream.getTrackById(t.id)) {
+                                    newStream.addTrack(t);
+                                }
+                            });
+                            return newStream;
+                        }
+                        return stream;
+                    });
+                    // Ensure camera state is ON
+                    setIsRemoteCameraOn(true);
+                }
             },
             onRemoteTrackChanged: () => {
                 if (sessionRef.current) {
@@ -553,7 +582,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         echoCancellation: true,
                         noiseSuppression: true,
                         googEchoCancellation: true,
-                        googNoiseSuppression: true
+                        googNoiseSuppression: true,
+                        // Electron/Chromium specific constraints to reduce echo from system audio
+                        suppressLocalAudioPlayback: true,
+                        googAudioMirroring: false
                     }
                 } : false,
                 video: {
