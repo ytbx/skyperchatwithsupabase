@@ -456,7 +456,16 @@ export class WebRTCPeer {
         // Add video track to peer connection
         const videoTrack = cameraStream.getVideoTracks()[0];
         if (videoTrack) {
-            this.cameraSender = this.pc.addTrack(videoTrack, cameraStream);
+            // CRITICAL FIX: Use localStream if available so the remote side sees the same Stream ID
+            // This ensures the video is classified as "Camera" (Primary) and not "Screen Share" (Secondary)
+            let streamToSignal = cameraStream;
+            if (this.localStream) {
+                console.log('[WebRTCPeer] attaching camera track to existing local stream for ID matching');
+                this.localStream.addTrack(videoTrack);
+                streamToSignal = this.localStream;
+            }
+
+            this.cameraSender = this.pc.addTrack(videoTrack, streamToSignal);
             console.log('[WebRTCPeer] ✓ Camera track added mid-call');
         }
 
@@ -473,7 +482,12 @@ export class WebRTCPeer {
 
         // Stop camera stream tracks
         if (this.cameraStream) {
-            this.cameraStream.getTracks().forEach(track => track.stop());
+            this.cameraStream.getTracks().forEach(track => {
+                track.stop();
+                if (this.localStream) {
+                    this.localStream.removeTrack(track);
+                }
+            });
             this.cameraStream = null;
         }
 

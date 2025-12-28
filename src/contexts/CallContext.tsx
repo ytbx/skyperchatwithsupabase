@@ -531,7 +531,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
+                    autoGainControl: true,
+                    suppressLocalAudioPlayback: true
                 }
             };
             const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
@@ -549,6 +550,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop',
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        googEchoCancellation: true,
+                        googNoiseSuppression: true
                     }
                 } : false,
                 video: {
