@@ -502,17 +502,32 @@ export function CallProvider({ children }: { children: ReactNode }) {
             if (isCameraOff) {
                 // Turn camera ON - add camera track mid-call
                 console.log('[CallContext] Starting camera mid-call');
-                const stream = await sessionRef.current.startCamera();
-                setCameraStream(stream);
-                setIsCameraOff(false);
-                console.log('[CallContext] ✓ Camera started');
+                try {
+                    const stream = await sessionRef.current.startCamera();
+                    if (stream) {
+                        setCameraStream(stream);
+                        setIsCameraOff(false);
+                        console.log('[CallContext] ✓ Camera started');
+                    }
+                } catch (e) {
+                    console.error('[CallContext] Failed to start camera:', e);
+                    // Revert state if needed
+                    setCameraStream(null);
+                    setIsCameraOff(true);
+                }
             } else {
                 // Turn camera OFF - remove camera track
                 console.log('[CallContext] Stopping camera');
-                await sessionRef.current.stopCamera();
-                setCameraStream(null);
-                setIsCameraOff(true);
-                console.log('[CallContext] ✓ Camera stopped');
+                try {
+                    await sessionRef.current.stopCamera();
+                } catch (e) {
+                    console.error('[CallContext] Error stopping camera (handling anyway):', e);
+                } finally {
+                    // ALWAYS update state
+                    setCameraStream(null);
+                    setIsCameraOff(true);
+                    console.log('[CallContext] ✓ Camera stopped status updated');
+                }
             }
         } catch (error) {
             console.error('[CallContext] Error toggling camera:', error);
@@ -606,9 +621,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         echoCancellation: true,
-                        noiseSuppression: true,
-                        googEchoCancellation: true,
-                        googNoiseSuppression: true
+                        noiseSuppression: true
                     }
                 } : false,
                 video: {

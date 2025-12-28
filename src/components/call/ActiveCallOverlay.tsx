@@ -61,6 +61,7 @@ export const ActiveCallOverlay: React.FC = () => {
     const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const localScreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteCameraVideoRef = useRef<HTMLVideoElement | null>(null);
+    const localCameraVideoRef = useRef<HTMLVideoElement | null>(null);
     const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteAudioContextRef = useRef<AudioContext | null>(null);
     const localAudioContextRef = useRef<AudioContext | null>(null);
@@ -255,6 +256,29 @@ export const ActiveCallOverlay: React.FC = () => {
         }
     }, [screenStream, isScreenSharing, ignoredStreams]);
 
+    // Effect to handle Local Camera Stream
+    useEffect(() => {
+        const video = localCameraVideoRef.current;
+        if (video) {
+            // Priority: cameraStream -> localStream (if video enabled)
+            const streamToUse = cameraStream || localStream;
+
+            // Logic to determine if we should show video is handled by rendering condition (hasVideo)
+            // But we must attach stream if element exists
+            if (streamToUse && !isCameraOff) {
+                // Ensure audio is muted for local feedback prevention
+                if (video.srcObject !== streamToUse) {
+                    console.log('[ActiveCallOverlay] Attaching stream to local-camera');
+                    video.srcObject = streamToUse;
+                    video.muted = true;
+                    video.play().catch(e => console.error('Error playing local camera:', e));
+                }
+            } else {
+                video.srcObject = null;
+            }
+        }
+    }, [cameraStream, localStream, isCameraOff]);
+
     // Handle deafen state changes for existing streams
     useEffect(() => {
         const audioElements = [
@@ -401,7 +425,8 @@ export const ActiveCallOverlay: React.FC = () => {
             isSpeaking: isLocalSpeaking,
             avatar: localProfileImageUrl,
             muted: true,
-            isMirror: true
+            isMirror: true,
+            videoRef: localCameraVideoRef
         }
     ].filter((s): s is any => s !== null);
 
