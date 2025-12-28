@@ -206,7 +206,14 @@ export const ActiveCallOverlay: React.FC = () => {
             // Common volume handling
             const vol = volumes.get(videoId) ?? 1.0;
             video.volume = isDeafened ? 0 : vol;
-            video.muted = isDeafened;
+
+            // CRITICAL FIX: Always mute local streams to prevent feedback loop
+            if (videoId.startsWith('local-')) {
+                video.muted = true;
+            } else {
+                video.muted = isDeafened;
+            }
+
             try {
                 await video.play();
             } catch (e) {

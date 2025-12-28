@@ -140,6 +140,12 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.screenStream;
                 video.volume = volumes.get(videoId) ?? 1.0;
+
+                // CRITICAL FIX: Always mute local screen share to prevent feedback loop
+                if (participant.user_id === user?.id) {
+                    video.muted = true;
+                }
+
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
