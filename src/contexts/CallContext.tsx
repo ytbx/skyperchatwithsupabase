@@ -517,11 +517,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                }
+                audio: true
             };
             const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
             await startScreenShareWithStream(stream);
@@ -533,11 +529,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const handleScreenShareSelect = async (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'withAudio:', withAudio, 'quality:', quality);
+            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'audio:', withAudio, 'quality:', quality);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
-                        chromeMediaSource: 'desktop',
+                        chromeMediaSource: 'desktop'
                     }
                 } : false,
                 video: {

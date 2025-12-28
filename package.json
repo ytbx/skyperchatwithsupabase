@@ -1,7 +1,7 @@
 {
   "name": "ovox",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "A modern voice and text chat application",
   "author": "Yusuf",
   "main": "dist-electron/main.js",
@@ -28,7 +28,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.png"
+      "icon": "public/icon.ico"
     },
     "publish": {
       "provider": "github",

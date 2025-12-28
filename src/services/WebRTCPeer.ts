@@ -78,6 +78,25 @@ export class WebRTCPeer {
             event.streams.forEach(stream => {
                 stream.onremovetrack = (ev) => {
                     console.log('[WebRTCPeer] Remote track removed:', ev.track.kind, ev.track.label);
+
+                    // Remove from remoteStream
+                    if (this.remoteStream) {
+                        const track = this.remoteStream.getTracks().find(t => t.id === ev.track.id);
+                        if (track) {
+                            this.remoteStream.removeTrack(track);
+                            console.log('[WebRTCPeer] Removed track from remoteStream');
+                        }
+                    }
+
+                    // Check Soundpad
+                    if (this.remoteSoundpadStream) {
+                        const track = this.remoteSoundpadStream.getTracks().find(t => t.id === ev.track.id);
+                        if (track) {
+                            this.remoteSoundpadStream.removeTrack(track);
+                            console.log('[WebRTCPeer] Removed track from remoteSoundpadStream');
+                        }
+                    }
+
                     this.callbacks.onRemoteTrackChanged();
                 };
             });

@@ -11,8 +11,8 @@ interface ScreenSharePickerModalProps {
 export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenSharePickerModalProps) {
     const [sources, setSources] = useState<DesktopCapturerSource[]>([]);
     const [activeTab, setActiveTab] = useState<'screen' | 'window'>('screen');
-    const [withAudio, setWithAudio] = useState(false);
     const [quality, setQuality] = useState<'standard' | 'fullhd'>('standard');
+    const [withAudio, setWithAudio] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -116,40 +116,41 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
 
                 {/* Footer */}
                 <div className="p-4 border-t border-gray-800 flex items-center justify-between bg-gray-900/50">
-                    <label className="flex items-center gap-2 cursor-pointer group select-none">
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${withAudio ? 'bg-primary-500 border-primary-500' : 'border-gray-600 group-hover:border-gray-500'}`}>
-                            {withAudio && <Monitor className="w-3 h-3 text-white" />}
+                    <div className="flex items-center gap-4">
+                        <div className="flex bg-gray-800 p-1 rounded-lg">
+                            <button
+                                onClick={() => setQuality('standard')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === 'standard'
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'text-gray-400 hover:text-gray-200'
+                                    }`}
+                            >
+                                Standart (720p)
+                            </button>
+                            <button
+                                onClick={() => setQuality('fullhd')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === 'fullhd'
+                                    ? 'bg-green-600 text-white shadow-sm'
+                                    : 'text-gray-400 hover:text-gray-200'
+                                    }`}
+                            >
+                                Full HD (1080p)
+                            </button>
                         </div>
-                        <input
-                            type="checkbox"
-                            checked={withAudio}
-                            onChange={(e) => setWithAudio(e.target.checked)}
-                            className="hidden"
-                        />
-                        <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
-                            Sistem sesini paylaş
-                        </span>
-                    </label>
 
-                    <div className="flex bg-gray-800 p-1 rounded-lg">
-                        <button
-                            onClick={() => setQuality('standard')}
-                            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === 'standard'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-gray-400 hover:text-gray-200'
-                                }`}
-                        >
-                            Standart (720p)
-                        </button>
-                        <button
-                            onClick={() => setQuality('fullhd')}
-                            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === 'fullhd'
-                                ? 'bg-green-600 text-white shadow-sm'
-                                : 'text-gray-400 hover:text-gray-200'
-                                }`}
-                        >
-                            Full HD (1080p)
-                        </button>
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="relative flex items-center">
+                                <input
+                                    type="checkbox"
+                                    className="peer h-4 w-4 rounded border-gray-600 bg-gray-700 text-primary-500 focus:ring-primary-500/50 focus:ring-offset-0 transition-all cursor-pointer"
+                                    checked={withAudio}
+                                    onChange={(e) => setWithAudio(e.target.checked)}
+                                />
+                            </div>
+                            <span className="text-sm text-gray-400 group-hover:text-gray-200 transition-colors select-none">
+                                Bilgisayarın sesini paylaş
+                            </span>
+                        </label>
                     </div>
 
                     <button
