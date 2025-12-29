@@ -511,18 +511,38 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
         setIsQualityModalOpen(false);
         try {
+            // Type assertion needed because suppressLocalAudioPlayback is not in standard TS definitions yet
             const constraints = {
                 video: {
                     width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: true
-            };
+                audio: {
+                    suppressLocalAudioPlayback: true  // Prevent Ovox audio from being captured
+                } as any
+            } as DisplayMediaStreamOptions;
+
             const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
             await startScreenShareWithStream(stream);
         } catch (error) {
             console.error('[CallContext] Error starting web screen share:', error);
+            // If suppressLocalAudioPlayback is not supported, try again without it
+            try {
+                const fallbackConstraints = {
+                    video: {
+                        width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
+                        height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
+                        frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
+                    },
+                    audio: true
+                };
+                console.log('[CallContext] Retrying without suppressLocalAudioPlayback (may cause echo)');
+                const stream = await navigator.mediaDevices.getDisplayMedia(fallbackConstraints);
+                await startScreenShareWithStream(stream);
+            } catch (fallbackError) {
+                console.error('[CallContext] Fallback screen share also failed:', fallbackError);
+            }
         }
     };
 

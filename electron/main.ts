@@ -1,10 +1,24 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences } from 'electron';
-
-// Enable loopback capture exclusion to prevent app audio from being captured in screen share
-app.commandLine.appendSwitch('enable-loopback-capture-exclusion', 'true');
-// Additional flag to exclude app audio from system capture
-app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess');
 import path from 'path';
+
+/**
+ * Audio Capture Exclusion Configuration
+ * 
+ * These flags prevent the application's own audio from being captured during screen sharing.
+ * This eliminates echo where remote participants would hear their own voices.
+ */
+
+// Enable exclusion of app's own audio from loopback capture (screen share audio)
+app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
+app.commandLine.appendSwitch('auto-select-desktop-capture-source', 'Entire screen');
+
+// Suppress local audio playback in captured streams (Chrome 109+)
+app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybackIntended');
+
+// Windows-specific: Exclude this app from WASAPI loopback capture
+if (process.platform === 'win32') {
+    app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess');
+}
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
