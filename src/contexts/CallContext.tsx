@@ -572,7 +572,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     },
                     optional: [
                         { echoCancellation: true },
-                        { noiseSuppression: true }
+                        { noiseSuppression: true },
+                        { suppressLocalAudioPlayback: true }
                     ]
                 } : false,
                 video: {

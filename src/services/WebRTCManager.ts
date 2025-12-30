@@ -405,23 +405,13 @@ export class WebRTCManager {
     /**
      * Replace audio track mid-session
      */
-    async replaceAudioTrack(deviceId: string): Promise<MediaStream | null> {
+    /**
+     * Replace audio track mid-session with a pre-acquired/processed track
+     */
+    async replaceAudioTrack(track: MediaStreamTrack): Promise<void> {
         if (!this.peerConnection) return;
 
-        console.log('[WebRTCManager] Replacing audio track with device:', deviceId);
-
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            },
-            video: false
-        });
-
-        const newTrack = newStream.getAudioTracks()[0];
-        if (!newTrack) throw new Error('No audio track in new stream');
+        console.log('[WebRTCManager] Replacing audio track mid-session');
 
         // Replace track on all main audio senders
         // We look for senders that are NOT screen audio (if we track it)
@@ -430,23 +420,10 @@ export class WebRTCManager {
         );
 
         for (const sender of senders) {
-            await sender.replaceTrack(newTrack);
-        }
-
-        // Update localStream
-        if (this.localStream) {
-            const oldTracks = this.localStream.getAudioTracks();
-            oldTracks.forEach(t => {
-                t.stop();
-                this.localStream?.removeTrack(t);
-            });
-            this.localStream.addTrack(newTrack);
-        } else {
-            this.localStream = newStream;
+            await sender.replaceTrack(track);
         }
 
         console.log('[WebRTCManager] ✓ Audio track replaced');
-        return this.localStream;
     }
 
     /**

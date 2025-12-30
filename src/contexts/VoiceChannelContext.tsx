@@ -8,6 +8,7 @@ import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerMod
 import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
 import { useNoiseSuppression } from './NoiseSuppressionContext';
 import { useDeviceSettings } from './DeviceSettingsContext';
+import { createNoiseSuppressionProcessor } from '@/utils/NoiseSuppression';
 
 interface VoiceParticipant {
     user_id: string;
@@ -61,6 +62,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
     const peerMetadata = useRef<Map<string, { joined_at: string }>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
+    const rawLocalStreamRef = useRef<MediaStream | null>(null);
+    const nsProcessorRef = useRef<{ cleanup: () => void } | null>(null);
     const screenStreamRef = useRef<MediaStream | null>(null);
     const cameraStreamRef = useRef<MediaStream | null>(null);
 
@@ -162,11 +165,16 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
 
         // Stop local audio stream
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-            setLocalStream(null);
+        if (rawLocalStreamRef.current) {
+            rawLocalStreamRef.current.getTracks().forEach(track => track.stop());
+            rawLocalStreamRef.current = null;
         }
+        if (nsProcessorRef.current) {
+            nsProcessorRef.current.cleanup();
+            nsProcessorRef.current = null;
+        }
+        localStreamRef.current = null;
+        setLocalStream(null);
 
         cleanupPeerConnections();
 
@@ -221,24 +229,30 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             setActiveChannelId(channelId);
 
             // 2. Get local media (microphone)
-            let stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            const rawStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
+                video: false
+            });
+            rawLocalStreamRef.current = rawStream;
 
-            // Apply noise suppression processor (can be toggled live)
-            try {
-                console.log('[VoiceChannelContext] Creating noise suppression processor');
-                const { createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
-                const processor = await createNoiseSuppressionProcessor(stream);
-                stream = processor.outputStream;
-                console.log('[VoiceChannelContext] Noise suppression processor created (live toggle enabled)');
-            } catch (e) {
-                console.log('[VoiceChannelContext] Noise suppression not available:', e);
+            // Apply noise suppression IF enabled
+            const { getNoiseSuppressionEnabled } = await import('@/utils/NoiseSuppression');
+            let finalStream = rawStream;
+            if (getNoiseSuppressionEnabled()) {
+                const proc = await createNoiseSuppressionProcessor(rawStream);
+                nsProcessorRef.current = proc;
+                finalStream = proc.outputStream;
             }
 
-            setLocalStream(stream);
-            localStreamRef.current = stream;
+            setLocalStream(finalStream);
+            localStreamRef.current = finalStream;
 
             // Apply mute state
-            stream.getAudioTracks().forEach(track => {
+            finalStream.getAudioTracks().forEach(track => {
                 track.enabled = !isMuted;
             });
 
@@ -640,28 +654,63 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     // Handle microphone change
     useEffect(() => {
-        if (isConnected && localStreamRef.current) {
-            console.log('[VoiceChannelContext] Microphone change detected, replacing track for all peers');
+        if (isConnected) {
+            console.log('[VoiceChannelContext] Microphone change detected, acquiring new stream');
 
-            // Replace for all active peer managers
-            const replaceTrackOnPeers = async () => {
-                let updatedStream: MediaStream | null = null;
-                for (const [peerId, manager] of peerManagers.current.entries()) {
-                    try {
-                        const s = await manager.replaceAudioTrack(audioInputDeviceId);
-                        if (s) updatedStream = s;
-                        console.log(`[VoiceChannelContext] ✓ Replaced audio track for peer: ${peerId}`);
-                    } catch (e) {
-                        console.error(`[VoiceChannelContext] Error replacing audio track for peer ${peerId}:`, e);
+            const updateMicrophone = async () => {
+                try {
+                    // 1. Stop old raw tracks
+                    if (rawLocalStreamRef.current) {
+                        rawLocalStreamRef.current.getTracks().forEach(t => t.stop());
                     }
-                }
+                    if (nsProcessorRef.current) {
+                        nsProcessorRef.current.cleanup();
+                        nsProcessorRef.current = null;
+                    }
 
-                if (updatedStream) {
-                    setLocalStream(new MediaStream(updatedStream.getTracks()));
+                    // 2. Get new raw stream
+                    const rawStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: audioInputDeviceId && audioInputDeviceId !== 'default' ? { exact: audioInputDeviceId } : undefined,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        },
+                        video: false
+                    });
+                    rawLocalStreamRef.current = rawStream;
+
+                    // 3. Apply Noise Suppression if enabled
+                    const { getNoiseSuppressionEnabled } = await import('@/utils/NoiseSuppression');
+                    let finalStream = rawStream;
+                    if (getNoiseSuppressionEnabled()) {
+                        const proc = await createNoiseSuppressionProcessor(rawStream);
+                        nsProcessorRef.current = proc;
+                        finalStream = proc.outputStream;
+                    }
+
+                    // 4. Update local state
+                    setLocalStream(finalStream);
+                    localStreamRef.current = finalStream;
+
+                    // 5. Replace track for all active peer managers
+                    const newTrack = finalStream.getAudioTracks()[0];
+                    if (newTrack) {
+                        for (const [peerId, manager] of peerManagers.current.entries()) {
+                            try {
+                                await manager.replaceAudioTrack(newTrack);
+                                console.log(`[VoiceChannelContext] ✓ Replaced audio track for peer: ${peerId}`);
+                            } catch (e) {
+                                console.error(`[VoiceChannelContext] Error replacing audio track for peer ${peerId}:`, e);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('[VoiceChannelContext] Failed to change microphone:', e);
                 }
             };
 
-            replaceTrackOnPeers();
+            updateMicrophone();
         }
     }, [audioInputDeviceId, isConnected]);
 
@@ -842,7 +891,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     },
                     optional: [
                         { echoCancellation: true },
-                        { noiseSuppression: true }
+                        { noiseSuppression: true },
+                        { suppressLocalAudioPlayback: true }
                     ]
                 } : false,
                 video: {

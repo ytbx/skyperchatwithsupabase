@@ -50,6 +50,9 @@ export class CallSession {
     private soundpadDestination: MediaStreamAudioDestinationNode | null = null;
     private soundpadStream: MediaStream | null = null;
 
+    private rawLocalStream: MediaStream | null = null;
+    private nsProcessor: { cleanup: () => void; outputStream: MediaStream } | null = null;
+
     // Renegotiation state
     private isProcessingOffer = false;
     private pendingOffer: PendingOffer | null = null;
@@ -140,16 +143,17 @@ export class CallSession {
             });
 
             // Get local media
-            let localStream = await this.peer.getUserMedia(true, callType === 'video');
+            const rawStream = await this.peer.getUserMedia(true, callType === 'video');
+            this.rawLocalStream = rawStream;
 
-            // Apply noise suppression if available
-            try {
-                const { createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
-                const processor = await createNoiseSuppressionProcessor(localStream);
-                localStream = processor.outputStream;
-                console.log('[CallSession] Noise suppression applied');
-            } catch (e) {
-                console.log('[CallSession] Noise suppression not available');
+            // Apply noise suppression if enabled
+            const { getNoiseSuppressionEnabled, createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
+            let localStream = rawStream;
+            if (getNoiseSuppressionEnabled()) {
+                const proc = await createNoiseSuppressionProcessor(rawStream);
+                this.nsProcessor = { ...proc, outputStream: proc.outputStream };
+                localStream = proc.outputStream;
+                console.log('[CallSession] Noise suppression applied at start');
             }
 
             this.callbacks.onLocalStream(localStream);
@@ -457,7 +461,50 @@ export class CallSession {
      */
     async replaceAudioTrack(deviceId: string): Promise<MediaStream | null> {
         if (!this.peer) return null;
-        return await this.peer.replaceAudioTrack(deviceId);
+
+        console.log('[CallSession] Replacing audio track with device:', deviceId);
+
+        // 1. Stop old raw tracks
+        if (this.rawLocalStream) {
+            this.rawLocalStream.getTracks().forEach(t => t.stop());
+        }
+        if (this.nsProcessor) {
+            this.nsProcessor.cleanup();
+            this.nsProcessor = null;
+        }
+
+        // 2. Get new raw stream
+        const rawStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: false
+        });
+        this.rawLocalStream = rawStream;
+
+        // 3. Apply NS if enabled
+        const { getNoiseSuppressionEnabled, createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
+        let finalStream = rawStream;
+        if (getNoiseSuppressionEnabled()) {
+            const proc = await createNoiseSuppressionProcessor(rawStream);
+            this.nsProcessor = { ...proc, outputStream: proc.outputStream };
+            finalStream = proc.outputStream;
+            console.log('[CallSession] Noise suppression applied to new track');
+        }
+
+        // 4. Update peer
+        const newTrack = finalStream.getAudioTracks()[0];
+        if (newTrack) {
+            await this.peer.replaceAudioTrack(newTrack);
+        }
+
+        // 5. Notify UI
+        this.callbacks.onLocalStream(finalStream);
+
+        return finalStream;
     }
 
     /**
@@ -595,6 +642,15 @@ export class CallSession {
         this.audioContext = null;
         this.soundpadDestination = null;
         this.soundpadStream = null;
+
+        if (this.rawLocalStream) {
+            this.rawLocalStream.getTracks().forEach(t => t.stop());
+            this.rawLocalStream = null;
+        }
+        if (this.nsProcessor) {
+            this.nsProcessor.cleanup();
+            this.nsProcessor = null;
+        }
 
         this.isProcessingOffer = false;
         this.pendingOffer = null;

@@ -8,23 +8,25 @@ import path from 'path';
  * This eliminates echo where remote participants would hear their own voices.
  */
 
-// Enable exclusion of app's own audio from loopback capture (Essential for preventing echo)
-app.commandLine.appendSwitch('enable-loopback-capture-exclusion', 'true');
+// 1. Standalone command line switches (Must be at the top)
+// Force exclusion of this process from loopback capture
+app.commandLine.appendSwitch('enable-loopback-capture-exclusion');
+// Suppress local audio playback intended for capture
+app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybackIntended');
 
-// Enable features for better audio isolation and modern web capabilities
-// On Windows, loopback exclusion works best when AudioServiceOutOfProcess is enabled 
-// but AudioServiceSandbox is disabled (to allow the service to see process IDs).
-app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,AudioServiceOutOfProcess');
+// 2. Feature-based switches
+// ExcludeCurrentProcessFromAudioCapture: Explicitly tells Chromium to omit this process's output
+// AudioServiceOutOfProcess: Required for modern Windows loopback exclusion to function
+app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,AudioServiceOutOfProcess,ExcludeCurrentProcessFromAudioCapture,WASAPIRawAudioCapture');
+
+// 3. Platform & Service Specifics
+// Disable sandbox for the Audio Service on Windows to allow it to identify process IDs for exclusion
 app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox');
 app.commandLine.appendSwitch('auto-select-desktop-capture-source', 'Entire screen');
 
-// Suppress local audio playback and exclude current process from capture (Chrome 109+)
-// These features help modern Chromium variants handle loopback isolation better.
-app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybackIntended,ExcludeCurrentProcessFromAudioCapture');
-
-// Windows-specific: Ensure the audio service can correctly handle loopback exclusion
 if (process.platform === 'win32') {
-    // Already handled by the switches above
+    // Windows 10/11 specific WASAPI tuning for loopback
+    // No additional switches needed here as they are covered above
 }
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';

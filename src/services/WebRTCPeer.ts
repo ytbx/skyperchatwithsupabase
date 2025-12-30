@@ -1,13 +1,3 @@
-/**
- * WebRTCPeer - A clean, per-call WebRTC peer connection manager
- * 
- * Key design decisions:
- * - Created fresh for each call (no reuse)
- * - Built-in ICE candidate queueing until remote description is set
- * - Event emitter pattern for clean callbacks
- * - Simple API for media management
- */
-
 export type PeerConnectionState = 'new' | 'connecting' | 'connected' | 'disconnected' | 'failed' | 'closed';
 
 export interface WebRTCPeerCallbacks {
@@ -398,44 +388,18 @@ export class WebRTCPeer {
     /**
      * Replace audio track mid-call
      */
-    async replaceAudioTrack(deviceId: string): Promise<MediaStream | null> {
+    async replaceAudioTrack(track: MediaStreamTrack): Promise<void> {
         if (!this.pc) return;
 
-        console.log('[WebRTCPeer] Replacing audio track with device:', deviceId);
-
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            },
-            video: false
-        });
-
-        const newTrack = newStream.getAudioTracks()[0];
-        if (!newTrack) throw new Error('No audio track in new stream');
+        console.log('[WebRTCPeer] Replacing audio track mid-call');
 
         // Find main audio sender
         const sender = this.pc.getSenders().find(s => s.track?.kind === 'audio');
         if (sender) {
-            await sender.replaceTrack(newTrack);
-        }
-
-        // Update localStream
-        if (this.localStream) {
-            const oldTracks = this.localStream.getAudioTracks();
-            oldTracks.forEach(t => {
-                t.stop();
-                this.localStream?.removeTrack(t);
-            });
-            this.localStream.addTrack(newTrack);
-        } else {
-            this.localStream = newStream;
+            await sender.replaceTrack(track);
         }
 
         console.log('[WebRTCPeer] ✓ Audio track replaced');
-        return this.localStream;
     }
 
     /**
