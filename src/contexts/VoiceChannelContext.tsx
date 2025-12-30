@@ -44,7 +44,7 @@ const VoiceChannelContext = createContext<VoiceChannelContextType | undefined>(u
 
 export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const { user, profile } = useAuth();
-    const { activeCall, endCall } = useCall();
+    const { activeCall, endCall, callStatus } = useCall();
 
     const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
     const [participants, setParticipants] = useState<VoiceParticipant[]>([]);
@@ -290,7 +290,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             console.error('[VoiceChannelContext] Error joining voice channel:', error);
             await leaveChannel();
         }
-    }, [activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel]);
+    }, [activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel, callStatus]);
 
     // Initialize WebRTC connection with a peer
     const initiateConnection = async (peerId: string, channelId: number) => {
@@ -936,13 +936,19 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isCameraEnabled, user, activeChannelId, isConnected]);
 
-    // Auto-leave channel when active call starts
+    // Auto-leave channel when active call starts (Status is active or connecting)
     useEffect(() => {
-        if (activeCall && activeChannelId) {
-            console.log('[VoiceChannelContext] Active call detected, leaving voice channel...');
+        // We leave the voice channel ONLY if the call is actually connecting or active.
+        // We do NOT leave if it is just ringing (incoming or outgoing).
+        // This allows the user to decide whether to accept/initiated call without losing context immediately.
+        const shouldLeave = activeCall && activeChannelId && (callStatus === 'active' || callStatus === 'connecting');
+
+        if (shouldLeave) {
+            console.log('[VoiceChannelContext] Active call detected (status:', callStatus, '), leaving voice channel...');
             leaveChannel();
         }
-    }, [activeCall, activeChannelId, leaveChannel]);
+    }, [activeCall, activeChannelId, callStatus, leaveChannel]);
+
 
     // Play soundboard audio - plays locally AND to separate soundpad track
     const playSoundboardAudio = useCallback((audioBuffer: AudioBuffer) => {

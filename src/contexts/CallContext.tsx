@@ -13,6 +13,7 @@ type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting
 interface CallContextType {
     // State
     activeCall: DirectCall | null;
+    incomingCall: DirectCall | null; // NEW: Track incoming call separately
     callStatus: CallStatus;
     localStream: MediaStream | null;
     remoteStream: MediaStream | null;
@@ -52,6 +53,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     // State
     const [activeCall, setActiveCall] = useState<DirectCall | null>(null);
+    const [incomingCall, setIncomingCall] = useState<DirectCall | null>(null);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -89,7 +91,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!ringtoneRef.current) return;
 
-        const shouldPlay = callStatus === 'ringing_incoming' || callStatus === 'ringing_outgoing';
+        // Play ringtone if we are in ringing state OR we have an incoming call while active
+        const shouldPlay = callStatus === 'ringing_incoming' || callStatus === 'ringing_outgoing' || !!incomingCall;
 
         if (shouldPlay) {
             ringtoneRef.current.play().catch(e => console.error('Error playing ringtone:', e));
@@ -97,7 +100,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             ringtoneRef.current.pause();
             ringtoneRef.current.currentTime = 0;
         }
-    }, [callStatus]);
+    }, [callStatus, incomingCall]);
 
     // Poll for call stats (ping)
     useEffect(() => {
@@ -177,6 +180,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const resetCallState = useCallback(() => {
         console.log('[CallContext] Resetting call state');
         setActiveCall(null);
+        setIncomingCall(null); // Also clear incoming call
         setCallStatus('idle');
         setLocalStream(null);
         setRemoteStream(null);
@@ -314,6 +318,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         try {
             console.log('[CallContext] Accepting call:', call.id);
+
+            // If we are already in a call, end it first
+            if (activeCall && activeCall.id !== call.id) {
+                console.log('[CallContext] Ending existing call before accepting new one');
+                await endCall();
+                // Consider adding a small delay if needed, but endCall is async
+            }
+
+            // Clear incoming call state if this was the incoming call
+            if (incomingCall && incomingCall.id === call.id) {
+                setIncomingCall(null);
+            }
+
             setCallStatus('connecting');
             setActiveCall(call);
             setIsCameraOff(call.call_type === 'voice');
@@ -337,7 +354,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             console.error('[CallContext] Error accepting call:', error);
             resetCallState();
         }
-    }, [user?.id, createSession, resetCallState]);
+    }, [user?.id, createSession, resetCallState, activeCall, incomingCall]);
 
     /**
      * Reject an incoming call
@@ -346,14 +363,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
         try {
             console.log('[CallContext] Rejecting call:', callId);
 
-            // Send rejection signal if session exists
-            if (sessionRef.current) {
+            // Check if we are rejecting the incoming call (not the active one)
+            const isRejectingIncoming = incomingCall && incomingCall.id === callId;
+
+            // Send rejection signal
+            // If it's the active session:
+            if (!isRejectingIncoming && sessionRef.current) {
                 await sessionRef.current.reject();
-            } else if (activeCall && user) {
-                // Create temporary signaling to send rejection
-                const signaling = new SignalingChannel(callId, user.id, activeCall.caller_id);
-                await signaling.sendCallRejected();
-                await signaling.close();
+            } else {
+                // It's the incoming call or no active session -> use temp signal
+                const targetCall = isRejectingIncoming ? incomingCall : activeCall;
+                if (targetCall && user) {
+                    const signaling = new SignalingChannel(callId, user.id, targetCall.caller_id);
+                    await signaling.sendCallRejected();
+                    await signaling.close();
+                }
             }
 
             // Delete the call record
@@ -362,12 +386,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 .delete()
                 .eq('id', callId);
 
-            resetCallState();
+            if (isRejectingIncoming) {
+                setIncomingCall(null);
+            } else {
+                resetCallState();
+            }
         } catch (error) {
             console.error('[CallContext] Error rejecting call:', error);
-            resetCallState();
+            // Only reset if we were rejecting the active call
+            if (activeCall && activeCall.id === callId) {
+                resetCallState();
+            }
         }
-    }, [activeCall, user, resetCallState]);
+    }, [activeCall, incomingCall, user, resetCallState]);
 
     /**
      * End the active call
@@ -605,8 +636,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const isRecent = callAge < 30000;
 
                     if (call.status === 'ringing' && isRecent) {
-                        setActiveCall(call);
-                        setCallStatus('ringing_incoming');
+                        // Check if we already have an active call
+                        if (activeCall) {
+                            console.log('[CallContext] Receiving incoming call while busy:', call);
+                            setIncomingCall(call);
+                            // Do NOT change callStatus or activeCall
+                        } else {
+                            setActiveCall(call);
+                            setCallStatus('ringing_incoming');
+                        }
 
                         // Listen for call cancellation
                         const signaling = new SignalingChannel(call.id, user.id, call.caller_id);
@@ -614,7 +652,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
                             if (signal.signal_type === 'call-cancelled') {
                                 console.log('[CallContext] Call was cancelled by caller');
                                 await signaling.close();
-                                resetCallState();
+
+                                // Check if it was the incoming call or active call
+                                setIncomingCall(prev => (prev && prev.id === call.id) ? null : prev);
+                                setActiveCall(prev => {
+                                    if (prev && prev.id === call.id) {
+                                        resetCallState();
+                                        return null;
+                                    }
+                                    return prev;
+                                });
                             }
                         });
                     }
@@ -635,6 +682,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     if (activeCall && call.id === activeCall.id) {
                         resetCallState();
                     }
+                    if (incomingCall && call.id === incomingCall.id) {
+                        setIncomingCall(null);
+                    }
                 }
             )
             .on(
@@ -651,6 +701,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
                     if (activeCall && call.id === activeCall.id) {
                         resetCallState();
+                    }
+                    if (incomingCall && call.id === incomingCall.id) {
+                        setIncomingCall(null);
                     }
                 }
             )
@@ -669,6 +722,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     const value: CallContextType = {
         activeCall,
+        incomingCall,
         callStatus,
         localStream,
         remoteStream,

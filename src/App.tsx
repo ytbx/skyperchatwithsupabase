@@ -281,6 +281,15 @@ function AppContent() {
             );
         }
 
+        // 6. Loading State (Channel selected but not loaded yet)
+        if (currentView === 'servers' && selectedChannelId && !selectedChannel) {
+            return (
+                <div className="flex-1 bg-gray-900 flex items-center justify-center">
+                    <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            );
+        }
+
         return null;
     };
 

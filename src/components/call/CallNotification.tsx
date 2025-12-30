@@ -6,24 +6,31 @@ import { supabase } from '@/lib/supabase';
 import { Profile } from '@/lib/types';
 
 export const CallNotification: React.FC = () => {
-    const { activeCall, callStatus, acceptCall, rejectCall, endCall } = useCall();
+    const { activeCall, incomingCall, callStatus, acceptCall, rejectCall, endCall } = useCall();
     const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [callerProfile, setCallerProfile] = useState<Profile | null>(null);
 
+    // Determine which call to show
+    // Priority: Incoming Call (new) > Active Call (if ringing)
+    const callToShow = incomingCall || (callStatus === 'ringing_incoming' ? activeCall : null) || (callStatus === 'ringing_outgoing' ? activeCall : null);
+
     // Load caller profile for incoming calls
     useEffect(() => {
-        if (activeCall && callStatus === 'ringing_incoming') {
-            loadCallerProfile();
+        if (callToShow) {
+            // Depending on if it's incoming or outgoing, the "other person" ID differs
+            const otherUserId = callToShow === incomingCall || callStatus === 'ringing_incoming'
+                ? callToShow.caller_id
+                : callToShow.callee_id;
+
+            loadProfile(otherUserId);
         }
-    }, [activeCall, callStatus]);
+    }, [callToShow, incomingCall, callStatus]);
 
-    const loadCallerProfile = async () => {
-        if (!activeCall) return;
-
+    const loadProfile = async (userId: string) => {
         const { data, error } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', activeCall.caller_id)
+            .eq('id', userId)
             .single();
 
         if (data && !error) {
@@ -32,7 +39,7 @@ export const CallNotification: React.FC = () => {
     };
 
     const handleAcceptCall = async () => {
-        if (!activeCall) return;
+        if (!callToShow) return;
 
         // Leave voice channel if connected
         if (activeChannelId) {
@@ -42,17 +49,20 @@ export const CallNotification: React.FC = () => {
             await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        await acceptCall(activeCall);
+        await acceptCall(callToShow);
     };
 
-    // Only show notification for ringing states
-    if (!activeCall || (callStatus !== 'ringing_incoming' && callStatus !== 'ringing_outgoing')) {
+    // Only show notification for ringing states or if we have a separate incoming call
+    if (!callToShow && !incomingCall && callStatus !== 'ringing_incoming' && callStatus !== 'ringing_outgoing') {
         return null;
     }
 
-    const isIncoming = callStatus === 'ringing_incoming';
-    const isOutgoing = callStatus === 'ringing_outgoing';
-    const displayName = isIncoming ? (callerProfile?.username || 'Unknown') : 'Calling...';
+    // Safety check
+    if (!callToShow) return null;
+
+    const isIncoming = !!incomingCall || callStatus === 'ringing_incoming';
+    const isOutgoing = !incomingCall && callStatus === 'ringing_outgoing';
+    const displayName = isIncoming ? (callerProfile?.username || 'Unknown') : (callerProfile?.username || 'Calling...');
 
     return (
         <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-5">
@@ -60,13 +70,13 @@ export const CallNotification: React.FC = () => {
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-3">
-                        {activeCall.call_type === 'video' ? (
+                        {callToShow.call_type === 'video' ? (
                             <Video size={20} className="text-blue-500" />
                         ) : (
                             <Phone size={20} className="text-green-500" />
                         )}
                         <span className="text-white font-medium">
-                            {activeCall.call_type === 'video' ? 'Video Call' : 'Voice Call'}
+                            {callToShow.call_type === 'video' ? 'Video Call' : 'Voice Call'}
                         </span>
                     </div>
                 </div>
@@ -91,7 +101,7 @@ export const CallNotification: React.FC = () => {
                             {displayName}
                         </h3>
                         <p className="text-gray-400 text-sm">
-                            {isIncoming && 'Incoming call...'}
+                            {isIncoming && (incomingCall ? 'Incoming call (Busy)' : 'Incoming call...')}
                             {isOutgoing && 'Calling...'}
 
                         </p>
@@ -113,7 +123,7 @@ export const CallNotification: React.FC = () => {
 
                             {/* Reject Button */}
                             <button
-                                onClick={() => rejectCall(activeCall.id)}
+                                onClick={() => rejectCall(callToShow.id)}
                                 className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 font-medium"
                             >
                                 <PhoneOff size={18} />
@@ -139,3 +149,4 @@ export const CallNotification: React.FC = () => {
         </div>
     );
 };
+
