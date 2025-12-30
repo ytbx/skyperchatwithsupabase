@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MonitorUp, Users, MicOff, Headphones, Maximize2, X, Volume2, User } from 'lucide-react';
+import { MonitorUp, Users, MicOff, Headphones, Maximize2, Minimize2, X, Volume2, User } from 'lucide-react';
 import { UserVolumeContextMenu } from './UserVolumeContextMenu';
 
 interface VoiceParticipant {
@@ -32,6 +32,9 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
     const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string; streamId: string } | null>(null);
+    const [isMaximized, setIsMaximized] = useState(false);
+
+    const toggleMaximize = () => setIsMaximized(!isMaximized);
 
     const toggleIgnoreStream = (streamId: string) => {
         setIgnoredStreams(prev => {
@@ -211,7 +214,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const hasAnyStreams = cameraParticipants.length > 0 || screenSharingParticipants.length > 0;
 
     return (
-        <div className="flex-1 flex flex-col bg-gray-900">
+        <div className={`flex-1 flex flex-col bg-gray-900 ${isMaximized ? 'fixed inset-0 z-[100]' : ''}`}>
             {/* Header */}
             <div className="h-12 px-4 flex items-center justify-between border-b border-gray-800 bg-gray-900">
                 <div className="flex items-center gap-2">
@@ -225,7 +228,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className={`flex-1 overflow-y-auto p-4 ${isMaximized ? 'h-full' : ''}`}>
                 {!hasAnyStreams ? (
                     // Empty state
                     <div className="h-full flex flex-col items-center justify-center">
@@ -247,8 +250,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         </button>
                     </div>
                 ) : (
-                    // Vertical list of camera and screen shares
-                    <div className="space-y-4">
+                    // Grid layout for streams
+                    <div className={`gap-4 ${isMaximized
+                        ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 auto-rows-fr h-full content-center'
+                        : 'grid grid-cols-2 auto-rows-min'
+                        }`}>
                         {/* Camera streams */}
                         {cameraParticipants.map((participant) => {
                             const videoId = `camera-${participant.user_id}`;
@@ -257,8 +263,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                             return (
                                 <div
                                     key={videoId}
-                                    className="relative bg-gray-800 rounded-lg overflow-hidden group"
-                                    style={{ maxHeight: '400px' }}
+                                    className="relative bg-gray-800 rounded-lg overflow-hidden group aspect-video shadow-md border border-gray-800"
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         setVolumeContextMenu({
@@ -294,8 +299,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             }}
                                             autoPlay
                                             playsInline
-                                            className="w-full h-auto object-contain bg-black"
-                                            style={{ maxHeight: '400px' }}
+                                            className={`w-full h-full bg-black ${isMaximized ? 'object-contain' : 'object-cover'}`}
                                         />
                                     )}
 
@@ -371,8 +375,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                             return (
                                 <div
                                     key={videoId}
-                                    className="relative bg-gray-800 rounded-lg overflow-hidden group"
-                                    style={{ maxHeight: '400px' }}
+                                    className="relative bg-gray-800 rounded-lg overflow-hidden group aspect-video shadow-md border border-gray-800"
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         setVolumeContextMenu({
@@ -413,8 +416,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             autoPlay
                                             playsInline
                                             muted={participant.user_id === user?.id} // Mute if local user
-                                            className="w-full h-auto object-contain bg-black"
-                                            style={{ maxHeight: '400px' }}
+                                            className={`w-full h-full bg-black ${isMaximized ? 'object-contain' : 'object-contain'}`}
                                         />
                                     )}
 
@@ -481,109 +483,126 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                 )}
             </div>
 
+            {/* Maximize Toggle Button */}
+            {/* Maximize Toggle Button - Fixed to bottom right of the container */}
+            <button
+                onClick={toggleMaximize}
+                className={`absolute bottom-6 right-6 p-3 rounded-full text-white transition-all z-[60] shadow-xl border border-white/10 ${isMaximized
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                title={isMaximized ? "Küçült" : "Tam Ekran Yap"}
+            >
+                {isMaximized ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+            </button>
+
             {/* Fullscreen Modal */}
-            {fullscreenVideoId && (() => {
-                const participant = [...cameraParticipants, ...screenSharingParticipants].find(p =>
-                    fullscreenVideoId === `camera-${p.user_id}` || fullscreenVideoId === `screen-${p.user_id}`
-                );
-                const isCamera = fullscreenVideoId.startsWith('camera-');
-                const stream = isCamera ? participant?.cameraStream : participant?.screenStream;
-                const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
-                const isLocalUser = participant?.user_id === user?.id;
+            {
+                fullscreenVideoId && (() => {
+                    const participant = [...cameraParticipants, ...screenSharingParticipants].find(p =>
+                        fullscreenVideoId === `camera-${p.user_id}` || fullscreenVideoId === `screen-${p.user_id}`
+                    );
+                    const isCamera = fullscreenVideoId.startsWith('camera-');
+                    const stream = isCamera ? participant?.cameraStream : participant?.screenStream;
+                    const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
+                    const isLocalUser = participant?.user_id === user?.id;
 
-                return (
-                    <div
-                        className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-8"
-                        onClick={closeFullscreen}
-                    >
+                    return (
                         <div
-                            className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
-                            onClick={(e) => e.stopPropagation()}
+                            className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-8"
+                            onClick={closeFullscreen}
                         >
-                            <video
-                                ref={fullscreenVideoRef}
-                                autoPlay
-                                playsInline
-                                className="w-full h-full object-contain"
-                            />
-
-                            {/* Close button */}
-                            <button
-                                onClick={closeFullscreen}
-                                className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
-                                title="Kapat"
+                            <div
+                                className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
+                                onClick={(e) => e.stopPropagation()}
                             >
-                                <X className="w-6 h-6 text-white" />
-                            </button>
+                                <video
+                                    ref={fullscreenVideoRef}
+                                    autoPlay
+                                    playsInline
+                                    className="w-full h-full object-contain"
+                                />
 
-                            {/* Volume control - only for other users' streams */}
-                            {!isLocalUser && (
-                                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
-                                    <Volume2 className="w-5 h-5 text-white" />
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.1"
-                                        value={currentVolume}
-                                        onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
-                                        className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                        style={{
-                                            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
-                                        }}
-                                    />
-                                    <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
-                                </div>
-                            )}
+                                {/* Close button */}
+                                <button
+                                    onClick={closeFullscreen}
+                                    className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
+                                    title="Kapat"
+                                >
+                                    <X className="w-6 h-6 text-white" />
+                                </button>
 
-                            {/* User info */}
-                            <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden transition-all duration-200 ${participant && speakingUsers.has(participant.user_id)
-                                        ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
-                                        : ''
-                                        }`}>
-                                        {participant?.profile?.profile_image_url ? (
-                                            <img
-                                                src={participant.profile.profile_image_url}
-                                                alt=""
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            <span className="text-sm text-white font-semibold">
-                                                {participant?.profile?.username?.charAt(0).toUpperCase()}
-                                            </span>
-                                        )}
+                                {/* Volume control - only for other users' streams */}
+                                {!isLocalUser && (
+                                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
+                                        <Volume2 className="w-5 h-5 text-white" />
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.1"
+                                            value={currentVolume}
+                                            onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
+                                            className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                            style={{
+                                                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
+                                            }}
+                                        />
+                                        <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
                                     </div>
-                                    <div>
-                                        <p className="text-sm font-medium text-white">
-                                            {participant?.profile?.username}
-                                        </p>
-                                        <p className="text-xs text-gray-300">
-                                            {isCamera ? 'Kamera' : 'Ekran paylaşımı'}
-                                        </p>
+                                )}
+
+                                {/* User info */}
+                                <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden transition-all duration-200 ${participant && speakingUsers.has(participant.user_id)
+                                            ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                                            : ''
+                                            }`}>
+                                            {participant?.profile?.profile_image_url ? (
+                                                <img
+                                                    src={participant.profile.profile_image_url}
+                                                    alt=""
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <span className="text-sm text-white font-semibold">
+                                                    {participant?.profile?.username?.charAt(0).toUpperCase()}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-white">
+                                                {participant?.profile?.username}
+                                            </p>
+                                            <p className="text-xs text-gray-300">
+                                                {isCamera ? 'Kamera' : 'Ekran paylaşımı'}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                );
-            })()}
+                    );
+                })()
+            }
 
             {/* Volume Context Menu */}
-            {volumeContextMenu && (
-                <UserVolumeContextMenu
-                    x={volumeContextMenu.x}
-                    y={volumeContextMenu.y}
-                    userId={volumeContextMenu.userId}
-                    username={volumeContextMenu.username}
-                    profileImageUrl={volumeContextMenu.profileImageUrl}
-                    onClose={() => setVolumeContextMenu(null)}
-                    streamId={volumeContextMenu.streamId}
-                    isIgnored={ignoredStreams.has(volumeContextMenu.streamId)}
-                    onToggleIgnore={toggleIgnoreStream}
-                />
-            )}
+            {
+                volumeContextMenu && (
+                    <UserVolumeContextMenu
+                        x={volumeContextMenu.x}
+                        y={volumeContextMenu.y}
+                        userId={volumeContextMenu.userId}
+                        username={volumeContextMenu.username}
+                        profileImageUrl={volumeContextMenu.profileImageUrl}
+                        onClose={() => setVolumeContextMenu(null)}
+                        streamId={volumeContextMenu.streamId}
+                        isIgnored={ignoredStreams.has(volumeContextMenu.streamId)}
+                        onToggleIgnore={toggleIgnoreStream}
+                    />
+                )
+            }
 
             <style>{`
                 input[type="range"]::-webkit-slider-thumb {
@@ -604,6 +623,6 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                     border: 2px solid white;
                 }
             `}</style>
-        </div>
+        </div >
     );
 }

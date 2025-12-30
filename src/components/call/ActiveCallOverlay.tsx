@@ -3,7 +3,7 @@ import { useCall } from '@/contexts/CallContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { CallControls } from './CallControls';
-import { User, Wifi, WifiOff, Maximize2, X, Volume2, MicOff, VolumeX } from 'lucide-react';
+import { User, Wifi, WifiOff, Maximize2, Minimize2, X, Volume2, MicOff, VolumeX } from 'lucide-react';
 import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
 
 export const ActiveCallOverlay: React.FC = () => {
@@ -44,6 +44,11 @@ export const ActiveCallOverlay: React.FC = () => {
     const [contactId, setContactId] = useState<string>('');
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; streamId?: string } | null>(null);
     const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
+    const [isMaximized, setIsMaximized] = useState(false);
+
+    const toggleMaximize = () => {
+        setIsMaximized(!isMaximized);
+    };
 
     const toggleIgnoreStream = (streamId: string) => {
         setIgnoredStreams(prev => {
@@ -496,8 +501,8 @@ export const ActiveCallOverlay: React.FC = () => {
         <>
             <div
                 ref={overlayRef}
-                className="relative w-full bg-gray-900 z-10 flex flex-col flex-none transition-[height] duration-75 ease-out select-none"
-                style={{ height }}
+                className={`relative w-full bg-gray-900 z-10 flex flex-col flex-none transition-all duration-300 ease-out select-none ${isMaximized ? 'fixed inset-0 !h-full !z-[100]' : ''}`}
+                style={{ height: isMaximized ? '100%' : height }}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 bg-gray-800/50 backdrop-blur-sm z-20 shrink-0">
@@ -655,6 +660,15 @@ export const ActiveCallOverlay: React.FC = () => {
                         onPlaySound={playSoundboardAudio}
                     />
                 </div>
+
+                {/* Maximize Toggle Button */}
+                <button
+                    onClick={toggleMaximize}
+                    className="absolute bottom-4 right-4 p-2 bg-gray-800/80 hover:bg-gray-700 rounded-lg text-white transition-colors z-[60]"
+                    title={isMaximized ? "Küçült" : "Tam Ekran Yap"}
+                >
+                    {isMaximized ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+                </button>
 
                 {/* Resize Handle */}
                 <div
