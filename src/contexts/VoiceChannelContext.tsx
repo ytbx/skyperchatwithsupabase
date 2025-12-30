@@ -818,7 +818,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: true
+                audio: true,
+                selfBrowserSurface: 'exclude' as any
             };
 
             const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);

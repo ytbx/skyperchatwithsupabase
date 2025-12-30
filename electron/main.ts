@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences, protocol } from 'electron';
 import path from 'path';
 
 /**
@@ -11,20 +11,28 @@ import path from 'path';
 // Enable exclusion of app's own audio from loopback capture (Essential for preventing echo)
 app.commandLine.appendSwitch('enable-loopback-capture-exclusion', 'true');
 
-// Enable exclusion of app's own audio from loopback capture (screen share audio)
-app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
+// Enable features for better audio isolation and modern web capabilities
+app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,AudioServiceOutOfProcess,AudioServiceSandbox');
 app.commandLine.appendSwitch('auto-select-desktop-capture-source', 'Entire screen');
 
-// Suppress local audio playback in captured streams (Chrome 109+)
-app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybackIntended');
+// Suppress local audio playback and exclude current process from capture (Chrome 109+)
+app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybackIntended,ExcludeCurrentProcessFromAudioCapture');
 
-// Windows-specific: Exclude this app from WASAPI loopback capture
+// Windows-specific: Ensure the audio service can correctly handle loopback exclusion
 if (process.platform === 'win32') {
-    app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess');
+    // We removed 'AudioServiceOutOfProcess' from disable-features and added it to enable-features above
 }
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
+
+// Register custom protocol for production
+if (!isDev) {
+    protocol.registerSchemesAsPrivileged([
+        { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+    ]);
+}
+
 
 // Enable detailed logging for auto-updater
 autoUpdater.logger = console;
@@ -82,7 +90,7 @@ function createUpdateWindow() {
     if (isDev) {
         updateWindow.loadFile(path.join(__dirname, '..', 'public', 'update.html'));
     } else {
-        updateWindow.loadFile(path.join(__dirname, '..', 'dist', 'update.html'));
+        updateWindow.loadURL('app://./update.html');
     }
 
     updateWindow.on('closed', () => {
@@ -254,8 +262,7 @@ function createWindow() {
         mainWindow.loadURL('http://localhost:5173');
         mainWindow.webContents.openDevTools();
     } else {
-        // Load from app.asar - dist is at the root level
-        mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+        mainWindow.loadURL('app://./index.html');
     }
 
     mainWindow.on('closed', () => {
@@ -264,6 +271,56 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+    // Handle the custom protocol
+    if (!isDev) {
+        protocol.handle('app', async (request) => {
+            try {
+                const url = new URL(request.url);
+                let relativePath = url.pathname;
+
+                // Remove leading slash if present
+                if (relativePath.startsWith('/')) {
+                    relativePath = relativePath.substring(1);
+                }
+
+                // Default to index.html if path is empty
+                if (!relativePath || relativePath === '.') {
+                    relativePath = 'index.html';
+                }
+
+                const filePath = path.join(__dirname, '..', 'dist', relativePath);
+
+                if (!fs.existsSync(filePath)) {
+                    console.error(`[Protocol] File not found: ${filePath}`);
+                    return new Response('Not Found', { status: 404 });
+                }
+
+                // Determine MIME type
+                let contentType = 'text/html';
+                const ext = path.extname(filePath).toLowerCase();
+                if (ext === '.js') contentType = 'application/javascript';
+                else if (ext === '.css') contentType = 'text/css';
+                else if (ext === '.svg') contentType = 'image/svg+xml';
+                else if (ext === '.json') contentType = 'application/json';
+                else if (ext === '.wasm') contentType = 'application/wasm';
+                else if (ext === '.png') contentType = 'image/png';
+                else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+                else if (ext === '.ico') contentType = 'image/x-icon';
+                else if (ext === '.woff2') contentType = 'font/woff2';
+                else if (ext === '.woff') contentType = 'font/woff';
+                else if (ext === '.ttf') contentType = 'font/ttf';
+
+                const buffer = await fs.promises.readFile(filePath);
+                return new Response(buffer, {
+                    headers: { 'content-type': contentType }
+                });
+            } catch (error) {
+                console.error('[Protocol] Error handling request:', error);
+                return new Response('Internal Server Error', { status: 500 });
+            }
+        });
+    }
+
     // Check for updates first in production
     if (!isDev) {
         try {
