@@ -837,8 +837,13 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             const stream = await (navigator.mediaDevices as any).getUserMedia({
                 audio: withAudio ? {
                     mandatory: {
-                        chromeMediaSource: 'desktop'
-                    }
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: sourceId
+                    },
+                    optional: [
+                        { echoCancellation: true },
+                        { noiseSuppression: true }
+                    ]
                 } : false,
                 video: {
                     mandatory: {

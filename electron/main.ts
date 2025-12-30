@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences } from 'electron';
 import path from 'path';
 
 /**
@@ -12,27 +12,23 @@ import path from 'path';
 app.commandLine.appendSwitch('enable-loopback-capture-exclusion', 'true');
 
 // Enable features for better audio isolation and modern web capabilities
-app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,AudioServiceOutOfProcess,AudioServiceSandbox');
+// On Windows, loopback exclusion works best when AudioServiceOutOfProcess is enabled 
+// but AudioServiceSandbox is disabled (to allow the service to see process IDs).
+app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,AudioServiceOutOfProcess');
+app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox');
 app.commandLine.appendSwitch('auto-select-desktop-capture-source', 'Entire screen');
 
 // Suppress local audio playback and exclude current process from capture (Chrome 109+)
+// These features help modern Chromium variants handle loopback isolation better.
 app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybackIntended,ExcludeCurrentProcessFromAudioCapture');
 
 // Windows-specific: Ensure the audio service can correctly handle loopback exclusion
 if (process.platform === 'win32') {
-    // We removed 'AudioServiceOutOfProcess' from disable-features and added it to enable-features above
+    // Already handled by the switches above
 }
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import isDev from 'electron-is-dev';
-
-// Register custom protocol for production
-if (!isDev) {
-    protocol.registerSchemesAsPrivileged([
-        { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
-    ]);
-}
-
 
 // Enable detailed logging for auto-updater
 autoUpdater.logger = console;
@@ -90,7 +86,7 @@ function createUpdateWindow() {
     if (isDev) {
         updateWindow.loadFile(path.join(__dirname, '..', 'public', 'update.html'));
     } else {
-        updateWindow.loadURL('app://./update.html');
+        updateWindow.loadFile(path.join(__dirname, '..', 'dist', 'update.html'));
     }
 
     updateWindow.on('closed', () => {
@@ -262,7 +258,8 @@ function createWindow() {
         mainWindow.loadURL('http://localhost:5173');
         mainWindow.webContents.openDevTools();
     } else {
-        mainWindow.loadURL('app://./index.html');
+        // Load from app.asar - dist is at the root level
+        mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
     }
 
     mainWindow.on('closed', () => {
@@ -271,69 +268,6 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-    // Handle the custom protocol
-    if (!isDev) {
-        protocol.handle('app', async (request) => {
-            try {
-                const url = new URL(request.url);
-                let relativePath = url.pathname;
-
-                // Remove leading slash if present
-                if (relativePath.startsWith('/')) {
-                    relativePath = relativePath.substring(1);
-                }
-
-                // Default to index.html if path is empty
-                if (!relativePath || relativePath === '.') {
-                    relativePath = 'index.html';
-                }
-
-                const filePath = path.join(__dirname, '..', 'dist', relativePath);
-
-                if (!fs.existsSync(filePath)) {
-                    console.error(`[Protocol] File not found: ${filePath}`);
-                    return new Response('Not Found', { status: 404 });
-                }
-
-                // Determine MIME type
-                const mimeTypes: Record<string, string> = {
-                    '.js': 'text/javascript',
-                    '.mjs': 'text/javascript',
-                    '.cjs': 'text/javascript',
-                    '.jsx': 'text/javascript',
-                    '.tsx': 'text/javascript',
-                    '.css': 'text/css',
-                    '.html': 'text/html',
-                    '.json': 'application/json',
-                    '.wasm': 'application/wasm',
-                    '.svg': 'image/svg+xml',
-                    '.png': 'image/png',
-                    '.jpg': 'image/jpeg',
-                    '.jpeg': 'image/jpeg',
-                    '.gif': 'image/gif',
-                    '.webp': 'image/webp',
-                    '.ico': 'image/x-icon',
-                    '.woff': 'font/woff',
-                    '.woff2': 'font/woff2',
-                    '.ttf': 'font/ttf',
-                    '.otf': 'font/otf',
-                    '.map': 'application/json',
-                };
-
-                const ext = path.extname(filePath).toLowerCase();
-                const contentType = mimeTypes[ext] || 'application/octet-stream';
-
-                const buffer = await fs.promises.readFile(filePath);
-                return new Response(buffer, {
-                    headers: { 'Content-Type': contentType }
-                });
-            } catch (error) {
-                console.error('[Protocol] Error handling request:', error);
-                return new Response('Internal Server Error', { status: 500 });
-            }
-        });
-    }
-
     // Check for updates first in production
     if (!isDev) {
         try {
