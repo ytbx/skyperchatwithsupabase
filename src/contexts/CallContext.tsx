@@ -527,9 +527,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 // Check if Electron
                 const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
 
-                // Unified flow: Use Web implementation (getDisplayMedia) for both Web and Electron
-                // This ensures suppressLocalAudioPlayback works correctly to prevent echo
-                setIsQualityModalOpen(true);
+                if (isElectron) {
+                    setIsScreenShareModalOpen(true);
+                } else {
+                    // Web implementation - show quality picker first
+                    setIsQualityModalOpen(true);
+                }
             }
         } catch (error) {
             console.error('[CallContext] Error toggling screen share:', error);
@@ -546,31 +549,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: {
-                    suppressLocalAudioPlayback: true  // Prevent Ovox audio from being captured
-                } as any
-            } as DisplayMediaStreamOptions;
+                audio: true
+            };
 
             const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
             await startScreenShareWithStream(stream);
         } catch (error) {
             console.error('[CallContext] Error starting web screen share:', error);
-            // If suppressLocalAudioPlayback is not supported, try again without it
-            try {
-                const fallbackConstraints = {
-                    video: {
-                        width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
-                        height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                        frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
-                    },
-                    audio: true
-                };
-                console.log('[CallContext] Retrying without suppressLocalAudioPlayback (may cause echo)');
-                const stream = await navigator.mediaDevices.getDisplayMedia(fallbackConstraints);
-                await startScreenShareWithStream(stream);
-            } catch (fallbackError) {
-                console.error('[CallContext] Fallback screen share also failed:', fallbackError);
-            }
         }
     };
 
@@ -582,9 +567,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop'
-                    },
-                    // Attempt to suppress local audio playback (Electron/Chromium)
-                    suppressLocalAudioPlayback: true
+                    }
                 } : false,
                 video: {
                     mandatory: {

@@ -8,6 +8,9 @@ import path from 'path';
  * This eliminates echo where remote participants would hear their own voices.
  */
 
+// Enable exclusion of app's own audio from loopback capture (Essential for preventing echo)
+app.commandLine.appendSwitch('enable-loopback-capture-exclusion', 'true');
+
 // Enable exclusion of app's own audio from loopback capture (screen share audio)
 app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
 app.commandLine.appendSwitch('auto-select-desktop-capture-source', 'Entire screen');

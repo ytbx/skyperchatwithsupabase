@@ -818,31 +818,13 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: {
-                    suppressLocalAudioPlayback: true  // Prevent Ovox audio from being captured
-                } as any
-            } as DisplayMediaStreamOptions;
+                audio: true
+            };
 
             const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
             await startScreenShareWithStream(screenStream);
         } catch (error) {
             console.error('[VoiceChannelContext] Error starting web screen share:', error);
-            // If suppressLocalAudioPlayback is not supported, try again without it
-            try {
-                const fallbackConstraints = {
-                    video: {
-                        width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
-                        height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                        frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
-                    },
-                    audio: true
-                };
-                console.log('[VoiceChannelContext] Retrying without suppressLocalAudioPlayback (may cause echo)');
-                const screenStream = await navigator.mediaDevices.getDisplayMedia(fallbackConstraints);
-                await startScreenShareWithStream(screenStream);
-            } catch (fallbackError) {
-                console.error('[VoiceChannelContext] Fallback screen share also failed:', fallbackError);
-            }
         }
     };
 
@@ -855,9 +837,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop'
-                    },
-                    // Attempt to suppress local audio playback (Electron/Chromium)
-                    suppressLocalAudioPlayback: true
+                    }
                 } : false,
                 video: {
                     mandatory: {

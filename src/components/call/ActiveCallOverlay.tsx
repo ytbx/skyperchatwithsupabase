@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { CallControls } from './CallControls';
 import { User, Wifi, WifiOff, Maximize2, Minimize2, X, Volume2, MicOff, VolumeX } from 'lucide-react';
 import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
+import { StreamVolumeControl } from '../common/StreamVolumeControl';
+import { useUserAudio } from '@/contexts/UserAudioContext';
 
 export const ActiveCallOverlay: React.FC = () => {
     const { user } = useAuth();
@@ -35,7 +37,7 @@ export const ActiveCallOverlay: React.FC = () => {
 
     const [callDuration, setCallDuration] = useState(0);
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
-    const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
+    const { getUserScreenVolume, setUserScreenVolume, getUserScreenMuted, toggleUserScreenMute, getUserVoiceVolume, setUserVoiceVolume } = useUserAudio();
     const [contactName, setContactName] = useState<string>('');
     const [contactProfileImageUrl, setContactProfileImageUrl] = useState<string | null>(null);
     const [localProfileImageUrl, setLocalProfileImageUrl] = useState<string | null>(null);
@@ -203,21 +205,11 @@ export const ActiveCallOverlay: React.FC = () => {
 
 
     // Helper to set video stream - handles race conditions with play
-    // Refactored to be used inside useEffect
     const attachStreamToVideo = async (video: HTMLVideoElement, stream: MediaStream, videoId: string) => {
         if (video.srcObject !== stream) {
             console.log(`[ActiveCallOverlay] Attaching stream to ${videoId}`);
             video.srcObject = stream;
-            // Common volume handling
-            const vol = volumes.get(videoId) ?? 1.0;
-            video.volume = isDeafened ? 0 : vol;
-
-            // CRITICAL FIX: Always mute local streams to prevent feedback loop
-            if (videoId.startsWith('local-')) {
-                video.muted = true;
-            } else {
-                video.muted = isDeafened;
-            }
+            video.muted = true; // Mute video element, audio is handled by GlobalAudio
 
             try {
                 await video.play();
@@ -238,7 +230,7 @@ export const ActiveCallOverlay: React.FC = () => {
             // Clear video if sharing stopped
             video.srcObject = null;
         }
-    }, [remoteScreenStream, isRemoteScreenSharing, ignoredStreams]);
+    }, [remoteScreenStream, isRemoteScreenSharing]);
 
     // Effect to handle Remote Camera Stream
     useEffect(() => {
@@ -252,7 +244,7 @@ export const ActiveCallOverlay: React.FC = () => {
                 video.srcObject = null;
             }
         }
-    }, [remoteStream, ignoredStreams]);
+    }, [remoteStream]);
 
     // Effect to handle Local Screen Stream
     useEffect(() => {
@@ -264,32 +256,29 @@ export const ActiveCallOverlay: React.FC = () => {
         } else {
             video.srcObject = null;
         }
-    }, [screenStream, isScreenSharing, ignoredStreams]);
+    }, [screenStream, isScreenSharing]);
 
-    // Handle deafen state changes for existing streams
+    // Handle initial mute state
     useEffect(() => {
         const audioElements = [
             { ref: remoteCameraVideoRef, id: 'remote-camera' },
-            { ref: remoteScreenVideoRef, id: 'remote-screen' }
+            { ref: remoteScreenVideoRef, id: 'remote-screen' },
+            { ref: localScreenVideoRef, id: 'local-screen' }
         ];
 
-        audioElements.forEach(({ ref, id }) => {
+        audioElements.forEach(({ ref }) => {
             if (ref.current) {
-                const vol = volumes.get(id) ?? 1.0;
-                ref.current.volume = isDeafened ? 0 : vol;
-                ref.current.muted = isDeafened;
+                ref.current.muted = true;
             }
         });
-    }, [isDeafened, volumes]);
+    }, []);
 
     const handleVolumeChange = (videoId: string, volume: number) => {
-        const videoRefs = [remoteScreenVideoRef, localScreenVideoRef, remoteCameraVideoRef];
-        videoRefs.forEach(ref => {
-            if (ref.current) {
-                ref.current.volume = volume;
-            }
-        });
-        setVolumes(new Map(volumes.set(videoId, volume)));
+        if (videoId === 'remote-screen' || videoId === 'local-screen') {
+            setUserScreenVolume(contactId, volume);
+        } else {
+            setUserVoiceVolume(contactId, volume);
+        }
     };
 
     const openFullscreen = (videoId: string) => {
@@ -306,13 +295,11 @@ export const ActiveCallOverlay: React.FC = () => {
         if (!video || !fullscreenVideoId) return;
 
         let stream: MediaStream | null = null;
-        let isLocalStream = false;
 
         if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
             stream = remoteScreenStream;
         } else if (fullscreenVideoId === 'local-screen' && screenStream) {
             stream = screenStream;
-            isLocalStream = true;
         } else if (fullscreenVideoId === 'remote-camera' && remoteStream) {
             stream = remoteStream;
         }
@@ -321,18 +308,14 @@ export const ActiveCallOverlay: React.FC = () => {
             // Only update srcObject if it changed
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
-                video.muted = isLocalStream; // Mute local stream to prevent feedback
+                video.muted = true;
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
-            // CRITICAL: Ensure local user is ALWAYS muted even if video element is reused
-            if (isLocalStream && !video.muted) {
+            if (!video.muted) {
                 video.muted = true;
             }
-            // Always update volume for remote streams
-            const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
-            video.volume = isLocalStream ? 0 : currentVolume;
         }
-    }, [fullscreenVideoId, remoteScreenStream, screenStream, remoteStream, volumes]);
+    }, [fullscreenVideoId, remoteScreenStream, screenStream, remoteStream]);
 
     // Call duration timer
     useEffect(() => {
@@ -587,14 +570,12 @@ export const ActiveCallOverlay: React.FC = () => {
                                                 el.srcObject = streamInfo.stream;
                                             }
                                             // CRITICAL: Always force mute local stream
-                                            if (streamInfo.muted) {
-                                                el.muted = true;
-                                            }
+                                            el.muted = true;
                                         }
                                     }}
                                     autoPlay
                                     playsInline
-                                    muted={streamInfo.muted}
+                                    muted={true}
                                     className={`w-full h-full object-cover bg-black ${streamInfo.isMirror ? 'mirror' : ''}`}
                                 />
                             ) : (
@@ -635,6 +616,15 @@ export const ActiveCallOverlay: React.FC = () => {
                                         <Maximize2 size={16} />
                                     </button>
                                 )}
+                            </div>
+
+                            {/* Volume slider */}
+                            <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <StreamVolumeControl
+                                    volume={streamInfo.id.includes('screen') ? getUserScreenVolume(contactId) : getUserVoiceVolume(contactId)}
+                                    onVolumeChange={(v) => handleVolumeChange(streamInfo.id, v)}
+                                    isMuted={streamInfo.muted || isDeafened || (streamInfo.id.includes('screen') ? getUserScreenMuted(contactId) : false)}
+                                />
                             </div>
 
                             {/* Voice Activity Indicator */}
@@ -686,21 +676,20 @@ export const ActiveCallOverlay: React.FC = () => {
             {fullscreenVideoId && (() => {
                 let stream: MediaStream | null = null;
                 let label = '';
-                let currentVolume = 1.0;
 
                 if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
                     stream = remoteScreenStream;
                     label = `${contactName} - Ekran paylaşımı`;
-                    currentVolume = volumes.get('remote-screen') ?? 1.0;
                 } else if (fullscreenVideoId === 'local-screen' && screenStream) {
                     stream = screenStream;
                     label = 'Sizin ekranınız';
-                    currentVolume = volumes.get('local-screen') ?? 1.0;
                 } else if (fullscreenVideoId === 'remote-camera' && remoteStream) {
                     stream = remoteStream;
                     label = `${contactName} - Kamera`;
-                    currentVolume = volumes.get('remote-camera') ?? 1.0;
                 }
+
+                const currentVolume = fullscreenVideoId.includes('screen') ? getUserScreenVolume(contactId) : getUserVoiceVolume(contactId);
+                const isMuted = fullscreenVideoId.startsWith('local-') || isDeafened || (fullscreenVideoId.includes('screen') ? getUserScreenMuted(contactId) : false);
 
                 return (
                     <div
@@ -727,22 +716,17 @@ export const ActiveCallOverlay: React.FC = () => {
                                 <X className="w-6 h-6 text-white" />
                             </button>
 
-                            {/* Volume control (not for local screen) */}
-                            {fullscreenVideoId !== 'local-screen' && (
-                                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
-                                    <Volume2 className="w-5 h-5 text-white" />
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.1"
-                                        value={currentVolume}
-                                        onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
-                                        className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                    />
-                                    <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
-                                </div>
-                            )}
+                            {/* Fullscreen Volume slider */}
+                            <div className="absolute bottom-8 right-8 z-10">
+                                <StreamVolumeControl
+                                    volume={currentVolume}
+                                    onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId, v)}
+                                    isMuted={isMuted}
+                                    className="scale-125"
+                                />
+                            </div>
+
+
 
                             {/* Label */}
                             <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">

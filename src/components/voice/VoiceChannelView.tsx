@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MonitorUp, Users, MicOff, Headphones, Maximize2, Minimize2, X, Volume2, User } from 'lucide-react';
+import { useUserAudio } from '@/contexts/UserAudioContext';
+import { MonitorUp, Users, MicOff, Headphones, Maximize2, Minimize2, X, Volume2, User, Camera, Trash2, VolumeX } from 'lucide-react';
 import { UserVolumeContextMenu } from './UserVolumeContextMenu';
+import { StreamVolumeControl } from '../common/StreamVolumeControl';
 
 interface VoiceParticipant {
     user_id: string;
@@ -29,7 +31,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const { user } = useAuth();
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
-    const [volumes, setVolumes] = useState<Map<string, number>>(new Map());
+    const { getUserScreenVolume, setUserScreenVolume, getUserScreenMuted, toggleUserScreenMute, getUserVoiceVolume, setUserVoiceVolume, getEffectiveVoiceVolume, getEffectiveScreenVolume } = useUserAudio();
     const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string; streamId: string } | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
@@ -131,7 +133,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             const video = videoRefs.current.get(videoId);
             if (video && participant.cameraStream && video.srcObject !== participant.cameraStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.cameraStream;
-                video.volume = volumes.get(videoId) ?? 1.0;
+                video.muted = true; // Mute video element, audio is handled by GlobalAudio
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
@@ -142,17 +144,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             const video = videoRefs.current.get(videoId);
             if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.screenStream;
-                video.volume = volumes.get(videoId) ?? 1.0;
-
-                // CRITICAL FIX: Always mute local screen share to prevent feedback loop
-                if (participant.user_id === user?.id) {
-                    video.muted = true;
-                }
-
+                video.muted = true; // ALWAYS mute video element, audio is handled by GlobalAudio
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
-    }, [cameraParticipants, screenSharingParticipants, volumes, ignoredStreams]);
+    }, [cameraParticipants, screenSharingParticipants, ignoredStreams]);
 
     // Get the current fullscreen stream
     const getFullscreenStream = useCallback((): { stream: MediaStream | null; isLocalUser: boolean } => {
@@ -177,31 +173,22 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             // Only update srcObject if it changed
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
-                video.muted = isLocalUser; // Mute local user's stream to prevent feedback
+                video.muted = true; // Mute fullscreen video element too
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
-            // CRITICAL: Ensure local user is ALWAYS muted even if video element is reused
-            if (isLocalUser && !video.muted) {
+            if (!video.muted) {
                 video.muted = true;
             }
-            // Always update volume
-            const currentVolume = volumes.get(fullscreenVideoId!) ?? 1.0;
-            video.volume = isLocalUser ? 0 : currentVolume;
         }
-    }, [fullscreenVideoId, getFullscreenStream, volumes]);
+    }, [fullscreenVideoId, getFullscreenStream]);
 
-    const handleVolumeChange = useCallback((videoId: string, volume: number) => {
-        // Update the video element in the list
-        const video = videoRefs.current.get(videoId);
-        if (video) {
-            video.volume = volume;
+    const handleVolumeChange = useCallback((videoId: string, userId: string, volume: number) => {
+        if (videoId.startsWith('screen-')) {
+            setUserScreenVolume(userId, volume);
+        } else {
+            setUserVoiceVolume(userId, volume);
         }
-        // Also update fullscreen video if it's the same
-        if (fullscreenVideoRef.current && fullscreenVideoId === videoId) {
-            fullscreenVideoRef.current.volume = volume;
-        }
-        setVolumes(prev => new Map(prev.set(videoId, volume)));
-    }, [fullscreenVideoId]);
+    }, [setUserScreenVolume, setUserVoiceVolume]);
 
     const openFullscreen = (videoId: string) => {
         setFullscreenVideoId(videoId);
@@ -258,7 +245,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         {/* Camera streams */}
                         {cameraParticipants.map((participant) => {
                             const videoId = `camera-${participant.user_id}`;
-                            const currentVolume = volumes.get(videoId) ?? 1.0;
+                            const currentVolume = getUserVoiceVolume(participant.user_id);
+                            const isMuted = false; // Add muted logic if needed per user
 
                             return (
                                 <div
@@ -292,36 +280,21 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.volume = currentVolume;
+                                                    el.muted = true; // Ensure muted
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }
                                             }}
                                             autoPlay
                                             playsInline
+                                            muted={true}
                                             className={`w-full h-full bg-black ${isMaximized ? 'object-contain' : 'object-cover'}`}
                                         />
                                     )}
 
                                     {/* Controls overlay */}
                                     <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {/* Volume control */}
-                                        <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
-                                            <Volume2 className="w-4 h-4 text-white" />
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="1"
-                                                step="0.1"
-                                                value={currentVolume}
-                                                onChange={(e) => handleVolumeChange(videoId, parseFloat(e.target.value))}
-                                                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                                style={{
-                                                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
-                                                }}
-                                            />
-                                            <span className="text-xs text-white w-8">{Math.round(currentVolume * 100)}%</span>
-                                        </div>
+
                                         {/* Fullscreen button */}
                                         <button
                                             onClick={() => openFullscreen(videoId)}
@@ -330,6 +303,15 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         >
                                             <Maximize2 className="w-5 h-5 text-white" />
                                         </button>
+                                    </div>
+
+                                    {/* Volume slider */}
+                                    <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <StreamVolumeControl
+                                            volume={currentVolume}
+                                            onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
+                                            isMuted={participant.user_id === user?.id || isMuted}
+                                        />
                                     </div>
 
                                     {/* User info overlay */}
@@ -370,7 +352,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         {/* Screen share streams */}
                         {screenSharingParticipants.map((participant) => {
                             const videoId = `screen-${participant.user_id}`;
-                            const currentVolume = volumes.get(videoId) ?? 1.0;
+                            const currentVolume = getUserScreenVolume(participant.user_id);
+                            const isMuted = getUserScreenMuted(participant.user_id);
 
                             return (
                                 <div
@@ -404,41 +387,21 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.volume = currentVolume;
-                                                    // CRITICAL: Always force mute local stream
-                                                    if (participant.user_id === user?.id) {
-                                                        el.muted = true;
-                                                    }
+                                                    el.muted = true;
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }
                                             }}
                                             autoPlay
                                             playsInline
-                                            muted={participant.user_id === user?.id} // Mute if local user
+                                            muted={true}
                                             className={`w-full h-full bg-black ${isMaximized ? 'object-contain' : 'object-contain'}`}
                                         />
                                     )}
 
                                     {/* Controls overlay */}
                                     <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {/* Volume control */}
-                                        <div className="flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
-                                            <Volume2 className="w-4 h-4 text-white" />
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="1"
-                                                step="0.1"
-                                                value={currentVolume}
-                                                onChange={(e) => handleVolumeChange(videoId, parseFloat(e.target.value))}
-                                                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                                style={{
-                                                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
-                                                }}
-                                            />
-                                            <span className="text-xs text-white w-8">{Math.round(currentVolume * 100)}%</span>
-                                        </div>
+
                                         {/* Fullscreen button */}
                                         <button
                                             onClick={() => openFullscreen(videoId)}
@@ -447,6 +410,15 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         >
                                             <Maximize2 className="w-5 h-5 text-white" />
                                         </button>
+                                    </div>
+
+                                    {/* Volume slider */}
+                                    <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <StreamVolumeControl
+                                            volume={currentVolume}
+                                            onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
+                                            isMuted={participant.user_id === user?.id || isMuted}
+                                        />
                                     </div>
 
                                     {/* User info overlay */}
@@ -504,8 +476,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                     );
                     const isCamera = fullscreenVideoId.startsWith('camera-');
                     const stream = isCamera ? participant?.cameraStream : participant?.screenStream;
-                    const currentVolume = volumes.get(fullscreenVideoId) ?? 1.0;
-                    const isLocalUser = participant?.user_id === user?.id;
+                    const participantId = participant?.user_id || '';
+                    const currentVolume = isCamera ? getUserVoiceVolume(participantId) : getUserScreenVolume(participantId);
+                    const isMuted = participantId === user?.id || (isCamera ? false : getUserScreenMuted(participantId));
+                    const isLocalUser = participantId === user?.id;
 
                     return (
                         <div
@@ -532,25 +506,17 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     <X className="w-6 h-6 text-white" />
                                 </button>
 
-                                {/* Volume control - only for other users' streams */}
-                                {!isLocalUser && (
-                                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-black/70 rounded-lg px-4 py-3">
-                                        <Volume2 className="w-5 h-5 text-white" />
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="1"
-                                            step="0.1"
-                                            value={currentVolume}
-                                            onChange={(e) => handleVolumeChange(fullscreenVideoId, parseFloat(e.target.value))}
-                                            className="w-32 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                                            style={{
-                                                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${currentVolume * 100}%, #4b5563 ${currentVolume * 100}%, #4b5563 100%)`
-                                            }}
-                                        />
-                                        <span className="text-sm text-white font-medium w-10">{Math.round(currentVolume * 100)}%</span>
-                                    </div>
-                                )}
+                                {/* Fullscreen Volume slider */}
+                                <div className="absolute bottom-8 right-8 z-10">
+                                    <StreamVolumeControl
+                                        volume={currentVolume}
+                                        onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId!, participantId, v)}
+                                        isMuted={isLocalUser}
+                                        className="scale-125"
+                                    />
+                                </div>
+
+
 
                                 {/* User info */}
                                 <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">

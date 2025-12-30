@@ -12,6 +12,12 @@ let activeProcessors: Set<{ setEnabled: (enabled: boolean) => void }> = new Set(
 // RNNoise operates on 480 samples per frame (10ms at 48kHz)
 const FRAME_SIZE = 480;
 const SAMPLE_RATE = 48000;
+const HIGHPASS_FREQ = 85;
+
+// VAD Settings
+const VAD_THRESHOLD = 0.85; // Probability threshold for speech
+const VAD_RELEASE_MS = 150; // How long to stay open after speech ends
+const VAD_SAMPLES_SMOOTH = (SAMPLE_RATE / 1000) * VAD_RELEASE_MS;
 
 /**
  * Set the global noise suppression enabled state
@@ -43,11 +49,10 @@ export async function createNoiseSuppressionProcessor(stream: MediaStream): Prom
     setEnabled: (enabled: boolean) => void;
     cleanup: () => void;
 }> {
-    console.log('[NoiseSuppression] Creating AI processor for stream...');
+    console.log('[NoiseSuppression] Creating VAD-Gated AI processor for stream...');
 
     try {
         // Initialize RNNoise Module
-        // Use sync version which has WASM inlined
         const rnnModule = await createRNNWasmModuleSync();
 
         // Emscripten API helpers
@@ -59,15 +64,13 @@ export async function createNoiseSuppressionProcessor(stream: MediaStream): Prom
         const HEAPF32 = rnnModule.HEAPF32;
 
         // Create RNNoise context
-        // Argument null means use the default embedded model
         const contextState = _rnnoise_create(null);
 
-        // Allocate memory for input and output chunks (float arrays)
-        // 4 bytes per float
+        // Allocate memory for input and output chunks
         const inputPtr = _malloc(FRAME_SIZE * 4);
         const outputPtr = _malloc(FRAME_SIZE * 4);
 
-        // Create Audio Context forced to 48kHz for RNNoise compatibility
+        // Create Audio Context forced to 48kHz
         const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
 
         if (audioContext.state === 'suspended') {
@@ -77,179 +80,144 @@ export async function createNoiseSuppressionProcessor(stream: MediaStream): Prom
         const source = audioContext.createMediaStreamSource(stream);
         const destination = audioContext.createMediaStreamDestination();
 
-        // Use ScriptProcessorNode (bufferSize, inputChannels, outputChannels)
-        // 4096 gives ~85ms latency but is safer for main thread performance
-        const scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+        // 1. Highpass Filter (Remove rumble/thuds before AI processing)
+        const highpass = audioContext.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = HIGHPASS_FREQ;
+        highpass.Q.value = 0.7;
 
-        // Circular buffer to handle mismatch between script node buffer size and RNNoise frame size
-        const circularBuffer = new Float32Array(8192); // Plenty of space
-        let writeIndex = 0;
-        let readIndex = 0;
-        let bufferCount = 0;
+        // 2. Script Processor
+        const scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+
+        // Circular Buffers
+        const BUFFER_MASK = 16383; // 16384 size
+        const inputFifo = new Float32Array(16384);
+        const outputFifo = new Float32Array(16384);
+
+        // Pointers
+        let inHead = 0;
+        let inTail = 0;
+        let outHead = 0;
+        let outTail = 0;
 
         let processorEnabled = isEnabled;
 
-        scriptNode.onaudioprocess = (audioProcessingEvent) => {
-            const inputBuffer = audioProcessingEvent.inputBuffer;
-            const outputBuffer = audioProcessingEvent.outputBuffer;
-            const inputData = inputBuffer.getChannelData(0);
-            const outputData = outputBuffer.getChannelData(0);
+        // Pre-fill state
+        let hasPrefilled = false;
+        const PREFILL_SIZE = 2048;
 
-            // Bypass if disabled
-            if (!processorEnabled) {
-                outputData.set(inputData);
-                return;
-            }
-
-            // Write input to circular buffer
-            for (let i = 0; i < inputData.length; i++) {
-                circularBuffer[writeIndex] = inputData[i];
-                writeIndex = (writeIndex + 1) % circularBuffer.length;
-                bufferCount++;
-            }
-
-            // Process as many 480-sample frames as possible
-            let outputWriteIndex = 0;
-
-            // Using a temporary output buffer for the script processor cycle
-            // We fill the script processor's output buffer from our processed results
-            // Note: This logic assumes we can process enough data to fill the output. 
-            // ScriptProcessor requires synchronously filling outputData. 
-            // If we don't have enough data (latency startup), we write zeros.
-
-            // However, complicating this with a read/write pointer for output is tricky.
-            // Simplified Ring Buffer Logic:
-            // 1. We just process chunks from the circular buffer and write them back to a "processed" circular buffer? 
-            //    Or just write directly to outputData?
-            //    Problem: inputData.length (e.g. 4096) is not a multiple of 480 (480 * 8 = 3840).
-            //    So we will have leftovers.
-
-            // Let's use a simpler approach:
-            // Just maintain a persistent buffer of input, process 480 chunks, store in a persistent buffer of output, 
-            // and pull from output buffer to fill the current request.
-
-            // Resetting for safety if buffer is strangely huge/small? No, just rely on math.
-        };
-
-        // Redefining the processing logic with proper buffering
-        // We need:
-        // 1. Input FIFO (stores raw samples)
-        // 2. Output FIFO (stores processed samples)
-
-        const inputFifo = new Float32Array(16384);
-        let inputFifoHead = 0;
-        let inputFifoTail = 0;
-
-        const outputFifo = new Float32Array(16384);
-        let outputFifoHead = 0;
-        let outputFifoTail = 0;
-
-        const pushToFifo = (fifo: Float32Array, headRef: { val: number }, data: Float32Array) => {
-            for (let i = 0; i < data.length; i++) {
-                fifo[headRef.val] = data[i];
-                headRef.val = (headRef.val + 1) % fifo.length;
-            }
-        };
-
-        const popFromFifo = (fifo: Float32Array, tailRef: { val: number }, length: number, outData: Float32Array | null) => {
-            // Check availability? Caller should check.
-            for (let i = 0; i < length; i++) {
-                const val = fifo[tailRef.val];
-                if (outData) outData[i] = val;
-                tailRef.val = (tailRef.val + 1) % fifo.length;
-            }
-        };
-
-        const getFifoCount = (head: number, tail: number, length: number) => {
-            if (head >= tail) return head - tail;
-            return length - (tail - head);
-        };
-
-        // Refs for closure access
-        const ptrs = {
-            inHead: 0, inTail: 0,
-            outHead: 0, outTail: 0
-        };
+        // VAD State
+        let currentVadGain = 0.0;
+        let framesBelowThreshold = 0;
+        const MAX_FRAMES_SILENCE = Math.ceil(VAD_RELEASE_MS / 10); // 10ms per frame
 
         scriptNode.onaudioprocess = (e) => {
             const input = e.inputBuffer.getChannelData(0);
             const output = e.outputBuffer.getChannelData(0);
 
+            // Bypass Check
             if (!processorEnabled) {
                 output.set(input);
+                inHead = 0; inTail = 0;
+                outHead = 0; outTail = 0;
+                hasPrefilled = false;
+                currentVadGain = 1.0;
                 return;
             }
 
-            // 1. Push new audio to Input FIFO
+            // 1. Write Input to Circular Buffer
             for (let i = 0; i < input.length; i++) {
-                inputFifo[ptrs.inHead] = input[i];
-                ptrs.inHead = (ptrs.inHead + 1) % inputFifo.length;
+                inputFifo[inHead] = input[i];
+                inHead = (inHead + 1) & BUFFER_MASK;
             }
 
-            // 2. Process as many 480 frames as available
-            let availableSamples = getFifoCount(ptrs.inHead, ptrs.inTail, inputFifo.length);
+            // 2. Process Data
+            let availableIn = (inHead - inTail) & BUFFER_MASK;
 
-            while (availableSamples >= FRAME_SIZE) {
-                // Copy 480 samples to WASM input memory
+            while (availableIn >= FRAME_SIZE) {
+                // Copy to WASM
                 for (let i = 0; i < FRAME_SIZE; i++) {
-                    const sample = inputFifo[ptrs.inTail];
-                    ptrs.inTail = (ptrs.inTail + 1) % inputFifo.length;
+                    const sample = inputFifo[inTail];
+                    inTail = (inTail + 1) & BUFFER_MASK;
                     HEAPF32[(inputPtr >> 2) + i] = sample;
                 }
+                availableIn -= FRAME_SIZE;
 
-                // Call RNNoise
-                _rnnoise_process_frame(contextState, outputPtr, inputPtr);
+                // Process (returns VAD score)
+                const vadScore = _rnnoise_process_frame(contextState, outputPtr, inputPtr);
 
-                // Copy 480 samples from WASM output memory to Output FIFO
-                for (let i = 0; i < FRAME_SIZE; i++) {
-                    const sample = HEAPF32[(outputPtr >> 2) + i];
-                    outputFifo[ptrs.outHead] = sample;
-                    ptrs.outHead = (ptrs.outHead + 1) % outputFifo.length;
+                // Determine VAD target gain
+                let targetGain = 0.0;
+                if (vadScore > VAD_THRESHOLD) {
+                    targetGain = 1.0;
+                    framesBelowThreshold = 0;
+                } else {
+                    framesBelowThreshold++;
+                    if (framesBelowThreshold < MAX_FRAMES_SILENCE) {
+                        targetGain = 1.0; // Hangover: stay open
+                    } else {
+                        targetGain = 0.0; // Hard close
+                    }
                 }
 
-                availableSamples -= FRAME_SIZE;
+                // Copy from WASM AND Apply VAD Smoothing
+                for (let i = 0; i < FRAME_SIZE; i++) {
+                    // Simple linear smoothing per sample to avoid pops
+                    currentVadGain = currentVadGain * 0.998 + targetGain * 0.002;
+
+                    const sample = HEAPF32[(outputPtr >> 2) + i];
+                    outputFifo[outHead] = sample * currentVadGain;
+                    outHead = (outHead + 1) & BUFFER_MASK;
+                }
             }
 
-            // 3. Fill the script processor output buffer from Output FIFO
-            // Ensure we have enough data, otherwise pad with silence (latency fill)
-            const needed = output.length;
-            const availableOutput = getFifoCount(ptrs.outHead, ptrs.outTail, outputFifo.length);
+            // 3. Output Logic
+            let availableOut = (outHead - outTail) & BUFFER_MASK;
 
-            if (availableOutput >= needed) {
-                for (let i = 0; i < needed; i++) {
-                    output[i] = outputFifo[ptrs.outTail];
-                    ptrs.outTail = (ptrs.outTail + 1) % outputFifo.length;
+            if (!hasPrefilled) {
+                if (availableOut >= PREFILL_SIZE) {
+                    hasPrefilled = true;
+                } else {
+                    output.fill(0);
+                    return;
+                }
+            }
+
+            if (availableOut >= output.length) {
+                for (let i = 0; i < output.length; i++) {
+                    output[i] = outputFifo[outTail];
+                    outTail = (outTail + 1) & BUFFER_MASK;
                 }
             } else {
-                // Not enough processed data yet (startup latency)
-                // Output silence or setup passthrough? Silence is better than glitch.
-                // Or just output whatever we have and 0 the rest.
+                // Underrun
                 let i = 0;
-                while (ptrs.outTail !== ptrs.outHead && i < needed) {
-                    output[i] = outputFifo[ptrs.outTail];
-                    ptrs.outTail = (ptrs.outTail + 1) % outputFifo.length;
+                while (outTail !== outHead && i < output.length) {
+                    output[i] = outputFifo[outTail];
+                    outTail = (outTail + 1) & BUFFER_MASK;
                     i++;
                 }
-                while (i < needed) {
+                while (i < output.length) {
                     output[i] = 0;
                     i++;
                 }
+                hasPrefilled = false;
             }
         };
 
-        source.connect(scriptNode);
+        // Connect graph
+        source.connect(highpass);
+        highpass.connect(scriptNode);
         scriptNode.connect(destination);
 
-        // Control object
         const controller = {
             setEnabled: (enabled: boolean) => {
-                console.log('[NoiseSuppression] AI Processor enabled:', enabled);
+                console.log('[NoiseSuppression] VAD Processor enabled:', enabled);
                 processorEnabled = enabled;
             }
         };
 
         activeProcessors.add(controller);
-        console.log('[NoiseSuppression] ✓ AI Processor created successfully');
+        console.log('[NoiseSuppression] ✓ VAD-Gated Advanced Processor created');
 
         return {
             outputStream: destination.stream,
@@ -260,6 +228,7 @@ export async function createNoiseSuppressionProcessor(stream: MediaStream): Prom
 
                 try {
                     source.disconnect();
+                    highpass.disconnect();
                     scriptNode.disconnect();
                     _free(inputPtr);
                     _free(outputPtr);
@@ -275,7 +244,6 @@ export async function createNoiseSuppressionProcessor(stream: MediaStream): Prom
 
     } catch (error) {
         console.error('[NoiseSuppression] Failed to initialize RNNoise:', error);
-        // Fallback to passthrough if AI fails
         return {
             outputStream: stream,
             setEnabled: () => { },
@@ -285,10 +253,16 @@ export async function createNoiseSuppressionProcessor(stream: MediaStream): Prom
 }
 
 /**
+ * Simple wrapper for one-time stream processing
+ */
+export async function applyNoiseSuppressionToStream(stream: MediaStream): Promise<MediaStream> {
+    const result = await createNoiseSuppressionProcessor(stream);
+    return result.outputStream;
+}
+
+/**
  * Cleanup all noise suppression resources
  */
 export function cleanupNoiseSuppression() {
-    console.log('[NoiseSuppression] Cleaning up all processors');
     activeProcessors.clear();
 }
-

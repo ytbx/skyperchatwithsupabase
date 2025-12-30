@@ -5,6 +5,8 @@ interface UserAudioSettings {
     voiceMuted: boolean;
     soundpadVolume: number; // 0-2 (0% to 200%)
     soundpadMuted: boolean;
+    screenVolume: number; // 0-2 (0% to 200%)
+    screenMuted: boolean;
 }
 
 interface UserAudioContextType {
@@ -20,6 +22,12 @@ interface UserAudioContextType {
     setUserSoundpadVolume: (userId: string, volume: number) => void;
     toggleUserSoundpadMute: (userId: string) => void;
 
+    // Per-user screen settings
+    getUserScreenVolume: (userId: string) => number;
+    getUserScreenMuted: (userId: string) => boolean;
+    setUserScreenVolume: (userId: string, volume: number) => void;
+    toggleUserScreenMute: (userId: string) => void;
+
     // Global mute (for voice)
     isGlobalMuted: boolean;
     toggleGlobalMute: () => void;
@@ -31,6 +39,7 @@ interface UserAudioContextType {
     // Get effective volume (considering mute states)
     getEffectiveVoiceVolume: (userId: string) => number;
     getEffectiveSoundpadVolume: (userId: string) => number;
+    getEffectiveScreenVolume: (userId: string) => number;
 
     // Legacy compatibility (returns voice settings)
     getUserVolume: (userId: string) => number;
@@ -54,7 +63,9 @@ const DEFAULT_SETTINGS: UserAudioSettings = {
     voiceVolume: 1.0,
     voiceMuted: false,
     soundpadVolume: 1.0,
-    soundpadMuted: false
+    soundpadMuted: false,
+    screenVolume: 1.0,
+    screenMuted: false
 };
 
 export function UserAudioProvider({ children }: { children: ReactNode }) {
@@ -173,6 +184,38 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
         }));
     }, []);
 
+    // Screen settings
+    const getUserScreenVolume = useCallback((userId: string): number => {
+        return userSettings[userId]?.screenVolume ?? 1.0;
+    }, [userSettings]);
+
+    const getUserScreenMuted = useCallback((userId: string): boolean => {
+        return userSettings[userId]?.screenMuted ?? false;
+    }, [userSettings]);
+
+    const setUserScreenVolume = useCallback((userId: string, volume: number) => {
+        const clampedVolume = Math.max(0, Math.min(2, volume));
+        setUserSettings(prev => ({
+            ...prev,
+            [userId]: {
+                ...DEFAULT_SETTINGS,
+                ...prev[userId],
+                screenVolume: clampedVolume
+            }
+        }));
+    }, []);
+
+    const toggleUserScreenMute = useCallback((userId: string) => {
+        setUserSettings(prev => ({
+            ...prev,
+            [userId]: {
+                ...DEFAULT_SETTINGS,
+                ...prev[userId],
+                screenMuted: !(prev[userId]?.screenMuted ?? false)
+            }
+        }));
+    }, []);
+
     const toggleGlobalMute = useCallback(() => {
         setIsGlobalMuted(prev => !prev);
     }, []);
@@ -193,6 +236,12 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
         return getUserSoundpadVolume(userId);
     }, [isGlobalSoundpadMuted, getUserSoundpadMuted, getUserSoundpadVolume]);
 
+    const getEffectiveScreenVolume = useCallback((userId: string): number => {
+        if (isGlobalMuted) return 0; // Screen audio should respect global voice mute for now
+        if (getUserScreenMuted(userId)) return 0;
+        return getUserScreenVolume(userId);
+    }, [isGlobalMuted, getUserScreenMuted, getUserScreenVolume]);
+
     // Legacy compatibility
     const getUserVolume = getUserVoiceVolume;
     const getUserMuted = getUserVoiceMuted;
@@ -211,12 +260,17 @@ export function UserAudioProvider({ children }: { children: ReactNode }) {
                 getUserSoundpadMuted,
                 setUserSoundpadVolume,
                 toggleUserSoundpadMute,
+                getUserScreenVolume,
+                getUserScreenMuted,
+                setUserScreenVolume,
+                toggleUserScreenMute,
                 isGlobalMuted,
                 toggleGlobalMute,
                 isGlobalSoundpadMuted,
                 toggleGlobalSoundpadMute,
                 getEffectiveVoiceVolume,
                 getEffectiveSoundpadVolume,
+                getEffectiveScreenVolume,
                 // Legacy
                 getUserVolume,
                 getUserMuted,

@@ -15,7 +15,7 @@ export const GlobalAudio: React.FC = () => {
         isDeafened: isCallDeafened
     } = useCall();
     const { user } = useAuth();
-    const { getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isGlobalMuted } = useUserAudio();
+    const { getEffectiveVoiceVolume, getEffectiveSoundpadVolume, getEffectiveScreenVolume, isGlobalMuted } = useUserAudio();
     const { audioOutputDeviceId } = useDeviceSettings();
 
     // Refs to keep track of audio elements
@@ -96,7 +96,7 @@ export const GlobalAudio: React.FC = () => {
 
             manageAudio(participant.stream, voiceAudioRefs.current, 'VOICE', getEffectiveVoiceVolume);
             manageAudio(participant.soundpadStream, soundpadAudioRefs.current, 'SOUNDPAD', getEffectiveSoundpadVolume);
-            manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveVoiceVolume); // Use voice volume for screen for now
+            manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
         });
 
         // Cleanup on unmount
@@ -123,8 +123,8 @@ export const GlobalAudio: React.FC = () => {
 
         updateVolumes(voiceAudioRefs.current, getEffectiveVoiceVolume);
         updateVolumes(soundpadAudioRefs.current, getEffectiveSoundpadVolume);
-        updateVolumes(screenAudioRefs.current, getEffectiveVoiceVolume);
-    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isVoiceChannelDeafened, isGlobalMuted]);
+        updateVolumes(screenAudioRefs.current, getEffectiveScreenVolume);
+    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, getEffectiveScreenVolume, isVoiceChannelDeafened, isGlobalMuted]);
 
     // Handle Direct Call VOICE Audio - apply user volume settings
     useEffect(() => {
@@ -206,7 +206,7 @@ export const GlobalAudio: React.FC = () => {
             // Apply volume
             let volume = 0;
             if (!isCallDeafened && !isGlobalMuted) {
-                volume = getEffectiveVoiceVolume(remoteUserId);
+                volume = getEffectiveScreenVolume(remoteUserId);
             }
             const safeVol = safeVolume(volume);
             audio.volume = safeVol;
@@ -257,14 +257,14 @@ export const GlobalAudio: React.FC = () => {
         if (callScreenAudioRef.current && callScreenStream) {
             let effectiveVolume = 0;
             if (!isCallDeafened && !isGlobalMuted) {
-                effectiveVolume = getEffectiveVoiceVolume(remoteUserId);
+                effectiveVolume = getEffectiveScreenVolume(remoteUserId);
             }
             const safeVol = safeVolume(effectiveVolume);
             if (callScreenAudioRef.current.volume !== safeVol) {
                 callScreenAudioRef.current.volume = safeVol;
             }
         }
-    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, callRemoteStream, callSoundpadStream, callScreenStream, activeCall, user, isCallDeafened, isGlobalMuted]);
+    }, [getEffectiveVoiceVolume, getEffectiveSoundpadVolume, getEffectiveScreenVolume, callRemoteStream, callSoundpadStream, callScreenStream, activeCall, user, isCallDeafened, isGlobalMuted]);
 
     // Handle Output Device Change (sinkId)
     useEffect(() => {
