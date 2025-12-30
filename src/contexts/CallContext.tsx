@@ -527,12 +527,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 // Check if Electron
                 const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
 
-                if (isElectron) {
-                    setIsScreenShareModalOpen(true);
-                } else {
-                    // Web implementation - show quality picker first
-                    setIsQualityModalOpen(true);
-                }
+                // Unified flow: Use Web implementation (getDisplayMedia) for both Web and Electron
+                // This ensures suppressLocalAudioPlayback works correctly to prevent echo
+                setIsQualityModalOpen(true);
             }
         } catch (error) {
             console.error('[CallContext] Error toggling screen share:', error);
@@ -585,7 +582,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop'
-                    }
+                    },
+                    // Attempt to suppress local audio playback (Electron/Chromium)
+                    suppressLocalAudioPlayback: true
                 } : false,
                 video: {
                     mandatory: {

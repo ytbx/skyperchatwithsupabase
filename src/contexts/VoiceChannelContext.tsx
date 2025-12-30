@@ -855,7 +855,9 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 audio: withAudio ? {
                     mandatory: {
                         chromeMediaSource: 'desktop'
-                    }
+                    },
+                    // Attempt to suppress local audio playback (Electron/Chromium)
+                    suppressLocalAudioPlayback: true
                 } : false,
                 video: {
                     mandatory: {
