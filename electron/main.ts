@@ -296,23 +296,36 @@ app.whenReady().then(() => {
                 }
 
                 // Determine MIME type
-                let contentType = 'text/html';
+                const mimeTypes: Record<string, string> = {
+                    '.js': 'text/javascript',
+                    '.mjs': 'text/javascript',
+                    '.cjs': 'text/javascript',
+                    '.jsx': 'text/javascript',
+                    '.tsx': 'text/javascript',
+                    '.css': 'text/css',
+                    '.html': 'text/html',
+                    '.json': 'application/json',
+                    '.wasm': 'application/wasm',
+                    '.svg': 'image/svg+xml',
+                    '.png': 'image/png',
+                    '.jpg': 'image/jpeg',
+                    '.jpeg': 'image/jpeg',
+                    '.gif': 'image/gif',
+                    '.webp': 'image/webp',
+                    '.ico': 'image/x-icon',
+                    '.woff': 'font/woff',
+                    '.woff2': 'font/woff2',
+                    '.ttf': 'font/ttf',
+                    '.otf': 'font/otf',
+                    '.map': 'application/json',
+                };
+
                 const ext = path.extname(filePath).toLowerCase();
-                if (ext === '.js') contentType = 'application/javascript';
-                else if (ext === '.css') contentType = 'text/css';
-                else if (ext === '.svg') contentType = 'image/svg+xml';
-                else if (ext === '.json') contentType = 'application/json';
-                else if (ext === '.wasm') contentType = 'application/wasm';
-                else if (ext === '.png') contentType = 'image/png';
-                else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-                else if (ext === '.ico') contentType = 'image/x-icon';
-                else if (ext === '.woff2') contentType = 'font/woff2';
-                else if (ext === '.woff') contentType = 'font/woff';
-                else if (ext === '.ttf') contentType = 'font/ttf';
+                const contentType = mimeTypes[ext] || 'application/octet-stream';
 
                 const buffer = await fs.promises.readFile(filePath);
                 return new Response(buffer, {
-                    headers: { 'content-type': contentType }
+                    headers: { 'Content-Type': contentType }
                 });
             } catch (error) {
                 console.error('[Protocol] Error handling request:', error);

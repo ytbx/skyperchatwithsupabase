@@ -14,10 +14,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      buffer: 'buffer/',
+      buffer: 'buffer',
       process: 'process/browser',
       stream: 'stream-browserify',
-      util: 'util/'
+      util: 'util'
     },
   },
   optimizeDeps: {
