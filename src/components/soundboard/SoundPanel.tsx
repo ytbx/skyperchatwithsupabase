@@ -113,7 +113,7 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
                 bytes[i] = binaryString.charCodeAt(i);
             }
 
-            const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+            const audioBuffer = await ctx.decodeAudioData(bytes.buffer as ArrayBuffer);
 
             // If we have a callback for mixing with WebRTC, use it
             // The callback will handle both local playback and WebRTC transmission

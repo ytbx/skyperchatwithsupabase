@@ -7,6 +7,7 @@ import { SignalingChannel } from '@/services/SignalingChannel';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
 import { useDeviceSettings } from './DeviceSettingsContext';
+import { PCMAudioProcessor } from '@/utils/audioProcessor';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -73,7 +74,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
 
+
+
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+
+    // Native Audio Refs
+    const nativeAudioProcessorRef = useRef<PCMAudioProcessor | null>(null);
+    const nativeAudioUnsubscribeRef = useRef<(() => void) | null>(null);
 
     // Initialize ringtone
     useEffect(() => {
@@ -539,6 +546,36 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing]);
 
+    // Helper to stop native audio capture
+    const stopNativeAudio = useCallback(async () => {
+        if (typeof window !== 'undefined' && window.electron && nativeAudioProcessorRef.current) {
+            try {
+                // Stop capturing
+                const pid = await window.electron.nativeAudio.getAppPid();
+                await window.electron.nativeAudio.stopCapture(pid.toString());
+
+                // Cleanup processor
+                if (nativeAudioUnsubscribeRef.current) {
+                    nativeAudioUnsubscribeRef.current();
+                    nativeAudioUnsubscribeRef.current = null;
+                }
+
+                nativeAudioProcessorRef.current.close();
+                nativeAudioProcessorRef.current = null;
+                console.log('[CallContext] Native audio capture stopped');
+            } catch (error) {
+                console.error('[CallContext] Error stopping native audio:', error);
+            }
+        }
+    }, []);
+
+    // Override toggleScreenShare specific stop logic
+    useEffect(() => {
+        if (!isScreenSharing && nativeAudioProcessorRef.current) {
+            stopNativeAudio();
+        }
+    }, [isScreenSharing, stopNativeAudio]);
+
     const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
         setIsQualityModalOpen(false);
         try {
@@ -549,7 +586,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: false, // FORCE DISABLE AUDIO
+                audio: true, // Allow system audio sharing
                 selfBrowserSurface: 'exclude' as any
             };
 
@@ -560,12 +597,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd') => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality);
-            const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: false, // FORCE DISABLE AUDIO
+            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
+
+            // Get video stream (audio: false because we handle it natively in Electron)
+            const videoStream = await (navigator.mediaDevices as any).getUserMedia({
+                audio: false, // We'll add native audio track later if needed
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
@@ -579,12 +618,49 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     }
                 }
             });
-            console.log('[CallContext] Got screen stream:', stream.id);
-            console.log('[CallContext] Audio tracks found:', stream.getAudioTracks().length);
-            // stream.getAudioTracks().forEach(t => console.log('[CallContext] Audio track:', t.label, t.enabled, t.readyState));
-            console.log('[CallContext] Video tracks found:', stream.getVideoTracks().length);
 
-            await startScreenShareWithStream(stream);
+            let finalStream = videoStream;
+
+            // Handle Native Audio for Electron
+            if (shareAudio && typeof window !== 'undefined' && window.electron) {
+                console.log('[CallContext] Starting native audio capture...');
+                try {
+                    const pid = await window.electron.nativeAudio.getAppPid();
+                    const started = await window.electron.nativeAudio.startCapture(pid.toString());
+
+                    if (started) {
+                        // Initialize processor
+                        nativeAudioProcessorRef.current = new PCMAudioProcessor();
+
+                        // Subscribe to data
+                        nativeAudioUnsubscribeRef.current = window.electron.nativeAudio.onAudioData((chunk) => {
+                            if (nativeAudioProcessorRef.current) {
+                                nativeAudioProcessorRef.current.processChunk(chunk);
+                            }
+                        });
+
+                        // Get the audio track
+                        const audioStream = nativeAudioProcessorRef.current.getStream();
+                        const audioTrack = audioStream.getAudioTracks()[0];
+
+                        if (audioTrack) {
+                            console.log('[CallContext] Adding native audio track to stream');
+                            finalStream = new MediaStream([...videoStream.getVideoTracks(), audioTrack]);
+                        }
+                    }
+                } catch (err) {
+                    console.error('[CallContext] Failed to start native audio:', err);
+                }
+            } else if (shareAudio) {
+                // Fallback for non-Electron if logic flows here (rare)
+                // Re-request with system audio if possible (usually separate call in web)
+            }
+
+            console.log('[CallContext] Got screen stream:', finalStream.id);
+            console.log('[CallContext] Audio tracks found:', finalStream.getAudioTracks().length);
+            console.log('[CallContext] Video tracks found:', finalStream.getVideoTracks().length);
+
+            await startScreenShareWithStream(finalStream);
         } catch (e) {
             console.error('Error getting electron screen stream:', e);
         }

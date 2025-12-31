@@ -875,7 +875,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: false, // FORCE DISABLE AUDIO
+                audio: true, // Allow system audio sharing
                 selfBrowserSurface: 'exclude' as any
             };
 
@@ -887,12 +887,16 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     };
 
     // Handle screen share selection from modal
-    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd') => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality);
+            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: false, // FORCE DISABLE AUDIO
+                audio: shareAudio ? {
+                    mandatory: {
+                        chromeMediaSource: 'desktop'
+                    }
+                } : false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',

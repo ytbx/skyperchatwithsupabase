@@ -4,40 +4,36 @@ contextBridge.exposeInMainWorld('electron', {
     getDesktopSources: async () => {
         return await ipcRenderer.invoke('get-desktop-sources')
     },
+    // Soundboard
     soundboard: {
-        openFilePicker: async () => {
-            return await ipcRenderer.invoke('soundboard-open-file-dialog')
-        },
-        saveSound: async (data: { name: string; buffer: string; extension: string }) => {
-            return await ipcRenderer.invoke('soundboard-save-sound', data)
-        },
-        listSounds: async () => {
-            return await ipcRenderer.invoke('soundboard-list-sounds')
-        },
-        deleteSound: async (id: string) => {
-            return await ipcRenderer.invoke('soundboard-delete-sound', id)
-        },
-        getSoundData: async (id: string) => {
-            return await ipcRenderer.invoke('soundboard-get-sound-data', id)
+        openFileDialog: () => ipcRenderer.invoke('soundboard-open-file-dialog'),
+        saveSound: (sound: any) => ipcRenderer.invoke('soundboard-save-sound', sound),
+        listSounds: () => ipcRenderer.invoke('soundboard-list-sounds'),
+        deleteSound: (id: string) => ipcRenderer.invoke('soundboard-delete-sound', id),
+        getSoundData: (id: string) => ipcRenderer.invoke('soundboard-get-sound-data', id),
+    },
+
+    // Native Audio Capture
+    nativeAudio: {
+        startCapture: (pidToExclude: string) => ipcRenderer.invoke('start-native-audio-capture', pidToExclude),
+        stopCapture: (pidToExclude: string) => ipcRenderer.invoke('stop-native-audio-capture', pidToExclude),
+        getAppPid: () => ipcRenderer.invoke('get-app-pid'),
+        onAudioData: (callback: (chunk: Uint8Array) => void) => {
+            const subscription = (_event: any, chunk: Uint8Array) => callback(chunk);
+            ipcRenderer.on('audio-data-chunk', subscription);
+            // Return unsubscribe function
+            return () => ipcRenderer.removeListener('audio-data-chunk', subscription);
         }
     },
-    globalShortcuts: {
-        register: async (accelerator: string) => {
-            return await ipcRenderer.invoke('register-global-shortcut', accelerator)
-        },
-        unregister: async (accelerator: string) => {
-            return await ipcRenderer.invoke('unregister-global-shortcut', accelerator)
-        },
-        unregisterAll: async () => {
-            return await ipcRenderer.invoke('unregister-all-global-shortcuts')
-        },
-        onTriggered: (callback: (accelerator: string) => void) => {
-            const subscription = (_event: any, accelerator: string) => callback(accelerator)
-            ipcRenderer.on('global-shortcut-triggered', subscription)
-            return () => {
-                ipcRenderer.removeListener('global-shortcut-triggered', subscription)
-            }
-        }
+
+    // Global Shortcut
+    registerGlobalShortcut: (accelerator: string) => ipcRenderer.invoke('register-global-shortcut', accelerator),
+    unregisterGlobalShortcut: (accelerator: string) => ipcRenderer.invoke('unregister-global-shortcut', accelerator),
+    unregisterAllGlobalShortcuts: () => ipcRenderer.invoke('unregister-all-global-shortcuts'),
+    onGlobalShortcut: (callback: (accelerator: string) => void) => {
+        const subscription = (_event: any, accelerator: string) => callback(accelerator);
+        ipcRenderer.on('global-shortcut-triggered', subscription);
+        return () => ipcRenderer.removeListener('global-shortcut-triggered', subscription);
     }
 })
 

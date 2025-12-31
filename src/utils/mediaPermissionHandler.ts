@@ -102,7 +102,7 @@ export class MediaPermissionHandler {
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: false, // FORCE DISABLE AUDIO
+        audio: true, // Allow audio sharing
       });
 
       MediaPermissionHandler.permissionState.screen = 'granted';

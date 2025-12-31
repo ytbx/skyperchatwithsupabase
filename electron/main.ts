@@ -1,5 +1,19 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences } from 'electron';
 import path from 'path';
+import { captureSystemAudioExcluding, stopAudioCapture, setExecutablesRoot } from '@skyperchat/audio-loopback';
+
+// Configure native audio capture binaries path
+// In production (asar), binaries are usually unpacked to a specific folder
+const isProd = app.isPackaged;
+if (isProd) {
+    // Adjust this path based on your builder configuration (e.g. electron-builder extraResources)
+    // For now, assuming standard unpacking behavior for native modules
+    const possiblePath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@skyperchat', 'audio-loopback', 'bin');
+    setExecutablesRoot(possiblePath);
+} else {
+    // In development, it's in node_modules
+    setExecutablesRoot(path.join(__dirname, '..', 'node_modules', '@skyperchat', 'audio-loopback', 'bin'));
+}
 
 /**
  * Audio Capture Exclusion Configuration
@@ -155,6 +169,47 @@ function createWindow() {
             buffer: buffer.toString('base64'),
             extension: path.extname(fileName).slice(1)
         };
+    });
+
+    // Native Audio Capture Handlers
+    ipcMain.handle('start-native-audio-capture', async (event, pidToExclude: string) => {
+        try {
+            console.log('Starting native audio capture via start-native-audio-capture handler');
+            // Stop any existing capture first
+            try {
+                stopAudioCapture(pidToExclude);
+            } catch (e) { /* ignore */ }
+
+            // Start capture in EXCLUDE mode
+            captureSystemAudioExcluding(pidToExclude, {
+                onData: (chunk: Uint8Array) => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        // Send audio chunk to renderer
+                        // We need to send it as a buffer or array
+                        mainWindow.webContents.send('audio-data-chunk', chunk);
+                    }
+                }
+            });
+            console.log(`Native audio capture started for PID exclusion: ${pidToExclude}`);
+            return true;
+        } catch (error) {
+            console.error('Failed to start native audio capture:', error);
+            return false;
+        }
+    });
+
+    ipcMain.handle('stop-native-audio-capture', async (event, pidToExclude: string) => {
+        try {
+            console.log(`Stopping native audio capture for PID: ${pidToExclude}`);
+            return stopAudioCapture(pidToExclude);
+        } catch (error) {
+            console.error('Failed to stop native audio capture:', error);
+            return false;
+        }
+    });
+
+    ipcMain.handle('get-app-pid', () => {
+        return process.pid;
     });
 
     ipcMain.handle('soundboard-save-sound', async (_event, { name, buffer, extension }: { name: string; buffer: string; extension: string }) => {

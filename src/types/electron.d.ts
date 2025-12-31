@@ -37,6 +37,13 @@ declare global {
                 listSounds: () => Promise<SoundboardSound[]>;
                 deleteSound: (id: string) => Promise<boolean>;
                 getSoundData: (id: string) => Promise<SoundboardSoundData | null>;
+                getSoundData: (id: string) => Promise<SoundboardSoundData | null>;
+            };
+            nativeAudio: {
+                startCapture: (pidToExclude: string) => Promise<boolean>;
+                stopCapture: (pidToExclude: string) => Promise<boolean>;
+                getAppPid: () => Promise<number>;
+                onAudioData: (callback: (chunk: Uint8Array) => void) => () => void;
             };
         };
         electronUpdater?: {

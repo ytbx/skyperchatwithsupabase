@@ -5,13 +5,14 @@ import { DesktopCapturerSource } from '@/types/electron';
 interface ScreenSharePickerModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (sourceId: string, quality: 'standard' | 'fullhd') => void;
+    onSelect: (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => void;
 }
 
 export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenSharePickerModalProps) {
     const [sources, setSources] = useState<DesktopCapturerSource[]>([]);
     const [activeTab, setActiveTab] = useState<'screen' | 'window'>('screen');
     const [quality, setQuality] = useState<'standard' | 'fullhd'>('standard');
+    const [shareAudio, setShareAudio] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -89,7 +90,7 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                             {filteredSources.map((source) => (
                                 <button
                                     key={source.id}
-                                    onClick={() => onSelect(source.id, quality)}
+                                    onClick={() => onSelect(source.id, quality, shareAudio)}
                                     className="group flex flex-col gap-2 p-3 rounded-xl bg-gray-800 hover:bg-gray-700 transition-all hover:scale-[1.02] border border-transparent hover:border-primary-500/50"
                                 >
                                     <div className="relative aspect-video w-full bg-black rounded-lg overflow-hidden">
@@ -136,6 +137,17 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                                 Full HD (1080p)
                             </button>
                         </div>
+
+                        {/* Share Audio Checkbox */}
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={shareAudio}
+                                onChange={(e) => setShareAudio(e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-primary-500 focus:ring-primary-500/50"
+                            />
+                            <span className="text-sm text-gray-300">Sesi Paylaş</span>
+                        </label>
                     </div>
 
                     <button
