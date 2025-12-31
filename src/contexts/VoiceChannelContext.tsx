@@ -6,9 +6,9 @@ import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
-import { useNoiseSuppression } from './NoiseSuppressionContext';
+
 import { useDeviceSettings } from './DeviceSettingsContext';
-import { createNoiseSuppressionProcessor } from '@/utils/NoiseSuppression';
+
 
 interface VoiceParticipant {
     user_id: string;
@@ -63,7 +63,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const peerMetadata = useRef<Map<string, { joined_at: string }>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
     const rawLocalStreamRef = useRef<MediaStream | null>(null);
-    const nsProcessorRef = useRef<{ cleanup: () => void } | null>(null);
+
     const screenStreamRef = useRef<MediaStream | null>(null);
     const cameraStreamRef = useRef<MediaStream | null>(null);
 
@@ -169,10 +169,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             rawLocalStreamRef.current.getTracks().forEach(track => track.stop());
             rawLocalStreamRef.current = null;
         }
-        if (nsProcessorRef.current) {
-            nsProcessorRef.current.cleanup();
-            nsProcessorRef.current = null;
-        }
+
         localStreamRef.current = null;
         setLocalStream(null);
 
@@ -232,21 +229,14 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             const rawStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
-                    noiseSuppression: true,
+
                     autoGainControl: true
                 },
                 video: false
             });
             rawLocalStreamRef.current = rawStream;
 
-            // Apply noise suppression IF enabled
-            const { getNoiseSuppressionEnabled } = await import('@/utils/NoiseSuppression');
             let finalStream = rawStream;
-            if (getNoiseSuppressionEnabled()) {
-                const proc = await createNoiseSuppressionProcessor(rawStream);
-                nsProcessorRef.current = proc;
-                finalStream = proc.outputStream;
-            }
 
             setLocalStream(finalStream);
             localStreamRef.current = finalStream;
@@ -663,31 +653,21 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     if (rawLocalStreamRef.current) {
                         rawLocalStreamRef.current.getTracks().forEach(t => t.stop());
                     }
-                    if (nsProcessorRef.current) {
-                        nsProcessorRef.current.cleanup();
-                        nsProcessorRef.current = null;
-                    }
+
 
                     // 2. Get new raw stream
                     const rawStream = await navigator.mediaDevices.getUserMedia({
                         audio: {
                             deviceId: audioInputDeviceId && audioInputDeviceId !== 'default' ? { exact: audioInputDeviceId } : undefined,
                             echoCancellation: true,
-                            noiseSuppression: true,
+
                             autoGainControl: true
                         },
                         video: false
                     });
                     rawLocalStreamRef.current = rawStream;
 
-                    // 3. Apply Noise Suppression if enabled
-                    const { getNoiseSuppressionEnabled } = await import('@/utils/NoiseSuppression');
                     let finalStream = rawStream;
-                    if (getNoiseSuppressionEnabled()) {
-                        const proc = await createNoiseSuppressionProcessor(rawStream);
-                        nsProcessorRef.current = proc;
-                        finalStream = proc.outputStream;
-                    }
 
                     // 4. Update local state
                     setLocalStream(finalStream);
@@ -696,6 +676,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     // 5. Replace track for all active peer managers
                     const newTrack = finalStream.getAudioTracks()[0];
                     if (newTrack) {
+                        newTrack.enabled = !isMuted; // Apply current mute state
                         for (const [peerId, manager] of peerManagers.current.entries()) {
                             try {
                                 await manager.replaceAudioTrack(newTrack);
@@ -751,11 +732,17 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     // Handle mute toggle
     useEffect(() => {
+        // 1. Mute local stream (fallback/UI)
         if (localStreamRef.current) {
             localStreamRef.current.getAudioTracks().forEach(track => {
                 track.enabled = !isMuted;
             });
         }
+
+        // 2. Propagate to ALL active peer connections (Robust Fix)
+        peerManagers.current.forEach(manager => {
+            manager.toggleMicrophone(isMuted);
+        });
 
         if (activeChannelId && user && isConnected) {
             supabase
@@ -782,6 +769,27 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 });
         }
     }, [isDeafened, activeChannelId, user?.id, isConnected]);
+
+    // Handle incoming audio mute when deafened (Headphone Mute)
+    useEffect(() => {
+        participants.forEach(p => {
+            // Skip local user to prevent muting own microphone
+            if (p.user_id === user?.id) return;
+
+            // Mute/Unmute main voice stream
+            if (p.stream) {
+                p.stream.getAudioTracks().forEach(track => {
+                    track.enabled = !isDeafened;
+                });
+            }
+            // Mute/Unmute soundpad stream
+            if (p.soundpadStream) {
+                p.soundpadStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isDeafened;
+                });
+            }
+        });
+    }, [isDeafened, participants, user?.id]);
 
     // Start screen share with a specific stream
     const startScreenShareWithStream = async (screenStream: MediaStream) => {
@@ -867,7 +875,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: true,
+                audio: false, // FORCE DISABLE AUDIO
                 selfBrowserSurface: 'exclude' as any
             };
 
@@ -879,22 +887,12 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     };
 
     // Handle screen share selection from modal
-    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd') => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'audio:', withAudio, 'quality:', quality);
+            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: withAudio ? {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: sourceId
-                    },
-                    optional: [
-                        { echoCancellation: true },
-                        { noiseSuppression: true },
-                        { suppressLocalAudioPlayback: true }
-                    ]
-                } : false,
+                audio: false, // FORCE DISABLE AUDIO
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
@@ -911,8 +909,6 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
             console.log('[VoiceChannelContext] Got screen stream:', stream.id);
             console.log('[VoiceChannelContext] Audio tracks found:', stream.getAudioTracks().length);
-            stream.getAudioTracks().forEach(t => console.log('[VoiceChannelContext] Audio track:', t.label, t.enabled, t.readyState));
-            console.log('[VoiceChannelContext] Video tracks found:', stream.getVideoTracks().length);
 
             await startScreenShareWithStream(stream);
         } catch (e) {

@@ -549,7 +549,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
-                audio: true,
+                audio: false, // FORCE DISABLE AUDIO
                 selfBrowserSurface: 'exclude' as any
             };
 
@@ -560,22 +560,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const handleScreenShareSelect = async (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd') => {
         setIsScreenShareModalOpen(false);
         try {
-            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'audio:', withAudio, 'quality:', quality);
+            console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality);
             const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: withAudio ? {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: sourceId
-                    },
-                    optional: [
-                        { echoCancellation: true },
-                        { noiseSuppression: true },
-                        { suppressLocalAudioPlayback: true }
-                    ]
-                } : false,
+                audio: false, // FORCE DISABLE AUDIO
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
@@ -591,7 +581,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             });
             console.log('[CallContext] Got screen stream:', stream.id);
             console.log('[CallContext] Audio tracks found:', stream.getAudioTracks().length);
-            stream.getAudioTracks().forEach(t => console.log('[CallContext] Audio track:', t.label, t.enabled, t.readyState));
+            // stream.getAudioTracks().forEach(t => console.log('[CallContext] Audio track:', t.label, t.enabled, t.readyState));
             console.log('[CallContext] Video tracks found:', stream.getVideoTracks().length);
 
             await startScreenShareWithStream(stream);

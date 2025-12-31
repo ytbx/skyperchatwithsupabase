@@ -213,7 +213,7 @@ export class WebRTCManager {
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: audio ? {
                     echoCancellation: true,
-                    noiseSuppression: true,
+
                     autoGainControl: true
                 } : false,
                 video: video ? {
@@ -380,11 +380,20 @@ export class WebRTCManager {
      * Toggle microphone mute
      */
     toggleMicrophone(muted: boolean) {
-        if (!this.localStream) return;
+        if (!this.peerConnection) return;
 
-        this.localStream.getAudioTracks().forEach(track => {
-            track.enabled = !muted;
-        });
+        // 1. Mute active sender track directly (Robust Fix)
+        const sender = this.peerConnection.getSenders().find(s => s.track?.kind === 'audio');
+        if (sender && sender.track) {
+            sender.track.enabled = !muted;
+        }
+
+        // 2. Update local stream reference if available (for UI/future)
+        if (this.localStream) {
+            this.localStream.getAudioTracks().forEach(track => {
+                track.enabled = !muted;
+            });
+        }
 
         console.log('[WebRTCManager] Microphone', muted ? 'muted' : 'unmuted');
     }

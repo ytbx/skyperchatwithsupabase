@@ -5,14 +5,13 @@ import { DesktopCapturerSource } from '@/types/electron';
 interface ScreenSharePickerModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (sourceId: string, withAudio: boolean, quality: 'standard' | 'fullhd') => void;
+    onSelect: (sourceId: string, quality: 'standard' | 'fullhd') => void;
 }
 
 export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenSharePickerModalProps) {
     const [sources, setSources] = useState<DesktopCapturerSource[]>([]);
     const [activeTab, setActiveTab] = useState<'screen' | 'window'>('screen');
     const [quality, setQuality] = useState<'standard' | 'fullhd'>('standard');
-    const [withAudio, setWithAudio] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -90,7 +89,7 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                             {filteredSources.map((source) => (
                                 <button
                                     key={source.id}
-                                    onClick={() => onSelect(source.id, withAudio, quality)}
+                                    onClick={() => onSelect(source.id, quality)}
                                     className="group flex flex-col gap-2 p-3 rounded-xl bg-gray-800 hover:bg-gray-700 transition-all hover:scale-[1.02] border border-transparent hover:border-primary-500/50"
                                 >
                                     <div className="relative aspect-video w-full bg-black rounded-lg overflow-hidden">
@@ -137,20 +136,6 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                                 Full HD (1080p)
                             </button>
                         </div>
-
-                        <label className="flex items-center gap-2 cursor-pointer group">
-                            <div className="relative flex items-center">
-                                <input
-                                    type="checkbox"
-                                    className="peer h-4 w-4 rounded border-gray-600 bg-gray-700 text-primary-500 focus:ring-primary-500/50 focus:ring-offset-0 transition-all cursor-pointer"
-                                    checked={withAudio}
-                                    onChange={(e) => setWithAudio(e.target.checked)}
-                                />
-                            </div>
-                            <span className="text-sm text-gray-400 group-hover:text-gray-200 transition-colors select-none">
-                                Bilgisayarın sesini paylaş
-                            </span>
-                        </label>
                     </div>
 
                     <button

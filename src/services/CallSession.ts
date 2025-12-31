@@ -51,7 +51,7 @@ export class CallSession {
     private soundpadStream: MediaStream | null = null;
 
     private rawLocalStream: MediaStream | null = null;
-    private nsProcessor: { cleanup: () => void; outputStream: MediaStream } | null = null;
+
 
     // Renegotiation state
     private isProcessingOffer = false;
@@ -146,15 +146,7 @@ export class CallSession {
             const rawStream = await this.peer.getUserMedia(true, callType === 'video');
             this.rawLocalStream = rawStream;
 
-            // Apply noise suppression if enabled
-            const { getNoiseSuppressionEnabled, createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
             let localStream = rawStream;
-            if (getNoiseSuppressionEnabled()) {
-                const proc = await createNoiseSuppressionProcessor(rawStream);
-                this.nsProcessor = { ...proc, outputStream: proc.outputStream };
-                localStream = proc.outputStream;
-                console.log('[CallSession] Noise suppression applied at start');
-            }
 
             this.callbacks.onLocalStream(localStream);
 
@@ -468,32 +460,20 @@ export class CallSession {
         if (this.rawLocalStream) {
             this.rawLocalStream.getTracks().forEach(t => t.stop());
         }
-        if (this.nsProcessor) {
-            this.nsProcessor.cleanup();
-            this.nsProcessor = null;
-        }
+
 
         // 2. Get new raw stream
         const rawStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 deviceId: deviceId && deviceId !== 'default' ? { exact: deviceId } : undefined,
                 echoCancellation: true,
-                noiseSuppression: true,
                 autoGainControl: true
             },
             video: false
         });
         this.rawLocalStream = rawStream;
 
-        // 3. Apply NS if enabled
-        const { getNoiseSuppressionEnabled, createNoiseSuppressionProcessor } = await import('@/utils/NoiseSuppression');
         let finalStream = rawStream;
-        if (getNoiseSuppressionEnabled()) {
-            const proc = await createNoiseSuppressionProcessor(rawStream);
-            this.nsProcessor = { ...proc, outputStream: proc.outputStream };
-            finalStream = proc.outputStream;
-            console.log('[CallSession] Noise suppression applied to new track');
-        }
 
         // 4. Update peer
         const newTrack = finalStream.getAudioTracks()[0];
@@ -647,10 +627,7 @@ export class CallSession {
             this.rawLocalStream.getTracks().forEach(t => t.stop());
             this.rawLocalStream = null;
         }
-        if (this.nsProcessor) {
-            this.nsProcessor.cleanup();
-            this.nsProcessor = null;
-        }
+
 
         this.isProcessingOffer = false;
         this.pendingOffer = null;

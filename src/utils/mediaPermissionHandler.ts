@@ -25,9 +25,9 @@ export class MediaPermissionHandler {
   ): Promise<{ stream: MediaStream | null; error: string | null }> {
     try {
       console.log('[MediaPermission] Requesting media:', constraints);
-      
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      
+
       // Update permission state
       if (constraints.audio) {
         MediaPermissionHandler.permissionState.audio = 'granted';
@@ -35,13 +35,13 @@ export class MediaPermissionHandler {
       if (constraints.video) {
         MediaPermissionHandler.permissionState.video = 'granted';
       }
-      
+
       console.log('[MediaPermission] Media access granted');
       return { stream, error: null };
-      
+
     } catch (error) {
       console.error('[MediaPermission] Media access failed:', error);
-      
+
       if (error instanceof Error) {
         // Handle specific error types
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
@@ -51,44 +51,44 @@ export class MediaPermissionHandler {
           if (constraints.video) {
             MediaPermissionHandler.permissionState.video = 'denied';
           }
-          return { 
-            stream: null, 
-            error: 'Medya erişim izni reddedildi. Lütfen tarayıcı ayarlarından izin verin.' 
+          return {
+            stream: null,
+            error: 'Medya erişim izni reddedildi. Lütfen tarayıcı ayarlarından izin verin.'
           };
         }
-        
+
         if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-          return { 
-            stream: null, 
-            error: 'Mikrofon veya kamera bulunamadı. Lütfen cihazınızı kontrol edin.' 
+          return {
+            stream: null,
+            error: 'Mikrofon veya kamera bulunamadı. Lütfen cihazınızı kontrol edin.'
           };
         }
-        
+
         if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-          return { 
-            stream: null, 
-            error: 'Medya cihazı başka bir uygulama tarafından kullanılıyor.' 
+          return {
+            stream: null,
+            error: 'Medya cihazı başka bir uygulama tarafından kullanılıyor.'
           };
         }
-        
+
         if (error.name === 'OverconstrainedError') {
-          return { 
-            stream: null, 
-            error: 'İstenen medya ayarları desteklenmiyor.' 
+          return {
+            stream: null,
+            error: 'İstenen medya ayarları desteklenmiyor.'
           };
         }
-        
+
         if (error.name === 'TypeError') {
-          return { 
-            stream: null, 
-            error: 'Geçersiz medya kısıtlamaları.' 
+          return {
+            stream: null,
+            error: 'Geçersiz medya kısıtlamaları.'
           };
         }
       }
-      
-      return { 
-        stream: null, 
-        error: 'Medya erişimi başarısız oldu. Lütfen tekrar deneyin.' 
+
+      return {
+        stream: null,
+        error: 'Medya erişimi başarısız oldu. Lütfen tekrar deneyin.'
       };
     }
   }
@@ -99,40 +99,40 @@ export class MediaPermissionHandler {
   static async requestDisplayMedia(): Promise<{ stream: MediaStream | null; error: string | null }> {
     try {
       console.log('[MediaPermission] Requesting display media');
-      
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: true,
+        audio: false, // FORCE DISABLE AUDIO
       });
-      
+
       MediaPermissionHandler.permissionState.screen = 'granted';
       console.log('[MediaPermission] Display media access granted');
-      
+
       return { stream, error: null };
-      
+
     } catch (error) {
       console.error('[MediaPermission] Display media access failed:', error);
-      
+
       if (error instanceof Error) {
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
           MediaPermissionHandler.permissionState.screen = 'denied';
-          return { 
-            stream: null, 
-            error: 'Ekran paylaşım izni reddedildi.' 
+          return {
+            stream: null,
+            error: 'Ekran paylaşım izni reddedildi.'
           };
         }
-        
+
         if (error.name === 'AbortError') {
-          return { 
-            stream: null, 
-            error: 'Ekran paylaşımı iptal edildi.' 
+          return {
+            stream: null,
+            error: 'Ekran paylaşımı iptal edildi.'
           };
         }
       }
-      
-      return { 
-        stream: null, 
-        error: 'Ekran paylaşımı başarısız oldu.' 
+
+      return {
+        stream: null,
+        error: 'Ekran paylaşımı başarısız oldu.'
       };
     }
   }
@@ -150,7 +150,7 @@ export class MediaPermissionHandler {
         } catch {
           // Permission API might not support microphone
         }
-        
+
         try {
           const videoPermission = await navigator.permissions.query({ name: 'camera' as PermissionName });
           MediaPermissionHandler.permissionState.video = videoPermission.state as MediaPermissionStatus;
@@ -161,7 +161,7 @@ export class MediaPermissionHandler {
     } catch (error) {
       console.warn('[MediaPermission] Permission check failed:', error);
     }
-    
+
     return MediaPermissionHandler.permissionState;
   }
 

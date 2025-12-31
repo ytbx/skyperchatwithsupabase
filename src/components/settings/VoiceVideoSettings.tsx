@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Mic, Speaker, Video, Check, X, Keyboard, AlertCircle } from 'lucide-react';
 import { useDeviceSettings, Keybinds } from '@/contexts/DeviceSettingsContext';
-import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
+
 
 export function VoiceVideoSettings() {
     const {
@@ -21,7 +21,7 @@ export function VoiceVideoSettings() {
         isElectron
     } = useDeviceSettings();
 
-    const { isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
+
     const [recordingAction, setRecordingAction] = useState<keyof Keybinds | null>(null);
 
     // Refresh devices on mount
@@ -129,31 +129,7 @@ export function VoiceVideoSettings() {
                 </div>
             </section>
 
-            {/* Audio Processing Section */}
-            <section className="space-y-6">
-                <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-                    Ses İşleme
-                </h3>
 
-                <div className="flex items-center justify-between p-4 bg-gray-800 rounded-lg border border-gray-700">
-                    <div>
-                        <h4 className="text-white font-medium">Gürültü Engelleme</h4>
-                        <p className="text-sm text-gray-400">
-                            Arka plan seslerini yapay zeka ile filtreler.
-                        </p>
-                    </div>
-                    <button
-                        onClick={toggleNoiseSuppression}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isNoiseSuppressionEnabled ? 'bg-primary-500' : 'bg-gray-600'
-                            }`}
-                    >
-                        <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isNoiseSuppressionEnabled ? 'translate-x-6' : 'translate-x-1'
-                                }`}
-                        />
-                    </button>
-                </div>
-            </section>
 
             {/* Keybinds Section */}
             <section className="space-y-6">
@@ -184,10 +160,10 @@ export function VoiceVideoSettings() {
                             <button
                                 onClick={() => setRecordingAction('mute')}
                                 className={`px-4 py-2 min-w-[120px] text-sm font-mono border rounded-md transition-all ${recordingAction === 'mute'
-                                        ? 'border-primary-500 text-primary-500 bg-primary-500/10 animate-pulse'
-                                        : keybinds.mute
-                                            ? 'border-gray-600 text-white bg-gray-700 hover:border-gray-500'
-                                            : 'border-gray-600 text-gray-400 bg-gray-900/50 hover:border-gray-500'
+                                    ? 'border-primary-500 text-primary-500 bg-primary-500/10 animate-pulse'
+                                    : keybinds.mute
+                                        ? 'border-gray-600 text-white bg-gray-700 hover:border-gray-500'
+                                        : 'border-gray-600 text-gray-400 bg-gray-900/50 hover:border-gray-500'
                                     }`}
                             >
                                 {recordingAction === 'mute'
@@ -221,10 +197,10 @@ export function VoiceVideoSettings() {
                             <button
                                 onClick={() => setRecordingAction('deafen')}
                                 className={`px-4 py-2 min-w-[120px] text-sm font-mono border rounded-md transition-all ${recordingAction === 'deafen'
-                                        ? 'border-primary-500 text-primary-500 bg-primary-500/10 animate-pulse'
-                                        : keybinds.deafen
-                                            ? 'border-gray-600 text-white bg-gray-700 hover:border-gray-500'
-                                            : 'border-gray-600 text-gray-400 bg-gray-900/50 hover:border-gray-500'
+                                    ? 'border-primary-500 text-primary-500 bg-primary-500/10 animate-pulse'
+                                    : keybinds.deafen
+                                        ? 'border-gray-600 text-white bg-gray-700 hover:border-gray-500'
+                                        : 'border-gray-600 text-gray-400 bg-gray-900/50 hover:border-gray-500'
                                     }`}
                             >
                                 {recordingAction === 'deafen'

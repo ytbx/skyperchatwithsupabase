@@ -239,7 +239,7 @@ export class WebRTCPeer {
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: audio ? {
                 echoCancellation: true,
-                noiseSuppression: true,
+
                 autoGainControl: true
             } : false,
             video: video ? {
@@ -365,11 +365,21 @@ export class WebRTCPeer {
      * Toggle microphone mute
      */
     setMicMuted(muted: boolean) {
-        if (!this.localStream) return;
+        if (!this.pc) return;
 
-        this.localStream.getAudioTracks().forEach(track => {
-            track.enabled = !muted;
-        });
+        // Mute the active audio sender track directly
+        const sender = this.pc.getSenders().find(s => s.track?.kind === 'audio');
+        if (sender && sender.track) {
+            sender.track.enabled = !muted;
+        }
+
+        // Also update local stream tracking if available, for UI or local preview consistency
+        if (this.localStream) {
+            this.localStream.getAudioTracks().forEach(track => {
+                track.enabled = !muted;
+            });
+        }
+
         console.log('[WebRTCPeer] Microphone', muted ? 'muted' : 'unmuted');
     }
 
