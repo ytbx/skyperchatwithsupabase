@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences } from 'electron';
 import path from 'path';
-import { captureSystemAudioExcluding, stopAudioCapture, setExecutablesRoot } from '@skyperchat/audio-loopback';
+import { startAudioCapture, stopAudioCapture, setExecutablesRoot, getWindowPid } from '@skyperchat/audio-loopback';
 
 // Configure native audio capture binaries path
 // In production (asar), binaries are usually unpacked to a specific folder
@@ -172,29 +172,36 @@ function createWindow() {
     });
 
     // Native Audio Capture Handlers
-    ipcMain.handle('start-native-audio-capture', async (event, pidToExclude: string) => {
+    ipcMain.handle('start-native-audio-capture', async (event, pid: string, mode: 'include' | 'exclude' = 'exclude') => {
         try {
-            console.log('Starting native audio capture via start-native-audio-capture handler');
+            console.log(`Starting native audio capture via start-native-audio-capture handler (PID: ${pid}, Mode: ${mode})`);
             // Stop any existing capture first
             try {
-                stopAudioCapture(pidToExclude);
+                stopAudioCapture(pid);
             } catch (e) { /* ignore */ }
 
-            // Start capture in EXCLUDE mode
-            captureSystemAudioExcluding(pidToExclude, {
+            // Start capture
+            startAudioCapture(pid, {
+                mode,
                 onData: (chunk: Uint8Array) => {
                     if (mainWindow && !mainWindow.isDestroyed()) {
-                        // Send audio chunk to renderer
-                        // We need to send it as a buffer or array
                         mainWindow.webContents.send('audio-data-chunk', chunk);
                     }
                 }
             });
-            console.log(`Native audio capture started for PID exclusion: ${pidToExclude}`);
             return true;
         } catch (error) {
             console.error('Failed to start native audio capture:', error);
             return false;
+        }
+    });
+
+    ipcMain.handle('get-window-pid', async (event, hwnd: string) => {
+        try {
+            return await getWindowPid(hwnd);
+        } catch (error) {
+            console.error('Failed to get window PID:', error);
+            return null;
         }
     });
 

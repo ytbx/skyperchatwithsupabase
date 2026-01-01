@@ -97,7 +97,7 @@ importers:
         version: 1.2.8(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@skyperchat/audio-loopback':
         specifier: file:native-audio-loopback
-        version: file:native-audio-loopback(typescript@5.6.3)
+        version: application-loopback@file:native-audio-loopback(typescript@5.6.3)
       '@supabase/node-fetch':
         specifier: ^2.6.15
         version: 2.6.15
@@ -1637,11 +1637,6 @@ packages:
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
 
-  '@skyperchat/audio-loopback@file:native-audio-loopback':
-    resolution: {directory: native-audio-loopback, type: directory}
-    peerDependencies:
-      typescript: ^5
-
   '@standard-schema/spec@1.0.0':
     resolution: {integrity: sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA==}
 
@@ -1932,6 +1927,11 @@ packages:
 
   application-loopback@1.2.7:
     resolution: {integrity: sha512-jJkUqTkOI6duToWNGu7iyKgKiat9P1vrbL0pEHnZttBcE5CkXF49ePeVA0DX0rkoIBqd2fGbLgfoV0YlsIWZ6g==}
+    peerDependencies:
+      typescript: ^5
+
+  application-loopback@file:native-audio-loopback:
+    resolution: {directory: native-audio-loopback, type: directory}
     peerDependencies:
       typescript: ^5
 
@@ -5396,10 +5396,6 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
-  '@skyperchat/audio-loopback@file:native-audio-loopback(typescript@5.6.3)':
-    dependencies:
-      typescript: 5.6.3
-
   '@standard-schema/spec@1.0.0': {}
 
   '@supabase/auth-js@2.78.0':
@@ -5802,6 +5798,10 @@ snapshots:
       - supports-color
 
   application-loopback@1.2.7(typescript@5.6.3):
+    dependencies:
+      typescript: 5.6.3
+
+  application-loopback@file:native-audio-loopback(typescript@5.6.3):
     dependencies:
       typescript: 5.6.3
 

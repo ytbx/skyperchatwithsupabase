@@ -6,6 +6,7 @@ import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
+import { PCMAudioProcessor } from '@/utils/audioProcessor';
 
 import { useDeviceSettings } from './DeviceSettingsContext';
 
@@ -66,6 +67,9 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
     const screenStreamRef = useRef<MediaStream | null>(null);
     const cameraStreamRef = useRef<MediaStream | null>(null);
+    const nativeAudioProcessorRef = useRef<PCMAudioProcessor | null>(null);
+    const nativeAudioUnsubscribeRef = useRef<(() => void) | null>(null);
+    const activeNativeAudioPidRef = useRef<string | null>(null);
 
     const activeChannelIdRef = useRef<number | null>(null);
 
@@ -181,6 +185,19 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 .delete()
                 .eq('channel_id', activeChannelIdRef.current)
                 .eq('user_id', user.id);
+        }
+
+        // Stop native audio capture
+        if (nativeAudioUnsubscribeRef.current) {
+            nativeAudioUnsubscribeRef.current();
+            nativeAudioUnsubscribeRef.current = null;
+        }
+        if (nativeAudioProcessorRef.current) {
+            if (activeNativeAudioPidRef.current) {
+                window.electron.nativeAudio.stopCapture(activeNativeAudioPidRef.current);
+                activeNativeAudioPidRef.current = null;
+            }
+            nativeAudioProcessorRef.current = null;
         }
 
         setIsConnected(false);
@@ -891,12 +908,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         setIsScreenShareModalOpen(false);
         try {
             console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
-            const stream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: shareAudio ? {
-                    mandatory: {
-                        chromeMediaSource: 'desktop'
-                    }
-                } : false,
+            const videoStream = await (navigator.mediaDevices as any).getUserMedia({
+                audio: false, // We will handle audio via native capture if enabled
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
@@ -911,10 +924,53 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 }
             });
 
-            console.log('[VoiceChannelContext] Got screen stream:', stream.id);
-            console.log('[VoiceChannelContext] Audio tracks found:', stream.getAudioTracks().length);
+            let finalStream = videoStream;
 
-            await startScreenShareWithStream(stream);
+            // Handle Native Audio for Electron
+            if (shareAudio && typeof window !== 'undefined' && window.electron) {
+                console.log('[VoiceChannelContext] Starting native audio capture...');
+                try {
+                    let targetPid: string | null = null;
+                    let captureMode: 'include' | 'exclude' = 'exclude';
+
+                    if (sourceId.startsWith('window:')) {
+                        const hwnd = sourceId.split(':')[1];
+                        targetPid = await window.electron.nativeAudio.getWindowPid(hwnd);
+                        captureMode = 'include';
+                    }
+
+                    if (!targetPid) {
+                        const appPid = await window.electron.nativeAudio.getAppPid();
+                        targetPid = appPid.toString();
+                        captureMode = 'exclude';
+                    }
+
+                    const started = await window.electron.nativeAudio.startCapture(targetPid, captureMode);
+
+                    if (started) {
+                        activeNativeAudioPidRef.current = targetPid;
+                        nativeAudioProcessorRef.current = new PCMAudioProcessor();
+                        nativeAudioUnsubscribeRef.current = window.electron.nativeAudio.onAudioData((chunk) => {
+                            if (nativeAudioProcessorRef.current) {
+                                nativeAudioProcessorRef.current.processChunk(chunk);
+                            }
+                        });
+
+                        const audioStream = nativeAudioProcessorRef.current.getStream();
+                        const audioTrack = audioStream.getAudioTracks()[0];
+
+                        if (audioTrack) {
+                            console.log('[VoiceChannelContext] Adding native audio track (Mode:', captureMode, ')');
+                            finalStream = new MediaStream([...videoStream.getVideoTracks(), audioTrack]);
+                        }
+                    }
+                } catch (err) {
+                    console.error('[VoiceChannelContext] Failed to start native audio:', err);
+                }
+            }
+
+            console.log('[VoiceChannelContext] Got screen stream:', finalStream.id);
+            await startScreenShareWithStream(finalStream);
         } catch (e) {
             console.error('Error getting electron screen stream:', e);
         }

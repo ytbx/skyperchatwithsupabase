@@ -15,9 +15,10 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Native Audio Capture
     nativeAudio: {
-        startCapture: (pidToExclude: string) => ipcRenderer.invoke('start-native-audio-capture', pidToExclude),
-        stopCapture: (pidToExclude: string) => ipcRenderer.invoke('stop-native-audio-capture', pidToExclude),
+        startCapture: (pid: string, mode?: 'include' | 'exclude') => ipcRenderer.invoke('start-native-audio-capture', pid, mode),
+        stopCapture: (pid: string) => ipcRenderer.invoke('stop-native-audio-capture', pid),
         getAppPid: () => ipcRenderer.invoke('get-app-pid'),
+        getWindowPid: (hwnd: string) => ipcRenderer.invoke('get-window-pid', hwnd),
         onAudioData: (callback: (chunk: Uint8Array) => void) => {
             const subscription = (_event: any, chunk: Uint8Array) => callback(chunk);
             ipcRenderer.on('audio-data-chunk', subscription);

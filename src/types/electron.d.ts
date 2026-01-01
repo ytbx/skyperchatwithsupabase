@@ -40,9 +40,10 @@ declare global {
                 getSoundData: (id: string) => Promise<SoundboardSoundData | null>;
             };
             nativeAudio: {
-                startCapture: (pidToExclude: string) => Promise<boolean>;
-                stopCapture: (pidToExclude: string) => Promise<boolean>;
+                startCapture: (pid: string, mode?: 'include' | 'exclude') => Promise<boolean>;
+                stopCapture: (pid: string) => Promise<boolean>;
                 getAppPid: () => Promise<number>;
+                getWindowPid: (hwnd: string) => Promise<string | null>;
                 onAudioData: (callback: (chunk: Uint8Array) => void) => () => void;
             };
         };

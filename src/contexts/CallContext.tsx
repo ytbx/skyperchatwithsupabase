@@ -81,6 +81,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     // Native Audio Refs
     const nativeAudioProcessorRef = useRef<PCMAudioProcessor | null>(null);
     const nativeAudioUnsubscribeRef = useRef<(() => void) | null>(null);
+    const activeNativeAudioPidRef = useRef<string | null>(null);
 
     // Initialize ringtone
     useEffect(() => {
@@ -551,8 +552,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         if (typeof window !== 'undefined' && window.electron && nativeAudioProcessorRef.current) {
             try {
                 // Stop capturing
-                const pid = await window.electron.nativeAudio.getAppPid();
-                await window.electron.nativeAudio.stopCapture(pid.toString());
+                if (activeNativeAudioPidRef.current) {
+                    await window.electron.nativeAudio.stopCapture(activeNativeAudioPidRef.current);
+                    activeNativeAudioPidRef.current = null;
+                }
 
                 // Cleanup processor
                 if (nativeAudioUnsubscribeRef.current) {
@@ -625,10 +628,31 @@ export function CallProvider({ children }: { children: ReactNode }) {
             if (shareAudio && typeof window !== 'undefined' && window.electron) {
                 console.log('[CallContext] Starting native audio capture...');
                 try {
-                    const pid = await window.electron.nativeAudio.getAppPid();
-                    const started = await window.electron.nativeAudio.startCapture(pid.toString());
+                    let targetPid: string | null = null;
+                    let captureMode: 'include' | 'exclude' = 'exclude';
+
+                    if (sourceId.startsWith('window:')) {
+                        // Extract HWND from sourceId (format: window:hwnd:index)
+                        const hwnd = sourceId.split(':')[1];
+                        console.log('[CallContext] Window selected, HWND:', hwnd);
+
+                        targetPid = await window.electron.nativeAudio.getWindowPid(hwnd);
+                        captureMode = 'include';
+                        console.log('[CallContext] Target window PID:', targetPid);
+                    }
+
+                    // Fallback to App PID and exclude mode if no target PID found or screen sharing
+                    if (!targetPid) {
+                        const appPid = await window.electron.nativeAudio.getAppPid();
+                        targetPid = appPid.toString();
+                        captureMode = 'exclude';
+                        console.log('[CallContext] No window PID, using App PID with exclude mode');
+                    }
+
+                    const started = await window.electron.nativeAudio.startCapture(targetPid, captureMode);
 
                     if (started) {
+                        activeNativeAudioPidRef.current = targetPid;
                         // Initialize processor
                         nativeAudioProcessorRef.current = new PCMAudioProcessor();
 
