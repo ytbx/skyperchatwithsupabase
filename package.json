@@ -24,7 +24,12 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "native-audio-loopback/bin/**/*"
+    ],
+    "asarUnpack": [
+      "**/node_modules/@skyperchat/audio-loopback/bin/**/*",
+      "native-audio-loopback/bin/**/*"
     ],
     "win": {
       "target": "nsis",
