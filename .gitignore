@@ -85,6 +85,10 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+!native-audio-loopback/dist/
+!native-audio-loopback/bin/
+!native-audio-loopback/src-cpp/**/Release/
+!native-audio-loopback/src-cpp/**/x64/
 
 # Gatsby files
 .cache/
