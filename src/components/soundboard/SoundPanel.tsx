@@ -11,9 +11,10 @@ interface Sound {
 interface SoundPanelProps {
     onPlaySound?: (audioBuffer: AudioBuffer) => void;
     audioContext?: AudioContext;
+    maxHeight?: string;
 }
 
-export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContext }) => {
+export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContext, maxHeight = "360px" }) => {
     const [sounds, setSounds] = useState<Sound[]>([]);
     const [loading, setLoading] = useState(true);
     const [playingId, setPlayingId] = useState<string | null>(null);
@@ -218,7 +219,7 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
                 </div>
             </div>
 
-            {/* Sounds Grid - Horizontal Scrollable */}
+            {/* Sounds Grid */}
             {sounds.length === 0 ? (
                 <div className="text-center py-6 text-gray-500">
                     <Music size={32} className="mx-auto mb-2 opacity-50" />
@@ -226,7 +227,10 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
                     <p className="text-xs mt-1">Yukarıdaki "Ses Ekle" butonuna tıklayın</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 gap-3 overflow-y-auto max-h-[360px] pr-2 custom-scrollbar">
+                <div
+                    className="grid grid-cols-2 gap-3 overflow-y-auto pr-2 custom-scrollbar"
+                    style={{ maxHeight }}
+                >
                     {sounds.map(sound => (
                         <div
                             key={sound.id}

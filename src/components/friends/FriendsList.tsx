@@ -30,6 +30,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   const [sendingRequest, setSendingRequest] = useState(false);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; friend: ExtendedFriend } | null>(null);
+  const [friendToRemove, setFriendToRemove] = useState<ExtendedFriend | null>(null);
 
   // Search users - wrapped in useCallback to prevent unnecessary re-renders
   // Note: Modified slightly to filter out friends from context
@@ -301,7 +302,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeFriend(friend.id);
+                                setFriendToRemove(friend);
                               }}
                               className="p-1 hover:bg-gray-700 rounded"
                               title="Arkadaşlıktan çıkar"
@@ -499,18 +500,58 @@ export const FriendsList: React.FC<FriendsListProps> = ({
       </div>
 
       {/* Volume Context Menu */}
-      {
-        volumeContextMenu && (
-          <UserVolumeContextMenu
-            x={volumeContextMenu.x}
-            y={volumeContextMenu.y}
-            userId={volumeContextMenu.friend.id}
-            username={volumeContextMenu.friend.username}
-            profileImageUrl={volumeContextMenu.friend.profile_image_url || undefined}
-            onClose={() => setVolumeContextMenu(null)}
-          />
-        )
-      }
+      {volumeContextMenu && (
+        <UserVolumeContextMenu
+          x={volumeContextMenu.x}
+          y={volumeContextMenu.y}
+          userId={volumeContextMenu.friend.id}
+          username={volumeContextMenu.friend.username}
+          profileImageUrl={volumeContextMenu.friend.profile_image_url || undefined}
+          onClose={() => setVolumeContextMenu(null)}
+        />
+      )}
+
+      {/* Remove Friend Confirmation Modal */}
+      {friendToRemove && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <UserMinus size={32} className="text-red-500" />
+              </div>
+              <h3 className="text-xl font-bold text-white text-center mb-2">Arkadaşı Çıkar</h3>
+              <p className="text-gray-400 text-center mb-6">
+                <span className="font-semibold text-white">{friendToRemove.username}</span> adlı kişiyi arkadaş listenden çıkarmak istediğine emin misin?
+              </p>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setFriendToRemove(null)}
+                  className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-medium transition-all"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  onClick={async () => {
+                    if (friendToRemove) {
+                      try {
+                        await removeFriend(friendToRemove.id);
+                        setFriendToRemove(null);
+                      } catch (error) {
+                        console.error('Arkadaş silinirken hata oluştu:', error);
+                        alert('Arkadaş silinemedi. Lütfen tekrar deneyin.');
+                      }
+                    }
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-red-600/20"
+                >
+                  Evet, Çıkar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

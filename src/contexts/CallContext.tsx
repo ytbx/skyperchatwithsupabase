@@ -177,6 +177,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             case 'idle':
                 return 'idle';
             case 'starting':
+                return role === 'caller' ? 'ringing_outgoing' : 'connecting';
             case 'connecting':
                 return 'connecting';
             case 'ringing':

@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
-import { X, LogOut, User, Upload, Loader2, Video } from 'lucide-react';
+import { X, LogOut, User, Upload, Loader2, Video, Music } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { FileUploadService } from '@/services/FileUploadService';
 import { VoiceVideoSettings } from '@/components/settings/VoiceVideoSettings';
+import { SoundPanel } from '@/components/soundboard/SoundPanel';
 import { toast } from 'sonner';
 
 interface SettingsModalProps {
@@ -12,7 +13,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { profile, signOut, refreshProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'voice-video'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'voice-video' | 'sounds'>('profile');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +88,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <Video className="w-4 h-4" />
               Ses ve Görüntü
             </button>
+            <button
+              onClick={() => setActiveTab('sounds')}
+              className={`w-full px-3 py-2 text-left rounded transition-colors flex items-center gap-2 ${activeTab === 'sounds'
+                ? 'bg-primary-500/10 text-primary-500'
+                : 'text-gray-200 hover:bg-gray-700'
+                }`}
+            >
+              <Music className="w-4 h-4" />
+              Ses Paneli
+            </button>
           </div>
 
           <div className="mt-auto pt-8">
@@ -107,6 +118,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               {activeTab === 'profile' && 'Profil'}
               {activeTab === 'account' && 'Hesap'}
               {activeTab === 'voice-video' && 'Ses ve Görüntü'}
+              {activeTab === 'sounds' && 'Ses Paneli'}
             </h2>
             <button
               onClick={onClose}
@@ -214,6 +226,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
             {activeTab === 'voice-video' && (
               <VoiceVideoSettings />
+            )}
+
+            {activeTab === 'sounds' && (
+              <SoundPanel maxHeight="none" />
             )}
           </div>
         </div>

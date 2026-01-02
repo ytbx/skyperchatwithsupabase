@@ -165,12 +165,14 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             .channel('public:friends')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'friends', filter: `requester_id=eq.${user.id}` }, loadFriends)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'friends', filter: `requested_id=eq.${user.id}` }, loadFriends)
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'friends' }, loadFriends)
             .subscribe();
 
         const requestsSubscription = supabase
             .channel('public:friend_requests')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'friend_requests', filter: `requester_id=eq.${user.id}` }, loadRequests)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'friend_requests', filter: `requested_id=eq.${user.id}` }, loadRequests)
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'friend_requests' }, loadRequests)
             .subscribe();
 
         // Subscribe to chat changes to re-sort friends
@@ -234,11 +236,20 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const removeFriend = async (friendId: string) => {
         if (!user) return;
-        const { error } = await supabase
+
+        // Delete from friends table
+        const { error: friendError } = await supabase
             .from('friends')
             .delete()
             .or(`and(requester_id.eq.${user.id},requested_id.eq.${friendId}),and(requester_id.eq.${friendId},requested_id.eq.${user.id})`);
-        if (error) throw error;
+
+        if (friendError) throw friendError;
+
+        // Also delete from friend_requests table to allow re-sending requests later
+        await supabase
+            .from('friend_requests')
+            .delete()
+            .or(`and(requester_id.eq.${user.id},requested_id.eq.${friendId}),and(requester_id.eq.${friendId},requested_id.eq.${user.id})`);
     };
 
     const sendFriendRequest = async (targetUserId: string) => {
