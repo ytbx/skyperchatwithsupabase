@@ -11,6 +11,7 @@ import { FilePreview } from '@/components/common/FilePreview';
 import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
 import { toast } from 'sonner';
 import { GifPicker } from '@/components/chat/GifPicker';
+import { MessageContent } from '@/components/chat/MessageContent';
 
 interface MessageAreaProps {
   channelId: number | null;
@@ -529,7 +530,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                     {group.messages.map((message, msgIndex) => (
                       <div key={message.id} className={`${msgIndex > 0 ? 'mt-0.5' : ''} group relative pr-8`}>
                         <div className="text-gray-100 text-sm leading-relaxed break-words">
-                          {message.message}
+                          <MessageContent content={message.message} />
                         </div>
                         {message.file_url && (
                           <AttachmentDisplay

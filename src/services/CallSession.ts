@@ -10,6 +10,7 @@
 
 import { WebRTCPeer, PeerConnectionState } from './WebRTCPeer';
 import { SignalingChannel, CallSignal } from './SignalingChannel';
+import { noiseSuppressionService } from './NoiseSuppression';
 
 export type CallRole = 'caller' | 'callee';
 export type CallSessionState = 'idle' | 'starting' | 'ringing' | 'connecting' | 'active' | 'ending' | 'ended';
@@ -51,6 +52,7 @@ export class CallSession {
     private soundpadStream: MediaStream | null = null;
 
     private rawLocalStream: MediaStream | null = null;
+    private isNoiseSuppressionEnabled = false;
 
 
     // Renegotiation state
@@ -147,6 +149,14 @@ export class CallSession {
             this.rawLocalStream = rawStream;
 
             let localStream = rawStream;
+            if (this.isNoiseSuppressionEnabled) {
+                console.log('[CallSession] Applying noise suppression at start');
+                try {
+                    localStream = await noiseSuppressionService.processStream(rawStream);
+                } catch (err) {
+                    console.error('[CallSession] Noise suppression failed at start:', err);
+                }
+            }
 
             this.callbacks.onLocalStream(localStream);
 
@@ -474,6 +484,14 @@ export class CallSession {
         this.rawLocalStream = rawStream;
 
         let finalStream = rawStream;
+        if (this.isNoiseSuppressionEnabled) {
+            console.log('[CallSession] Applying noise suppression to replaced track');
+            try {
+                finalStream = await noiseSuppressionService.processStream(rawStream);
+            } catch (err) {
+                console.error('[CallSession] Noise suppression failed during track replacement:', err);
+            }
+        }
 
         // 4. Update peer
         const newTrack = finalStream.getAudioTracks()[0];
@@ -664,6 +682,35 @@ export class CallSession {
      */
     getLocalStream(): MediaStream | null {
         return this.peer?.getLocalStream() ?? null;
+    }
+
+    async setNoiseSuppression(enabled: boolean): Promise<void> {
+        if (this.isNoiseSuppressionEnabled === enabled) return;
+        this.isNoiseSuppressionEnabled = enabled;
+
+        if (this.state === 'active' && this.rawLocalStream) {
+            console.log('[CallSession] Noise suppression toggled to:', enabled);
+            try {
+                let finalStream = this.rawLocalStream;
+                if (enabled) {
+                    finalStream = await noiseSuppressionService.processStream(this.rawLocalStream);
+                } else {
+                    // Cleanup previous
+                    const currentStream = this.peer?.getLocalStream();
+                    if (currentStream && (currentStream as any).stopSuppression) {
+                        (currentStream as any).stopSuppression();
+                    }
+                }
+
+                const newTrack = finalStream.getAudioTracks()[0];
+                if (newTrack && this.peer) {
+                    await this.peer.replaceAudioTrack(newTrack);
+                    this.callbacks.onLocalStream(finalStream);
+                }
+            } catch (err) {
+                console.error('[CallSession] Error toggling noise suppression mid-call:', err);
+            }
+        }
     }
 
     /**

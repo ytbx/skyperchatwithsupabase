@@ -37,7 +37,16 @@ export const ActiveCallOverlay: React.FC = () => {
 
     const [callDuration, setCallDuration] = useState(0);
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
-    const { getUserScreenVolume, setUserScreenVolume, getUserScreenMuted, toggleUserScreenMute, getUserVoiceVolume, setUserVoiceVolume } = useUserAudio();
+    const {
+        getUserScreenVolume,
+        setUserScreenVolume,
+        getUserScreenMuted,
+        toggleUserScreenMute,
+        getUserVoiceVolume,
+        setUserVoiceVolume,
+        getUserVoiceMuted,
+        toggleUserVoiceMute
+    } = useUserAudio();
     const [contactName, setContactName] = useState<string>('');
     const [contactProfileImageUrl, setContactProfileImageUrl] = useState<string | null>(null);
     const [localProfileImageUrl, setLocalProfileImageUrl] = useState<string | null>(null);
@@ -53,12 +62,26 @@ export const ActiveCallOverlay: React.FC = () => {
     };
 
     const toggleIgnoreStream = (streamId: string) => {
+        const isScreen = streamId.includes('screen');
+
         setIgnoredStreams(prev => {
             const newSet = new Set(prev);
             if (newSet.has(streamId)) {
                 newSet.delete(streamId);
+                // Re-watch: Unmute if currently muted
+                if (isScreen) {
+                    if (getUserScreenMuted(contactId)) toggleUserScreenMute(contactId);
+                } else {
+                    if (getUserVoiceMuted(contactId)) toggleUserVoiceMute(contactId);
+                }
             } else {
                 newSet.add(streamId);
+                // Stop watching: Mute if not already muted
+                if (isScreen) {
+                    if (!getUserScreenMuted(contactId)) toggleUserScreenMute(contactId);
+                } else {
+                    if (!getUserVoiceMuted(contactId)) toggleUserVoiceMute(contactId);
+                }
             }
             return newSet;
         });
@@ -230,7 +253,7 @@ export const ActiveCallOverlay: React.FC = () => {
             // Clear video if sharing stopped
             video.srcObject = null;
         }
-    }, [remoteScreenStream, isRemoteScreenSharing]);
+    }, [remoteScreenStream, isRemoteScreenSharing, ignoredStreams]);
 
     // Effect to handle Remote Camera Stream
     useEffect(() => {
@@ -244,7 +267,7 @@ export const ActiveCallOverlay: React.FC = () => {
                 video.srcObject = null;
             }
         }
-    }, [remoteStream]);
+    }, [remoteStream, ignoredStreams]);
 
     // Effect to handle Local Screen Stream
     useEffect(() => {
@@ -256,7 +279,7 @@ export const ActiveCallOverlay: React.FC = () => {
         } else {
             video.srcObject = null;
         }
-    }, [screenStream, isScreenSharing]);
+    }, [screenStream, isScreenSharing, ignoredStreams]);
 
     // Handle initial mute state
     useEffect(() => {

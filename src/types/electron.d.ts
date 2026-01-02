@@ -33,6 +33,7 @@ declare global {
             getDesktopSources: () => Promise<DesktopCapturerSource[]>;
             soundboard: {
                 openFilePicker: () => Promise<SoundboardFilePickerResult | null>;
+                openDirectory: () => Promise<boolean>;
                 saveSound: (data: { name: string; buffer: string; extension: string }) => Promise<SoundboardSound>;
                 listSounds: () => Promise<SoundboardSound[]>;
                 deleteSound: (id: string) => Promise<boolean>;

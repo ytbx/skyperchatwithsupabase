@@ -12,6 +12,7 @@ import { FilePreview } from '@/components/common/FilePreview';
 import { AttachmentDisplay } from '@/components/common/AttachmentDisplay';
 import { toast } from 'sonner';
 import { GifPicker } from '../chat/GifPicker';
+import { MessageContent } from '../chat/MessageContent';
 
 interface DirectMessageAreaProps {
   contactId: string;
@@ -795,13 +796,13 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
                               )}
                               {message.message && (
                                 <div className="text-gray-100 text-sm leading-relaxed break-words mt-1">
-                                  {message.message}
+                                  <MessageContent content={message.message} />
                                 </div>
                               )}
                             </div>
                           ) : (
                             <div className="text-gray-100 text-sm leading-relaxed break-words">
-                              {message.message}
+                              <MessageContent content={message.message} />
                             </div>
                           )}
 

@@ -63,39 +63,41 @@ export const SoundPanelPopup: React.FC<SoundPanelPopupProps> = ({
     return (
         <div
             ref={popupRef}
-            className={`absolute z-50 ${anchorPosition === 'top'
-                ? 'bottom-full mb-2'
-                : 'top-full mt-2'
-                } left-1/2 transform -translate-x-1/2 w-80 sm:w-96 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up`}
+            className={`absolute z-[999] ${anchorPosition === 'top'
+                ? 'bottom-full mb-3'
+                : 'top-full mt-3'
+                } left-1/2 transform -translate-x-1/2 w-80 sm:w-[400px] bg-[#1e1f22] border border-[#2b2d31] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden animate-fade-in-up`}
         >
             {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 bg-gray-850 border-b border-gray-700">
-                <span className="text-white font-semibold text-sm">🎵 Ses Paneli</span>
-                <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between px-4 py-3 bg-[#1e1f22] border-b border-[#2b2d31]">
+                <div className="flex items-center gap-2">
+                    <span className="text-[#dbdee1] font-bold text-sm tracking-wide">SES PANELİ</span>
+                </div>
+                <div className="flex items-center gap-2">
                     {/* Soundpad Mute Button */}
                     <button
                         onClick={toggleGlobalSoundpadMute}
-                        className={`p-1.5 rounded transition-all duration-200 ${isGlobalSoundpadMuted
+                        className={`p-2 rounded-lg transition-all duration-200 ${isGlobalSoundpadMuted
                             ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'hover:bg-gray-700 text-gray-400 hover:text-white'
+                            : 'hover:bg-[#35373c] text-[#b5bac1] hover:text-white'
                             }`}
                         title={isGlobalSoundpadMuted ? "Soundpad Seslerini Aç" : "Soundpad Seslerini Kapat"}
                     >
-                        {isGlobalSoundpadMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                        {isGlobalSoundpadMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                     </button>
                     <button
                         onClick={onClose}
-                        className="p-1 hover:bg-gray-700 rounded transition-colors"
+                        className="p-1.5 hover:bg-[#35373c] rounded-lg transition-colors text-[#b5bac1] hover:text-white"
                     >
-                        <X size={16} className="text-gray-400 hover:text-white" />
+                        <X size={20} />
                     </button>
                 </div>
             </div>
 
             {/* Soundpad Mute Indicator */}
             {isGlobalSoundpadMuted && (
-                <div className="px-3 py-2 bg-red-500/10 border-b border-red-500/20">
-                    <div className="flex items-center gap-2 text-red-400 text-xs">
+                <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 mx-3 my-2 rounded-lg">
+                    <div className="flex items-center gap-2 text-red-400 text-xs font-medium">
                         <VolumeX size={14} />
                         <span>Soundpad sesleri kapatıldı</span>
                     </div>

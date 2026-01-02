@@ -8,6 +8,7 @@ import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerMod
 import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
 import { useDeviceSettings } from './DeviceSettingsContext';
 import { PCMAudioProcessor } from '@/utils/audioProcessor';
+import { useNoiseSuppression } from './NoiseSuppressionContext';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -73,6 +74,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [ping, setPing] = useState<number | null>(null);
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
+    const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
 
 
 
@@ -126,6 +128,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         return () => clearInterval(interval);
     }, [callStatus]);
+
+    // Update session suppression state when it changes
+    useEffect(() => {
+        if (sessionRef.current && callStatus === 'active') {
+            sessionRef.current.setNoiseSuppression(isNoiseSuppressionEnabled);
+        }
+    }, [isNoiseSuppressionEnabled, callStatus]);
 
     // Reactive Device Switching
     const { audioInputDeviceId, videoInputDeviceId } = useDeviceSettings();

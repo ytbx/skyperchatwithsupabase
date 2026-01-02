@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Play, Trash2, Volume2, Music, Loader2 } from 'lucide-react';
+import { Plus, Play, Trash2, Volume2, Music, Loader2, FolderOpen } from 'lucide-react';
 
 interface Sound {
     id: string;
@@ -64,6 +64,11 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
         } finally {
             setUploading(false);
         }
+    };
+
+    const handleOpenDirectory = async () => {
+        if (!isElectron) return;
+        await window.electron!.soundboard.openDirectory();
     };
 
     const handleDeleteSound = async (id: string, e: React.MouseEvent) => {
@@ -192,23 +197,25 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
     return (
         <div className="p-3">
             {/* Header */}
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                     <Volume2 size={18} className="text-purple-400" />
                     <span className="text-white font-semibold text-sm">Ses Paneli</span>
                 </div>
-                <button
-                    onClick={handleAddSound}
-                    disabled={uploading}
-                    className="flex items-center gap-1 px-2 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded text-white text-xs transition-colors"
-                >
-                    {uploading ? (
-                        <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                        <Plus size={14} />
-                    )}
-                    <span>Ses Ekle</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleAddSound}
+                        disabled={uploading}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded-lg text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-purple-600/20"
+                    >
+                        {uploading ? (
+                            <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                            <Plus size={14} />
+                        )}
+                        <span>Ses Ekle</span>
+                    </button>
+                </div>
             </div>
 
             {/* Sounds Grid - Horizontal Scrollable */}
@@ -219,38 +226,47 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
                     <p className="text-xs mt-1">Yukarıdaki "Ses Ekle" butonuna tıklayın</p>
                 </div>
             ) : (
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <div className="grid grid-cols-2 gap-3 overflow-y-auto max-h-[360px] pr-2 custom-scrollbar">
                     {sounds.map(sound => (
                         <div
                             key={sound.id}
-                            className={`flex-shrink-0 group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${playingId === sound.id
-                                ? 'bg-purple-600 shadow-lg shadow-purple-600/30'
-                                : 'bg-gray-700 hover:bg-gray-600'
+                            className={`group relative flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer transition-all duration-200 ${playingId === sound.id
+                                ? 'bg-purple-600 shadow-xl shadow-purple-600/30 -translate-y-0.5'
+                                : 'bg-[#2b2d31] hover:bg-[#35373c] border border-transparent hover:border-[#404249]'
                                 }`}
                             onClick={() => handlePlaySound(sound.id)}
                         >
                             {/* Play Icon */}
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${playingId === sound.id ? 'bg-white/20' : 'bg-gray-600 group-hover:bg-gray-500'
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${playingId === sound.id ? 'bg-white/20' : 'bg-gray-700 group-hover:bg-gray-600'
                                 }`}>
                                 {playingId === sound.id ? (
-                                    <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                                    <div className="flex gap-0.5 items-end h-3">
+                                        <div className="w-1 bg-white animate-[sound-bar_0.5s_ease-in-out_infinite]" />
+                                        <div className="w-1 bg-white animate-[sound-bar_0.7s_ease-in-out_infinite]" />
+                                        <div className="w-1 bg-white animate-[sound-bar_0.6s_ease-in-out_infinite]" />
+                                    </div>
                                 ) : (
-                                    <Play size={14} className="text-white ml-0.5" />
+                                    <Play size={16} className="text-white fill-white ml-0.5" />
                                 )}
                             </div>
 
                             {/* Sound Name */}
-                            <span className="text-white text-sm font-medium max-w-[80px] truncate">
-                                {sound.name}
-                            </span>
+                            <div className="flex flex-col min-width-0 overflow-hidden">
+                                <span className="text-white text-[13px] font-semibold truncate">
+                                    {sound.name}
+                                </span>
+                                <span className={`text-[10px] ${playingId === sound.id ? 'text-purple-100' : 'text-gray-400'}`}>
+                                    Ses Efekti
+                                </span>
+                            </div>
 
                             {/* Delete Button */}
                             <button
                                 onClick={(e) => handleDeleteSound(sound.id, e)}
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/30 rounded transition-all"
+                                className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all transform hover:scale-110"
                                 title="Sil"
                             >
-                                <Trash2 size={14} className="text-red-400" />
+                                <Trash2 size={12} />
                             </button>
                         </div>
                     ))}

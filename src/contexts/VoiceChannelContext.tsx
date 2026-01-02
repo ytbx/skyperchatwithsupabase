@@ -9,6 +9,8 @@ import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityM
 import { PCMAudioProcessor } from '@/utils/audioProcessor';
 
 import { useDeviceSettings } from './DeviceSettingsContext';
+import { useNoiseSuppression } from './NoiseSuppressionContext';
+import { noiseSuppressionService } from '@/services/NoiseSuppression';
 
 
 interface VoiceParticipant {
@@ -56,6 +58,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isCameraEnabled, setIsCameraEnabled] = useState(false);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
 
@@ -254,6 +257,14 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             rawLocalStreamRef.current = rawStream;
 
             let finalStream = rawStream;
+            if (isNoiseSuppressionEnabled) {
+                console.log('[VoiceChannelContext] Applying noise suppression to join stream');
+                try {
+                    finalStream = await noiseSuppressionService.processStream(rawStream);
+                } catch (err) {
+                    console.error('[VoiceChannelContext] Noise suppression failed, using raw stream:', err);
+                }
+            }
 
             setLocalStream(finalStream);
             localStreamRef.current = finalStream;
@@ -685,6 +696,14 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     rawLocalStreamRef.current = rawStream;
 
                     let finalStream = rawStream;
+                    if (isNoiseSuppressionEnabled) {
+                        console.log('[VoiceChannelContext] Applying noise suppression to updated microphone stream');
+                        try {
+                            finalStream = await noiseSuppressionService.processStream(rawStream);
+                        } catch (err) {
+                            console.error('[VoiceChannelContext] Noise suppression failed during mic update:', err);
+                        }
+                    }
 
                     // 4. Update local state
                     setLocalStream(finalStream);
@@ -711,6 +730,47 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             updateMicrophone();
         }
     }, [audioInputDeviceId, isConnected]);
+
+    // Handle noise suppression toggle while connected
+    useEffect(() => {
+        if (isConnected) {
+            console.log('[VoiceChannelContext] Noise suppression toggled, updating stream');
+            const updateMicrophone = async () => {
+                try {
+                    // Reuse the existing raw stream if possible
+                    if (!rawLocalStreamRef.current) return;
+
+                    const rawStream = rawLocalStreamRef.current;
+                    let finalStream = rawStream;
+
+                    if (isNoiseSuppressionEnabled) {
+                        console.log('[VoiceChannelContext] Enabling suppression for current stream');
+                        finalStream = await noiseSuppressionService.processStream(rawStream);
+                    } else {
+                        console.log('[VoiceChannelContext] Disabling suppression for current stream');
+                        // Cleanup previous processed stream if exists
+                        if (localStreamRef.current && (localStreamRef.current as any).stopSuppression) {
+                            (localStreamRef.current as any).stopSuppression();
+                        }
+                    }
+
+                    setLocalStream(finalStream);
+                    localStreamRef.current = finalStream;
+
+                    const newTrack = finalStream.getAudioTracks()[0];
+                    if (newTrack) {
+                        newTrack.enabled = !isMuted;
+                        for (const manager of peerManagers.current.values()) {
+                            await manager.replaceAudioTrack(newTrack);
+                        }
+                    }
+                } catch (e) {
+                    console.error('[VoiceChannelContext] Failed to toggle noise suppression logic:', e);
+                }
+            };
+            updateMicrophone();
+        }
+    }, [isNoiseSuppressionEnabled, isConnected]);
 
     // Handle camera change
     useEffect(() => {

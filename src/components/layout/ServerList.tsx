@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, Home, Settings, Users, Search, Download } from 'lucide-react';
+import { Plus, Home, Settings, Users, Search, Download, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Server } from '@/lib/types';
 
 import { ServerContextMenu } from '@/components/server/ServerContextMenu';
+import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
 import { toast } from 'sonner';
 
 const MUTED_SERVERS_KEY = 'muted_servers';
@@ -30,6 +31,7 @@ export function ServerList({
 }: ServerListProps) {
   const [servers, setServers] = useState<Server[]>([]);
   const { user } = useAuth();
+  const { isEnabled: isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
 
   const [isElectron, setIsElectron] = useState(false);
 
@@ -231,6 +233,22 @@ export function ServerList({
       <div className="flex-1" />
 
 
+
+
+      {/* Noise Suppression Toggle */}
+      <button
+        onClick={() => {
+          toggleNoiseSuppression();
+          toast.info(`Gürültü Engelleme: ${!isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'}`);
+        }}
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:shadow-glow-sm group ${isNoiseSuppressionEnabled
+            ? 'bg-indigo-600 text-white shadow-glow'
+            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+          }`}
+        title={`Gürültü Engelleme (${isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'})`}
+      >
+        <Sparkles className={`w-5 h-5 ${isNoiseSuppressionEnabled ? 'text-white animate-pulse' : 'group-hover:text-indigo-400'}`} />
+      </button>
 
       {/* Search Button */}
       <button

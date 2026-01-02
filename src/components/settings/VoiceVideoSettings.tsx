@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Mic, Speaker, Video, Check, X, Keyboard, AlertCircle } from 'lucide-react';
+import { Mic, Speaker, Video, Check, X, Keyboard, AlertCircle, Sparkles } from 'lucide-react';
 import { useDeviceSettings, Keybinds } from '@/contexts/DeviceSettingsContext';
+import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
 
 
 export function VoiceVideoSettings() {
@@ -20,6 +21,8 @@ export function VoiceVideoSettings() {
         clearKeybind,
         isElectron
     } = useDeviceSettings();
+
+    const { isEnabled: isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
 
 
     const [recordingAction, setRecordingAction] = useState<keyof Keybinds | null>(null);
@@ -125,6 +128,30 @@ export function VoiceVideoSettings() {
                                 </option>
                             ))}
                         </select>
+                    </div>
+
+                    {/* Noise Suppression Toggle */}
+                    <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg transition-colors ${isNoiseSuppressionEnabled ? 'bg-indigo-500/20 text-indigo-400' : 'bg-gray-700 text-gray-400'}`}>
+                                <Sparkles className={`w-5 h-5 ${isNoiseSuppressionEnabled ? 'animate-pulse' : ''}`} />
+                            </div>
+                            <div>
+                                <h4 className="text-white font-medium">Yapay Zeka Gürültü Engelleme</h4>
+                                <p className="text-sm text-gray-400">Arka plan gürültülerini (klavye, fan vb.) temizler</p>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={toggleNoiseSuppression}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ring-offset-gray-900 focus:ring-2 focus:ring-primary-500 ${isNoiseSuppressionEnabled ? 'bg-indigo-600' : 'bg-gray-700'
+                                }`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isNoiseSuppressionEnabled ? 'translate-x-6' : 'translate-x-1'
+                                    }`}
+                            />
+                        </button>
                     </div>
                 </div>
             </section>

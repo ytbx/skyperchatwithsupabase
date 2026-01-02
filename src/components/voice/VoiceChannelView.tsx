@@ -31,7 +31,18 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const { user } = useAuth();
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
-    const { getUserScreenVolume, setUserScreenVolume, getUserScreenMuted, toggleUserScreenMute, getUserVoiceVolume, setUserVoiceVolume, getEffectiveVoiceVolume, getEffectiveScreenVolume } = useUserAudio();
+    const {
+        getUserScreenVolume,
+        setUserScreenVolume,
+        getUserScreenMuted,
+        toggleUserScreenMute,
+        getUserVoiceVolume,
+        setUserVoiceVolume,
+        getUserVoiceMuted,
+        toggleUserVoiceMute,
+        getEffectiveVoiceVolume,
+        getEffectiveScreenVolume
+    } = useUserAudio();
     const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string; streamId: string } | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
@@ -39,12 +50,27 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const toggleMaximize = () => setIsMaximized(!isMaximized);
 
     const toggleIgnoreStream = (streamId: string) => {
+        const isScreen = streamId.startsWith('screen-');
+        const userId = streamId.slice(7); // Extract userId after 'screen-' or 'camera-' (both are 7 chars)
+
         setIgnoredStreams(prev => {
             const newSet = new Set(prev);
             if (newSet.has(streamId)) {
                 newSet.delete(streamId);
+                // Re-watch: Unmute if currently muted
+                if (isScreen) {
+                    if (getUserScreenMuted(userId)) toggleUserScreenMute(userId);
+                } else {
+                    if (getUserVoiceMuted(userId)) toggleUserVoiceMute(userId);
+                }
             } else {
                 newSet.add(streamId);
+                // Stop watching: Mute if not already muted
+                if (isScreen) {
+                    if (!getUserScreenMuted(userId)) toggleUserScreenMute(userId);
+                } else {
+                    if (!getUserVoiceMuted(userId)) toggleUserVoiceMute(userId);
+                }
             }
             return newSet;
         });
@@ -148,7 +174,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
-    }, [cameraParticipants, screenSharingParticipants, ignoredStreams]);
+    }, [cameraParticipants, screenSharingParticipants, ignoredStreams, videoRefs.current]);
 
     // Get the current fullscreen stream
     const getFullscreenStream = useCallback((): { stream: MediaStream | null; isLocalUser: boolean } => {
@@ -280,7 +306,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.muted = true; // Ensure muted
+                                                    el.muted = true;
+                                                    if (participant.cameraStream && el.srcObject !== participant.cameraStream) {
+                                                        el.srcObject = participant.cameraStream;
+                                                        el.play().catch(e => console.error('Error playing camera video from ref:', e));
+                                                    }
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }
@@ -388,6 +418,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
                                                     el.muted = true;
+                                                    if (participant.screenStream && el.srcObject !== participant.screenStream) {
+                                                        el.srcObject = participant.screenStream;
+                                                        el.play().catch(e => console.error('Error playing screen video from ref:', e));
+                                                    }
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }

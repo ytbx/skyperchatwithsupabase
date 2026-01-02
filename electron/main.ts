@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences, shell } from 'electron';
 import path from 'path';
 import { startAudioCapture, stopAudioCapture, setExecutablesRoot, getWindowPid } from '@skyperchat/audio-loopback';
 
@@ -67,15 +67,55 @@ const getSoundboardMetaPath = () => path.join(getSoundboardDir(), 'sounds.json')
 
 // Load soundboard metadata
 const loadSoundboardMeta = (): Array<{ id: string; name: string; filename: string; createdAt: string }> => {
+    const soundboardDir = getSoundboardDir();
     const metaPath = getSoundboardMetaPath();
+    let meta: Array<{ id: string; name: string; filename: string; createdAt: string }> = [];
+
     if (fs.existsSync(metaPath)) {
         try {
-            return JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+            meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
         } catch {
-            return [];
+            meta = [];
         }
     }
-    return [];
+
+    // Get all files in the directory
+    const files = fs.readdirSync(soundboardDir);
+    const audioExtensions = ['.mp3', '.wav', '.ogg', '.webm', '.m4a'];
+
+    let changed = false;
+
+    // Remove metadata for files that no longer exist
+    const existingMeta = meta.filter(item => {
+        const exists = files.includes(item.filename);
+        if (!exists) changed = true;
+        return exists;
+    });
+
+    meta = existingMeta;
+
+    // Add metadata for new files
+    files.forEach(file => {
+        const ext = path.extname(file).toLowerCase();
+        if (audioExtensions.includes(ext) && file !== 'sounds.json') {
+            const alreadyInMeta = meta.some(item => item.filename === file);
+            if (!alreadyInMeta) {
+                meta.push({
+                    id: Math.random().toString(36).substring(2, 10) + Date.now().toString(36),
+                    name: path.parse(file).name,
+                    filename: file,
+                    createdAt: new Date().toISOString()
+                });
+                changed = true;
+            }
+        }
+    });
+
+    if (changed) {
+        saveSoundboardMeta(meta);
+    }
+
+    return meta;
 };
 
 // Save soundboard metadata
@@ -274,6 +314,15 @@ function createWindow() {
             }
         }
         return null;
+    });
+
+    ipcMain.handle('soundboard-open-directory', async () => {
+        const dir = getSoundboardDir();
+        if (fs.existsSync(dir)) {
+            shell.openPath(dir);
+            return true;
+        }
+        return false;
     });
 
     // Global Shortcut IPC handlers

@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld('electron', {
     },
     // Soundboard
     soundboard: {
-        openFileDialog: () => ipcRenderer.invoke('soundboard-open-file-dialog'),
+        openFilePicker: () => ipcRenderer.invoke('soundboard-open-file-dialog'),
+        openDirectory: () => ipcRenderer.invoke('soundboard-open-directory'),
         saveSound: (sound: any) => ipcRenderer.invoke('soundboard-save-sound', sound),
         listSounds: () => ipcRenderer.invoke('soundboard-list-sounds'),
         deleteSound: (id: string) => ipcRenderer.invoke('soundboard-delete-sound', id),

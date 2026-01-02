@@ -44,6 +44,7 @@ import { GlobalKeybindListener } from '@/components/GlobalKeybindListener';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 import { FriendProvider } from '@/contexts/FriendContext';
+import { NoiseSuppressionProvider } from '@/contexts/NoiseSuppressionContext';
 
 function AppContent() {
     const { user, loading } = useAuth();
@@ -483,25 +484,25 @@ function App() {
         <AuthProvider>
             <NotificationProvider>
                 <DeviceSettingsProvider>
-
-                    <CallProvider>
-                        <VoiceChannelProvider>
-                            <UserAudioProvider>
-                                <SupabaseRealtimeProvider>
-                                    <FriendProvider>
-                                        <ErrorBoundary>
-                                            <GlobalAudio />
-                                        </ErrorBoundary>
-                                        <Routes>
-                                            <Route path="/" element={<AppContent />} />
-                                            <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
-                                        </Routes>
-                                    </FriendProvider>
-                                </SupabaseRealtimeProvider>
-                            </UserAudioProvider>
-                        </VoiceChannelProvider>
-                    </CallProvider>
-
+                    <NoiseSuppressionProvider>
+                        <CallProvider>
+                            <VoiceChannelProvider>
+                                <UserAudioProvider>
+                                    <SupabaseRealtimeProvider>
+                                        <FriendProvider>
+                                            <ErrorBoundary>
+                                                <GlobalAudio />
+                                            </ErrorBoundary>
+                                            <Routes>
+                                                <Route path="/" element={<AppContent />} />
+                                                <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
+                                            </Routes>
+                                        </FriendProvider>
+                                    </SupabaseRealtimeProvider>
+                                </UserAudioProvider>
+                            </VoiceChannelProvider>
+                        </CallProvider>
+                    </NoiseSuppressionProvider>
                 </DeviceSettingsProvider>
             </NotificationProvider>
         </AuthProvider>

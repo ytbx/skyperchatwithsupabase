@@ -40,7 +40,58 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
 
+  const [isWindowFocused, setIsWindowFocused] = useState(true);
+
+  // Refs for subscription stability
+  const activeContactIdRef = useRef<string | null>(null);
+  const activeChannelIdRef = useRef<number | null>(null);
+  const isWindowFocusedRef = useRef<boolean>(true);
+
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Sync state to refs
+  useEffect(() => { activeContactIdRef.current = activeContactId; }, [activeContactId]);
+  useEffect(() => { activeChannelIdRef.current = activeChannelId; }, [activeChannelId]);
+  useEffect(() => { isWindowFocusedRef.current = isWindowFocused; }, [isWindowFocused]);
+
+  /**
+   * Track window focus/blur state
+   */
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('[Notifications] 🔲 Focus Gained');
+      setIsWindowFocused(true);
+      isWindowFocusedRef.current = true;
+    };
+    const handleBlur = () => {
+      console.log('[Notifications] 🌫️ Focus Lost (Blurred)');
+      setIsWindowFocused(false);
+      isWindowFocusedRef.current = false;
+    };
+
+    const handleVisibilityChange = () => {
+      const isVisible = document.visibilityState === 'visible';
+      console.log('[Notifications] 👀 Visibility Change:', document.visibilityState);
+      setIsWindowFocused(isVisible);
+      isWindowFocusedRef.current = isVisible;
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Initial state
+    const initialFocus = document.hasFocus();
+    console.log('[Notifications] 🏁 Initial focus state:', initialFocus);
+    setIsWindowFocused(initialFocus);
+    isWindowFocusedRef.current = initialFocus;
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   /**
    * Request browser notification permission
@@ -100,7 +151,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * Show browser notification
    */
   const showBrowserNotification = useCallback((title: string, body: string, data?: any) => {
-    if (!hasPermission) return;
+    console.log('[Notifications] 📦 Attempting to show Browser Notification:', title, { hasPermission });
+
+    if (!hasPermission) {
+      console.warn('[Notifications] ❌ Cannot show notification: Permission not granted');
+      return;
+    }
+
+    if (!('Notification' in window)) {
+      console.error('[Notifications] ❌ Browser does not support Notification API');
+      return;
+    }
 
     try {
       const notification = new Notification(title, {
@@ -179,12 +240,19 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // NEW: Check if this notification is from the CURRENTLY ACTIVE chat/channel
     const channelId = notification.data?.channelId;
-    if (
-      (senderId && senderId === activeContactId) ||
-      (channelId && Number(channelId) === activeChannelId)
-    ) {
-      console.log('[Notifications] Suppression: Notification from active conversation, skipping alert');
+
+    const isFromActiveConversation = (
+      (senderId && senderId === activeContactIdRef.current) ||
+      (channelId && Number(channelId) === activeChannelIdRef.current)
+    );
+
+    if (isFromActiveConversation && isWindowFocusedRef.current) {
+      console.log('[Notifications] 🔇 Suppression: Notification from active conversation AND window is focused, skipping alert');
       return;
+    }
+
+    if (isFromActiveConversation) {
+      console.log('[Notifications] 📢 Alerting even for active conversation because window is NOT focused');
     }
 
     setNotifications((prev) => [notification, ...prev].slice(0, 100)); // Keep last 100
@@ -352,9 +420,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           const newMessage = payload.new as any;
           console.log('[Notifications] Received DM:', newMessage);
 
-          // Aktif chat'den geliyorsa bildirim gösterme
-          if (newMessage.sender_id === activeContactId) {
-            console.log('[Notifications] Message from active chat, skipping notification');
+          // Aktif chat'den geliyorsa ve pencere odaktaysa bildirim gösterme
+          if (newMessage.sender_id === activeContactIdRef.current && isWindowFocusedRef.current) {
+            console.log('[Notifications] 🔇 Message from active chat and window focused, skipping notification');
             return;
           }
 
@@ -400,7 +468,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('[Notifications] Cleaning up DM subscription');
       dmChannel.unsubscribe();
     };
-  }, [currentUserId, activeContactId, isUserNotificationsMuted]);
+  }, [currentUserId]); // Removed activeContactId and isWindowFocused from dependencies
 
   /**
    * Subscribe to channel messages for mention detection (receiver-side)
@@ -466,9 +534,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // Skip own messages
           if (newMessage.sender_id === currentUserId) return;
 
-          // Skip if viewing the same channel
-          if (newMessage.channel_id === activeChannelId) {
-            console.log('[Notifications] Mention in active channel, skipping');
+          // Skip if viewing the same channel and window is focused
+          if (newMessage.channel_id === activeChannelIdRef.current && isWindowFocusedRef.current) {
+            console.log('[Notifications] 🔇 Mention in active channel and window focused, skipping');
             return;
           }
 
@@ -521,8 +589,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             .single();
 
           // Create notification data for DB (NotificationSystem reads from DB)
-          // Note: DB constraint only allows 'message', 'friend_request', 'call', 'server_invite'
-          // We use 'message' type and store 'mention' in metadata.type
           const notificationDbData = {
             user_id: currentUserId,
             type: 'message' as const,
@@ -560,7 +626,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('[Notifications] Cleaning up channel message subscription');
       channelMessageSub.unsubscribe();
     };
-  }, [currentUserId, currentUsername, addNotification, isServerMuted, activeChannelId]);
+  }, [currentUserId, currentUsername, addNotification, isServerMuted]); // Removed activeChannelId and isWindowFocused
 
   /**
    * Load initial notifications
