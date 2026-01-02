@@ -77,6 +77,10 @@ function AppContent() {
     const [showMemberList, setShowMemberList] = useState(true);
     const [showGlobalSearch, setShowGlobalSearch] = useState(false);
 
+    // Simple cache for channel and server details
+    const [channelCache] = useState<Record<number, Channel>>({});
+    const [serverCache] = useState<Record<string, string>>({});
+
     // Handle ESC key and keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -128,6 +132,12 @@ function AppContent() {
     async function loadChannelDetails() {
         if (!selectedChannelId) return;
 
+        // Check cache first
+        if (channelCache[selectedChannelId]) {
+            setSelectedChannel(channelCache[selectedChannelId]);
+            return;
+        }
+
         const { data, error } = await supabase
             .from('channels')
             .select('*')
@@ -135,12 +145,19 @@ function AppContent() {
             .maybeSingle();
 
         if (data && !error) {
+            channelCache[selectedChannelId] = data;
             setSelectedChannel(data);
         }
     }
 
     async function loadServerName() {
         if (!selectedServerId) return;
+
+        // Check cache first
+        if (serverCache[selectedServerId]) {
+            setSelectedServerName(serverCache[selectedServerId]);
+            return;
+        }
 
         const { data, error } = await supabase
             .from('servers')
@@ -149,6 +166,7 @@ function AppContent() {
             .maybeSingle();
 
         if (data && !error) {
+            serverCache[selectedServerId] = data.name;
             setSelectedServerName(data.name);
         }
     }

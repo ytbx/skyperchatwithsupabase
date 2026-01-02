@@ -25,6 +25,8 @@ interface GroupedMessage {
 export function MessageArea({ channelId }: MessageAreaProps) {
   const [channel, setChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [sending, setSending] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -33,6 +35,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const [server, setServer] = useState<Server | null>(null);
   const [userRoles, setUserRoles] = useState<ServerRole[]>([]);
   const [currentChannelPermissions, setCurrentChannelPermissions] = useState<ChannelPermission[]>([]);
+  const [profileCache] = useState<Record<string, Profile>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -158,7 +161,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   async function loadChannelAndMessages() {
     if (!channelId) return;
 
-    // Load channel
+    // Load channel info (keep this part similar but maybe we can optimize later)
     const { data: channelData } = await supabase
       .from('channels')
       .select('*')
@@ -192,30 +195,121 @@ export function MessageArea({ channelId }: MessageAreaProps) {
       setCurrentChannelPermissions(permissionsData || []);
     }
 
-    // Load messages
-    const { data: messagesData } = await supabase
+    // Load initial messages (last 20)
+    const { data: messagesData, error } = await supabase
       .from('channel_messages')
       .select('*')
       .eq('channel_id', channelId)
-      .order('created_at', { ascending: true })
-      .limit(100);
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error('Error loading messages:', error);
+      return;
+    }
 
     if (messagesData) {
-      // Load sender profiles
-      const senderIds = [...new Set(messagesData.map(m => m.sender_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', senderIds);
+      setHasMore(messagesData.length === 20);
 
-      const messagesWithSenders = messagesData.map(msg => ({
+      // Reverse to show in correct chronological order
+      const reversedMessages = [...messagesData].reverse();
+
+      // Load sender profiles (using cache)
+      const senderIds = [...new Set(reversedMessages.map(m => m.sender_id))];
+      const uncachedSenderIds = senderIds.filter(id => !profileCache[id]);
+
+      if (uncachedSenderIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', uncachedSenderIds);
+
+        profiles?.forEach(p => {
+          profileCache[p.id] = p;
+        });
+      }
+
+      const messagesWithSenders = reversedMessages.map(msg => ({
         ...msg,
-        sender: profiles?.find(p => p.id === msg.sender_id)
+        sender: profileCache[msg.sender_id]
       }));
 
       setMessages(messagesWithSenders);
+      // Wait for DOM to update then scroll to bottom
+      setTimeout(scrollToBottom, 50);
     }
   }
+
+  async function loadMoreMessages() {
+    if (!channelId || !hasMore || isLoadingMore || messages.length === 0) return;
+
+    setIsLoadingMore(true);
+    const oldestMessage = messages[0];
+
+    const { data: moreMessages, error } = await supabase
+      .from('channel_messages')
+      .select('*')
+      .eq('channel_id', channelId)
+      .lt('created_at', oldestMessage.created_at)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error('Error loading more messages:', error);
+      setIsLoadingMore(false);
+      return;
+    }
+
+    if (moreMessages) {
+      setHasMore(moreMessages.length === 20);
+
+      const reversedMore = [...moreMessages].reverse();
+
+      // Load sender profiles for new messages (using cache)
+      const senderIds = [...new Set(reversedMore.map(m => m.sender_id))];
+      const uncachedSenderIds = senderIds.filter(id => !profileCache[id]);
+
+      if (uncachedSenderIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', uncachedSenderIds);
+
+        profiles?.forEach(p => {
+          profileCache[p.id] = p;
+        });
+      }
+
+      const newMessagesWithSenders = reversedMore.map(msg => ({
+        ...msg,
+        sender: profileCache[msg.sender_id]
+      }));
+
+      // Maintain scroll position
+      const container = messagesContainerRef.current;
+      const oldScrollHeight = container?.scrollHeight || 0;
+
+      setMessages(prev => [...newMessagesWithSenders, ...prev]);
+
+      // Adjust scroll after state update
+      setTimeout(() => {
+        if (container) {
+          const newScrollHeight = container.scrollHeight;
+          container.scrollTop = newScrollHeight - oldScrollHeight;
+        }
+      }, 0);
+    }
+    setIsLoadingMore(false);
+  }
+
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
+      loadMoreMessages();
+    }
+  };
 
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -486,7 +580,16 @@ export function MessageArea({ channelId }: MessageAreaProps) {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar"
+      >
+        {isLoadingMore && (
+          <div className="flex justify-center py-2">
+            <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center animate-fade-in">
             <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mb-4">

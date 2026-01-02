@@ -33,6 +33,8 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -255,16 +257,73 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
         .from('chats')
         .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${contactId}),and(sender_id.eq.${contactId},receiver_id.eq.${user.id})`)
-        .order('created_at', { ascending: true })
-        .limit(100);
+        .order('created_at', { ascending: false })
+        .limit(20);
 
       if (error) throw error;
 
-      setMessages(chats || []);
+      if (chats) {
+        setHasMore(chats.length === 20);
+        setMessages([...chats].reverse());
+        // Scroll to bottom after initial load
+        setTimeout(scrollToBottom, 50);
+      }
     } catch (error) {
       console.error('Error loading messages:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreMessages = async () => {
+    if (!user || !contactId || !hasMore || isLoadingMore || messages.length === 0) return;
+
+    try {
+      setIsLoadingMore(true);
+      const oldestMessage = messages[0];
+
+      const { data: moreChats, error } = await supabase
+        .from('chats')
+        .select('*')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${contactId}),and(sender_id.eq.${contactId},receiver_id.eq.${user.id})`)
+        .lt('created_at', oldestMessage.created_at)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+
+      if (moreChats) {
+        setHasMore(moreChats.length === 20);
+
+        const reversedMore = [...moreChats].reverse();
+
+        // Maintain scroll position
+        const container = messagesContainerRef.current;
+        const oldScrollHeight = container?.scrollHeight || 0;
+
+        setMessages(prev => [...reversedMore, ...prev]);
+
+        // Adjust scroll after state update
+        setTimeout(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop = newScrollHeight - oldScrollHeight;
+          }
+        }, 0);
+      }
+    } catch (error) {
+      console.error('Error loading more messages:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
+      loadMoreMessages();
     }
   };
 
@@ -730,7 +789,16 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar"
+      >
+        {isLoadingMore && (
+          <div className="flex justify-center py-2">
+            <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-pulse text-gray-400">Mesajlar yükleniyor...</div>
