@@ -175,11 +175,32 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'friend_requests' }, loadRequests)
             .subscribe();
 
-        // Subscribe to chat changes to re-sort friends
+        // Subscribe to chat changes to re-sort friends locally
         const chatsSubscription = supabase
             .channel('public:chats_sorting')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats', filter: `sender_id=eq.${user.id}` }, loadFriends)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats', filter: `receiver_id=eq.${user.id}` }, loadFriends)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats' }, (payload) => {
+                const newChat = payload.new as any;
+                const friendId = newChat.sender_id === user.id ? newChat.receiver_id : newChat.sender_id;
+
+                setFriends(prevFriends => {
+                    const updatedFriends = prevFriends.map(f => {
+                        if (f.id === friendId) {
+                            return { ...f, lastInteractionAt: newChat.created_at };
+                        }
+                        return f;
+                    });
+
+                    // Re-sort the updated list
+                    return [...updatedFriends].sort((a, b) => {
+                        if (a.lastInteractionAt && b.lastInteractionAt) {
+                            return new Date(b.lastInteractionAt).getTime() - new Date(a.lastInteractionAt).getTime();
+                        }
+                        if (a.lastInteractionAt) return -1;
+                        if (b.lastInteractionAt) return 1;
+                        return a.username.localeCompare(b.username);
+                    });
+                });
+            })
             .subscribe();
 
         return () => {

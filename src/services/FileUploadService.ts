@@ -34,25 +34,15 @@ export class FileUploadService {
             throw new Error(validation.error);
         }
 
-        // Delete old avatar if exists
-        const { data: existingFiles } = await supabase.storage
-            .from('avatars')
-            .list(userId);
-
-        if (existingFiles && existingFiles.length > 0) {
-            const filesToDelete = existingFiles.map(f => `${userId}/${f.name}`);
-            await supabase.storage.from('avatars').remove(filesToDelete);
-        }
-
-        // Upload new avatar
+        // Upload new avatar with upsert
         const fileExt = file.name.split('.').pop();
-        const fileName = `${userId}/avatar-${Date.now()}.${fileExt}`;
+        const fileName = `${userId}/avatar.${fileExt}`; // Simplified name for easier upsert
 
         const { data, error } = await supabase.storage
             .from('avatars')
             .upload(fileName, file, {
                 cacheControl: '3600',
-                upsert: false
+                upsert: true
             });
 
         if (error) throw error;
@@ -82,25 +72,15 @@ export class FileUploadService {
             throw new Error(validation.error);
         }
 
-        // Delete old server image if exists
-        const { data: existingFiles } = await supabase.storage
-            .from('server-images')
-            .list(serverId);
-
-        if (existingFiles && existingFiles.length > 0) {
-            const filesToDelete = existingFiles.map(f => `${serverId}/${f.name}`);
-            await supabase.storage.from('server-images').remove(filesToDelete);
-        }
-
-        // Upload new server image
+        // Upload new server image with upsert
         const fileExt = file.name.split('.').pop();
-        const fileName = `${serverId}/icon-${Date.now()}.${fileExt}`;
+        const fileName = `${serverId}/icon.${fileExt}`; // Simplified name for easier upsert
 
         const { data, error } = await supabase.storage
             .from('server-images')
             .upload(fileName, file, {
                 cacheControl: '3600',
-                upsert: false
+                upsert: true
             });
 
         if (error) throw error;

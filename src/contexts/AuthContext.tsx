@@ -38,32 +38,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     loadUser();
 
-    // Set up auth listener - prevent duplicate updates on window focus
+    // Set up auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         const newUser = session?.user || null;
 
-        setUser(prevUser => {
-          // Only update if the user has actually changed (different ID or Nullness changed)
-          if (prevUser?.id === newUser?.id) return prevUser;
-          return newUser;
-        });
-
-        if (newUser) {
-          // Only reload profile if user ID changed
-          setProfile(prevProfile => {
-            if (prevProfile?.id === newUser.id) return prevProfile;
-            loadProfile(newUser.id);
-            return prevProfile; // loadProfile will eventually call setProfile
+        // Prevent redundant fetches on INITIAL_SESSION or TOKEN_REFRESHED if user hasn't actually changed
+        if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
+          setUser(prevUser => {
+            if (prevUser?.id === newUser?.id) return prevUser;
+            return newUser;
           });
-        } else {
-          setProfile(null);
+          return;
         }
+
+        setUser(newUser);
       }
     );
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Separate effect to handle profile loading when user changes
+  useEffect(() => {
+    if (user?.id) {
+      setProfile(prevProfile => {
+        if (prevProfile?.id === user.id) return prevProfile;
+        loadProfile(user.id);
+        return prevProfile;
+      });
+    } else {
+      setProfile(null);
+    }
+  }, [user?.id]);
 
   async function loadProfile(userId: string) {
     const { data, error } = await supabase
