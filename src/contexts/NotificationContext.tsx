@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 interface Notification {
   id: string;
@@ -30,11 +31,20 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  console.log('[DEBUG] 🔔 NotificationProvider MOUNTED!');
-
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hasPermission, setHasPermission] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Sync currentUserId from AuthContext
+  useEffect(() => {
+    if (user?.id && user.id !== currentUserId) {
+      setCurrentUserId(user.id);
+    } else if (!user) {
+      setCurrentUserId(null);
+    }
+  }, [user, currentUserId]);
+
   const [currentView, setCurrentView] = useState<{ type: string; id?: string } | null>(null);
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
@@ -691,22 +701,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * Initialize
    */
   useEffect(() => {
-    const initialize = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      setCurrentUserId(user.id);
+    if (currentUserId) {
+      console.log('[Notifications] Initialized for user:', currentUserId);
 
       // Check if already has permission
       if ('Notification' in window && Notification.permission === 'granted') {
         setHasPermission(true);
       }
-
-      console.log('[Notifications] Initialized for user:', user.id);
-    };
-
-    initialize();
-  }, []); // ✅ Empty dependency array - only run once on mount
+    }
+  }, [currentUserId]); // ✅ Run when currentUserId is available
 
   // Add debug methods separately without notifications dependency
   useEffect(() => {

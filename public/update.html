@@ -52,15 +52,16 @@
             width: 64px;
             height: 64px;
             margin-bottom: 24px;
-            background: var(--accent-color);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 32px;
-            font-weight: 700;
-            color: white;
-            /* Square design */
-            border-radius: 0;
+            overflow: hidden;
+        }
+
+        .logo-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         /* Title */
@@ -131,7 +132,9 @@
     <!-- Main container -->
     <div class="container">
         <!-- Logo -->
-        <div class="logo-wrapper">O</div>
+        <div class="logo-wrapper">
+            <img src="icon.ico" alt="Ovox Logo">
+        </div>
 
         <!-- Title -->
         <h1>Ovox</h1>
