@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 interface Notification {
   id: string;
@@ -31,6 +32,7 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   console.log('[DEBUG] 🔔 NotificationProvider MOUNTED!');
+  const { user } = useAuth();
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hasPermission, setHasPermission] = useState(false);
@@ -688,13 +690,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [currentUserId]);
 
   /**
-   * Initialize
+   * Initialize permissions and sync userId
    */
   useEffect(() => {
-    const initialize = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
+    if (user) {
       setCurrentUserId(user.id);
 
       // Check if already has permission
@@ -703,10 +702,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       console.log('[Notifications] Initialized for user:', user.id);
-    };
+    } else {
+      setCurrentUserId(null);
+    }
+  }, [user]); // ✅ Sync with useAuth user
 
-    initialize();
-  }, []); // ✅ Empty dependency array - only run once on mount
 
   // Add debug methods separately without notifications dependency
   useEffect(() => {

@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 export default defineConfig({
-  base: process.env.NETLIFY === 'true' ? '/' : './',
+  base: (process.env.NETLIFY === 'true' || process.env.NODE_ENV === 'production') ? '/' : './',
   plugins: [
     react()
   ],

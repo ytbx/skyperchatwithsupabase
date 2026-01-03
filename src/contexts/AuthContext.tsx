@@ -20,39 +20,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load user on mount - use getSession for faster cache-first check
+  // Load user on mount - rely on onAuthStateChange INITIAL_SESSION
   useEffect(() => {
-    async function loadUser() {
-      setLoading(true);
-      try {
-        // getSession reads from localStorage first (faster), getUser makes network request
-        const { data: { session } } = await supabase.auth.getSession();
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-        if (currentUser) {
-          await loadProfile(currentUser.id);
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadUser();
-
     // Set up auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         const newUser = session?.user || null;
 
-        // Prevent redundant fetches on INITIAL_SESSION or TOKEN_REFRESHED if user hasn't actually changed
+        // Handle initial session or token refresh
         if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
           setUser(prevUser => {
             if (prevUser?.id === newUser?.id) return prevUser;
             return newUser;
           });
+          setLoading(false);
           return;
         }
 
         setUser(newUser);
+        setLoading(false);
       }
     );
 

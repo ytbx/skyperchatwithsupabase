@@ -79,9 +79,7 @@ export function MemberList({ serverId }: MemberListProps) {
   }
 
   async function loadCurrentUserPermissions() {
-    if (!serverId) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!serverId || !user) return;
 
     // Get server owner to check if we are owner
     const { data: server } = await supabase
