@@ -13,7 +13,7 @@ export class NoiseSuppressionService {
 
     public async processStream(stream: MediaStream): Promise<MediaStream> {
         if (!this.audioContext || this.audioContext.state === 'closed') {
-            this.audioContext = new AudioContext({ sampleRate: 44100 });
+            this.audioContext = new AudioContext();
         }
 
         if (this.audioContext.state === 'suspended') {
@@ -24,51 +24,69 @@ export class NoiseSuppressionService {
         const source = audioContext.createMediaStreamSource(stream);
         const destination = audioContext.createMediaStreamDestination();
 
-        // 1. High-pass Filter (Remove low-end rumble)
+        // 1. High-pass Filter (Native node, zero CPU lag)
         const filter = audioContext.createBiquadFilter();
         filter.type = 'highpass';
-        filter.frequency.value = 100;
+        filter.frequency.value = 100; // Increased to 100Hz to remove more low-end noise
 
-        // 2. Smart Gate
-        const processor = audioContext.createScriptProcessor(1024, 1, 1);
-        let smoothedLevel = 0;
-        let currentGain = 0;
-        const threshold = 0.012;
+        // 2. Gain Node (The Gate)
+        const gateNode = audioContext.createGain();
+        gateNode.gain.value = 0;
 
-        processor.onaudioprocess = (event) => {
-            const input = event.inputBuffer.getChannelData(0);
-            const output = event.outputBuffer.getChannelData(0);
+        // 3. Side-chain Analyser (Bigger window to avoid missing signal)
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048; // ~42ms window
+        const dataArray = new Float32Array(analyser.fftSize);
 
-            let sumSquare = 0;
-            for (let i = 0; i < input.length; i++) {
-                sumSquare += input[i] * input[i];
-            }
-            const rms = Math.sqrt(sumSquare / input.length);
-            smoothedLevel = smoothedLevel * 0.8 + rms * 0.2;
-
-            const targetGain = smoothedLevel > threshold ? 1.0 : 0.0;
-
-            for (let i = 0; i < input.length; i++) {
-                // Slew rate limited gain change to prevent clicks
-                if (currentGain < targetGain) {
-                    currentGain = Math.min(targetGain, currentGain + 0.04);
-                } else if (currentGain > targetGain) {
-                    currentGain = Math.max(targetGain, currentGain - 0.01);
-                }
-                output[i] = input[i] * currentGain;
-            }
-        };
-
+        // Connections
         source.connect(filter);
-        filter.connect(processor);
-        processor.connect(destination);
+        filter.connect(gateNode);
+        gateNode.connect(destination);
+        filter.connect(analyser);
+
+        // Gate Logic
+        let isGateOpen = false;
+        let holdTimer = 0;
+
+        // Refined thresholds for clear distinction
+        const openThreshold = 0.025;  // Slightly higher to ignore keyboard far away
+        const closeThreshold = 0.015;
+        const holdTimeMs = 350;
+
+        const intervalId = setInterval(() => {
+            analyser.getFloatTimeDomainData(dataArray);
+
+            // Calculate RMS (Volume) instead of Peak for more stability
+            let sumSquare = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sumSquare += dataArray[i] * dataArray[i];
+            }
+            const rms = Math.sqrt(sumSquare / dataArray.length);
+
+            const now = Date.now();
+
+            if (rms > openThreshold) {
+                isGateOpen = true;
+                holdTimer = now + holdTimeMs;
+            } else if (rms < closeThreshold) {
+                if (now > holdTimer && isGateOpen) {
+                    isGateOpen = false;
+                }
+            }
+
+            const targetGain = isGateOpen ? 1.0 : 0.0;
+            // setTargetAtTime for click-free automation
+            const timeConstant = isGateOpen ? 0.015 : 0.06;
+            gateNode.gain.setTargetAtTime(targetGain, audioContext.currentTime, timeConstant);
+        }, 15); // Faster check (15ms) with 42ms overlap window = no signal missed
 
         (destination.stream as any).stopSuppression = () => {
-            console.log('[NoiseSuppression] Disconnecting lightweight service');
+            clearInterval(intervalId);
             try {
                 source.disconnect();
                 filter.disconnect();
-                processor.disconnect();
+                gateNode.disconnect();
+                analyser.disconnect();
             } catch (e) { }
         };
 
