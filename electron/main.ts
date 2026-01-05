@@ -85,11 +85,19 @@ const loadSoundboardMeta = (): Array<{ id: string; name: string; filename: strin
 
     let changed = false;
 
-    // Remove metadata for files that no longer exist
+    // Remove metadata for files that no longer exist and deduplicate by filename
+    const seenFiles = new Set<string>();
     const existingMeta = meta.filter(item => {
-        const exists = files.includes(item.filename);
-        if (!exists) changed = true;
-        return exists;
+        const fileExists = files.includes(item.filename);
+        const isDuplicate = seenFiles.has(item.filename);
+
+        if (!fileExists || isDuplicate) {
+            changed = true;
+            return false;
+        }
+
+        seenFiles.add(item.filename);
+        return true;
     });
 
     meta = existingMeta;
@@ -101,7 +109,7 @@ const loadSoundboardMeta = (): Array<{ id: string; name: string; filename: strin
             const alreadyInMeta = meta.some(item => item.filename === file);
             if (!alreadyInMeta) {
                 meta.push({
-                    id: Math.random().toString(36).substring(2, 10) + Date.now().toString(36),
+                    id: Date.now().toString(36) + Math.random().toString(36).substring(2, 10),
                     name: path.parse(file).name,
                     filename: file,
                     createdAt: new Date().toISOString()
@@ -275,22 +283,31 @@ function createWindow() {
     });
 
     ipcMain.handle('soundboard-save-sound', async (_event, { name, buffer, extension }: { name: string; buffer: string; extension: string }) => {
-        const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        // 1. Load current metadata first (without the new file)
+        const meta = loadSoundboardMeta();
+
+        // 2. Generate unique ID and filename
+        const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
         const filename = `${id}.${extension}`;
         const filePath = path.join(getSoundboardDir(), filename);
 
-        fs.writeFileSync(filePath, Buffer.from(buffer, 'base64'));
-
-        const meta = loadSoundboardMeta();
-        meta.push({
+        // 3. Create new entry
+        const newSound = {
             id,
             name,
             filename,
             createdAt: new Date().toISOString()
-        });
+        };
+
+        // 4. Update and save metadata BEFORE writing the file
+        // This ensures that when the file appears on disk, it's already in the meta
+        meta.push(newSound);
         saveSoundboardMeta(meta);
 
-        return { id, name, filename };
+        // 5. Finally write the actual audio file
+        fs.writeFileSync(filePath, Buffer.from(buffer, 'base64'));
+
+        return newSound;
     });
 
     ipcMain.handle('soundboard-list-sounds', async () => {

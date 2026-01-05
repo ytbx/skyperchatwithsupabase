@@ -586,13 +586,13 @@ export class CallSession {
         // Send appropriate end signal based on state
         if (this.signaling) {
             try {
-                if (this.state === 'ringing' && this.role === 'caller') {
+                if ((this.state === 'ringing' || this.state === 'starting') && this.role === 'caller') {
                     await this.signaling.sendCallCancelled();
                 } else {
                     await this.signaling.sendCallEnded();
                 }
-                // Wait for signal to be delivered
-                await new Promise(r => setTimeout(r, 500));
+                // Wait for signal to be delivered before cleaning up
+                await new Promise(r => setTimeout(r, 1000));
             } catch (e) {
                 console.error('[CallSession] Error sending end signal:', e);
             }

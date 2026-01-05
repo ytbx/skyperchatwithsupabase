@@ -735,11 +735,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
                             setCallStatus('ringing_incoming');
                         }
 
-                        // Listen for call cancellation
+                        // Listen for call cancellation / end
                         const signaling = new SignalingChannel(call.id, user.id, call.caller_id);
                         await signaling.subscribe(async (signal) => {
-                            if (signal.signal_type === 'call-cancelled') {
-                                console.log('[CallContext] Call was cancelled by caller');
+                            if (signal.signal_type === 'call-cancelled' || signal.signal_type === 'call-ended' || signal.signal_type === 'call-rejected') {
+                                console.log(`[CallContext] Call was ${signal.signal_type} by remote side`);
                                 await signaling.close();
 
                                 // Check if it was the incoming call or active call
