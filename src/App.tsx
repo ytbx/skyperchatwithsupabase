@@ -28,13 +28,13 @@ import { GlobalSearchModal } from '@/components/modals/GlobalSearchModal';
 import { JoinServerPage } from '@/pages/JoinServerPage';
 import { CallNotification } from '@/components/call/CallNotification';
 import { VoiceChannelView } from '@/components/voice/VoiceChannelView';
-import { VoiceChannelMiniPlayer } from '@/components/voice/VoiceChannelMiniPlayer';
+import { VoiceConnectionOverlay } from '@/components/overlay/VoiceConnectionOverlay';
 import { Users, Hash } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Channel } from '@/lib/types';
 import { SupabaseRealtimeProvider } from '@/contexts/SupabaseRealtimeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
-import { CallProvider } from '@/contexts/CallContext';
+import { CallProvider, useCall } from '@/contexts/CallContext';
 import { VoiceChannelProvider, useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { UserAudioProvider } from '@/contexts/UserAudioContext';
 import { DeviceSettingsProvider } from '@/contexts/DeviceSettingsContext';
@@ -49,6 +49,7 @@ import { NoiseSuppressionProvider } from '@/contexts/NoiseSuppressionContext';
 function AppContent() {
     const { user, loading } = useAuth();
     const { activeChannelId, participants, toggleScreenShare } = useVoiceChannel();
+    const { activeCall, callStatus } = useCall();
     const [showSignUp, setShowSignUp] = useState(false);
 
     // View states - Default is Friends page
@@ -355,26 +356,62 @@ function AppContent() {
             {/* Main Content Area */}
             {renderMainContent()}
 
-            {/* Mini Player Overlay */}
-            {/* Show if we are connected to voice AND (we are NOT viewing the active voice channel OR we are in a different view) */}
-            {activeChannelId && (currentView !== 'servers' || selectedChannelId !== activeChannelId) && (
-                <VoiceChannelMiniPlayer
-                    onMaximize={() => {
-                        if (selectedServerId) {
-                            setSelectedChannelId(activeChannelId);
-                            setCurrentView('servers');
-                        } else {
-                            supabase.from('channels').select('server_id').eq('id', activeChannelId).single().then(({ data }) => {
-                                if (data) {
-                                    setSelectedServerId(data.server_id);
-                                    setSelectedChannelId(activeChannelId);
-                                    setCurrentView('servers');
+            {/* Voice Connection / Call Overlay */}
+            {/* Show if we are connected to voice/call AND we are NOT in the relevant view */}
+            {(() => {
+                // Logic to determine if we should show the overlay
+                const isVoiceOverlayVisible = !!activeChannelId && (currentView !== 'servers' || selectedChannelId !== activeChannelId);
+
+                // Check if we are viewing the active call (DM view with the person we are calling)
+                const isViewingActiveCall = currentView === 'friends' && selectedContactId && activeCall && (selectedContactId === activeCall.caller_id || selectedContactId === activeCall.callee_id);
+                // Call overlay is visible if we have an active call AND we are NOT viewing it
+                const isCallOverlayVisible = !!activeCall && (callStatus === 'active' || callStatus === 'connecting') && !isViewingActiveCall;
+
+                if (!isVoiceOverlayVisible && !isCallOverlayVisible) return null;
+
+                return (
+                    <VoiceConnectionOverlay
+                        onMaximize={(type, id) => {
+                            console.log('[App] Maximize overlay:', type, id);
+                            if (type === 'voice') {
+                                // Maximize Voice Channel
+                                if (activeChannelId) {
+                                    if (selectedServerId) {
+                                        setSelectedChannelId(activeChannelId);
+                                        setCurrentView('servers');
+                                    } else {
+                                        supabase.from('channels').select('server_id').eq('id', activeChannelId).single().then(({ data }) => {
+                                            if (data) {
+                                                setSelectedServerId(data.server_id);
+                                                setSelectedChannelId(activeChannelId);
+                                                setCurrentView('servers');
+                                            }
+                                        });
+                                    }
                                 }
-                            });
-                        }
-                    }}
-                />
-            )}
+                            } else if (type === 'call') {
+                                // Maximize Direct Call (Navigate to DM)
+                                if (id) {
+                                    // Fetch user details to open DM nicely (ensure contact name etc is set)
+                                    supabase
+                                        .from('profiles')
+                                        .select('username, profile_image_url')
+                                        .eq('id', id)
+                                        .single()
+                                        .then(({ data }) => {
+                                            if (data) {
+                                                setSelectedContactId(String(id));
+                                                setSelectedContactName(data.username);
+                                                setSelectedContactProfileImage(data.profile_image_url);
+                                                setCurrentView('friends');
+                                            }
+                                        });
+                                }
+                            }
+                        }}
+                    />
+                );
+            })()}
 
 
 

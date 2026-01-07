@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Volume2, VolumeX, Volume1, Music2, Mic, MicOff, Bell, BellOff, Check } from 'lucide-react';
+import { Volume2, VolumeX, Volume1, Music2, Mic, MicOff, Bell, BellOff, Check, PictureInPicture2 } from 'lucide-react';
 import { useUserAudio } from '@/contexts/UserAudioContext';
 import { toast } from 'sonner';
 
@@ -15,6 +15,7 @@ interface UserVolumeContextMenuProps {
     streamId?: string;
     isIgnored?: boolean;
     onToggleIgnore?: (streamId: string) => void;
+    onTogglePiP?: (streamId: string) => void;
 }
 
 type TabType = 'voice' | 'soundpad';
@@ -28,7 +29,8 @@ export function UserVolumeContextMenu({
     onClose,
     streamId,
     isIgnored,
-    onToggleIgnore
+    onToggleIgnore,
+    onTogglePiP
 }: UserVolumeContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<TabType>('voice');
@@ -315,7 +317,20 @@ export function UserVolumeContextMenu({
 
             {/* Stream Ignore Section */}
             {streamId && onToggleIgnore && (
-                <div className="px-3 pb-3 border-t border-gray-700/50 pt-3">
+                <div className="px-3 pb-3 border-t border-gray-700/50 pt-3 space-y-2">
+                    {onTogglePiP && !isIgnored && (
+                        <button
+                            onClick={() => {
+                                onTogglePiP(streamId);
+                                onClose();
+                            }}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600/50"
+                        >
+                            <PictureInPicture2 className="w-4 h-4" />
+                            <span>Mini Oynatıcı</span>
+                        </button>
+                    )}
+
                     <button
                         onClick={() => {
                             onToggleIgnore(streamId);

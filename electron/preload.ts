@@ -28,14 +28,16 @@ contextBridge.exposeInMainWorld('electron', {
         }
     },
 
-    // Global Shortcut
-    registerGlobalShortcut: (accelerator: string) => ipcRenderer.invoke('register-global-shortcut', accelerator),
-    unregisterGlobalShortcut: (accelerator: string) => ipcRenderer.invoke('unregister-global-shortcut', accelerator),
-    unregisterAllGlobalShortcuts: () => ipcRenderer.invoke('unregister-all-global-shortcuts'),
-    onGlobalShortcut: (callback: (accelerator: string) => void) => {
-        const subscription = (_event: any, accelerator: string) => callback(accelerator);
-        ipcRenderer.on('global-shortcut-triggered', subscription);
-        return () => ipcRenderer.removeListener('global-shortcut-triggered', subscription);
+    // Global Shortcuts
+    globalShortcuts: {
+        register: (accelerator: string) => ipcRenderer.invoke('register-global-shortcut', accelerator),
+        unregister: (accelerator: string) => ipcRenderer.invoke('unregister-global-shortcut', accelerator),
+        unregisterAll: () => ipcRenderer.invoke('unregister-all-global-shortcuts'),
+        onTriggered: (callback: (accelerator: string) => void) => {
+            const subscription = (_event: any, accelerator: string) => callback(accelerator);
+            ipcRenderer.on('global-shortcut-triggered', subscription);
+            return () => ipcRenderer.removeListener('global-shortcut-triggered', subscription);
+        }
     }
 })
 

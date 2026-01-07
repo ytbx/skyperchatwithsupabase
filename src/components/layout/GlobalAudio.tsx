@@ -96,7 +96,8 @@ export const GlobalAudio: React.FC = () => {
 
             manageAudio(participant.stream, voiceAudioRefs.current, 'VOICE', getEffectiveVoiceVolume);
             manageAudio(participant.soundpadStream, soundpadAudioRefs.current, 'SOUNDPAD', getEffectiveSoundpadVolume);
-            manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
+            // SCREEN audio is now handled by the <video> element in VoiceChannelView.tsx
+            // manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
         });
 
         // Cleanup on unmount
@@ -194,34 +195,12 @@ export const GlobalAudio: React.FC = () => {
 
     // Handle Direct Call SCREEN Audio
     useEffect(() => {
-        if (!callScreenAudioRef.current) {
-            callScreenAudioRef.current = new Audio();
-            callScreenAudioRef.current.autoplay = true;
+        // SCREEN audio is now handled by the <video> element in ActiveCallOverlay.tsx
+        // to ensure perfect Lip Sync. We disable it here for direct calls.
+        if (callScreenAudioRef.current && callScreenAudioRef.current.srcObject) {
+            callScreenAudioRef.current.srcObject = null;
         }
-
-        const audio = callScreenAudioRef.current;
-        const remoteUserId = getRemoteUserId();
-
-        if (callScreenStream && activeCall && remoteUserId) {
-            // Apply volume
-            let volume = 0;
-            if (!isCallDeafened && !isGlobalMuted) {
-                volume = getEffectiveScreenVolume(remoteUserId);
-            }
-            const safeVol = safeVolume(volume);
-            audio.volume = safeVol;
-
-            if (audio.srcObject !== callScreenStream) {
-                console.log('[GlobalAudio] Setting direct call SCREEN stream');
-                audio.srcObject = callScreenStream;
-                audio.play().catch(e => console.error('Error playing call screen audio:', e));
-            }
-        } else {
-            if (audio.srcObject) {
-                audio.srcObject = null;
-            }
-        }
-    }, [callScreenStream, activeCall, user, getEffectiveVoiceVolume, isCallDeafened, isGlobalMuted]);
+    }, [callScreenStream, activeCall]);
 
     // Update direct call volumes when settings change (including deafen state)
     useEffect(() => {

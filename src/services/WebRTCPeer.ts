@@ -150,9 +150,17 @@ export class WebRTCPeer {
 
             if (hasVideo) {
                 console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video)');
-                // Create/Update screen stream
-                const screenStream = new MediaStream(stream.getTracks());
-                this.callbacks.onRemoteVideo(screenStream);
+                // Create/Update screen stream - maintain stable reference
+                if (!this.remoteScreenStream) {
+                    this.remoteScreenStream = new MediaStream();
+                }
+
+                // Add track if not already present
+                if (!this.remoteScreenStream.getTracks().find(t => t.id === track.id)) {
+                    this.remoteScreenStream.addTrack(track);
+                }
+
+                this.callbacks.onRemoteVideo(this.remoteScreenStream);
             } else {
                 this.audioTrackCount++;
                 console.log('[WebRTCPeer] Audio track #', this.audioTrackCount);
@@ -163,7 +171,11 @@ export class WebRTCPeer {
                         this.remoteStream = new MediaStream();
                         this.remoteStreamId = stream.id;
                     }
-                    this.remoteStream.addTrack(track);
+
+                    if (!this.remoteStream.getTracks().find(t => t.id === track.id)) {
+                        this.remoteStream.addTrack(track);
+                    }
+
                     this.callbacks.onRemoteStream(this.remoteStream);
                     console.log('[WebRTCPeer] ✓ Voice track added');
                 } else {
@@ -171,18 +183,16 @@ export class WebRTCPeer {
                     if (!this.remoteSoundpadStream) {
                         this.remoteSoundpadStream = new MediaStream();
                     }
-                    this.remoteSoundpadStream.addTrack(track);
+
+                    if (!this.remoteSoundpadStream.getTracks().find(t => t.id === track.id)) {
+                        this.remoteSoundpadStream.addTrack(track);
+                    }
+
                     this.callbacks.onRemoteSoundpad(this.remoteSoundpadStream);
                     console.log('[WebRTCPeer] ✓ Soundpad track added');
                 }
             }
         } else if (track.kind === 'video') {
-
-            // Logic:
-            // 1. If we have a remoteStreamId, and this stream matches -> Camera
-            // 2. If we DON'T have a remoteStreamId, we assume the first one is Camera (unless we know otherwise?)
-            //    - Actually, if I start a call with NO camera, and they share screen, that might be the first video.
-            //    - But usually Audio comes first and establishes remoteStreamId.
 
             let isCamera = false;
 
@@ -202,7 +212,6 @@ export class WebRTCPeer {
                 isCamera = true;
             } else {
                 // Fallback: If default remoteStream has NO video tracks, assume this IS the camera.
-                // This handles cases where stream IDs mismatch mid-call but we logically expect a camera.
                 if (this.remoteStream && this.remoteStream.getVideoTracks().length === 0) {
                     console.log('[WebRTCPeer] Stream ID mismatch but Main Stream has no video -> Adopting as Camera');
                     isCamera = true;
@@ -211,21 +220,29 @@ export class WebRTCPeer {
 
             if (isCamera) {
                 console.log('[WebRTCPeer] Assigning as Primary (Camera) Video');
-                // Ensure we have a remoteStream object
                 if (!this.remoteStream) {
                     this.remoteStream = new MediaStream();
-                    this.remoteStreamId = stream.id; // Best effort
+                    this.remoteStreamId = stream.id;
                 }
 
-                this.remoteStream.addTrack(track);
+                if (!this.remoteStream.getTracks().find(t => t.id === track.id)) {
+                    this.remoteStream.addTrack(track);
+                }
+
                 this.callbacks.onRemoteStream(this.remoteStream);
             } else {
                 // Different stream ID -> Screen Share
                 console.log('[WebRTCPeer] Assigning as Secondary (Screen) Video');
-                // Create a new stream object for the UI to consume
-                const screenStream = new MediaStream([track]);
-                this.remoteScreenStream = screenStream; // Store reference for cleanup
-                this.callbacks.onRemoteVideo(screenStream);
+
+                if (!this.remoteScreenStream) {
+                    this.remoteScreenStream = new MediaStream();
+                }
+
+                if (!this.remoteScreenStream.getTracks().find(t => t.id === track.id)) {
+                    this.remoteScreenStream.addTrack(track);
+                }
+
+                this.callbacks.onRemoteVideo(this.remoteScreenStream);
             }
         }
     }

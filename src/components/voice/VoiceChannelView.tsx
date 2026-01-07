@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserAudio } from '@/contexts/UserAudioContext';
-import { MonitorUp, Users, MicOff, Headphones, Maximize2, Minimize2, X, Volume2, User, Camera, Trash2, VolumeX } from 'lucide-react';
+import { MonitorUp, Users, MicOff, Headphones, Maximize2, Minimize2, X, Volume2, User, Camera, Trash2, VolumeX, PictureInPicture2 } from 'lucide-react';
 import { UserVolumeContextMenu } from './UserVolumeContextMenu';
 import { StreamVolumeControl } from '../common/StreamVolumeControl';
 
@@ -170,7 +170,14 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             const video = videoRefs.current.get(videoId);
             if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.screenStream;
-                video.muted = true; // ALWAYS mute video element, audio is handled by GlobalAudio
+
+                // UNMUTE for screen shares to fix Lip Sync (audio plays in video element)
+                video.muted = false;
+
+                const volume = getUserScreenVolume(participant.user_id);
+                const isMuted = getUserScreenMuted(participant.user_id);
+                video.volume = isMuted ? 0 : volume;
+
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
@@ -192,18 +199,25 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
 
     // Handle fullscreen video stream assignment with useEffect to prevent flickering
     useEffect(() => {
-        const { stream, isLocalUser } = getFullscreenStream();
+        const { stream } = getFullscreenStream();
         const video = fullscreenVideoRef.current;
+        const participantId = fullscreenVideoId?.split('-')[1];
 
         if (video && stream) {
             // Only update srcObject if it changed
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
-                video.muted = true; // Mute fullscreen video element too
+
+                const isScreen = fullscreenVideoId?.startsWith('screen-');
+                video.muted = !isScreen; // Unmute if screen share
+
+                if (isScreen && participantId) {
+                    const volume = getUserScreenVolume(participantId);
+                    const isMuted = getUserScreenMuted(participantId);
+                    video.volume = isMuted ? 0 : volume;
+                }
+
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
-            }
-            if (!video.muted) {
-                video.muted = true;
             }
         }
     }, [fullscreenVideoId, getFullscreenStream]);
@@ -211,10 +225,22 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     const handleVolumeChange = useCallback((videoId: string, userId: string, volume: number) => {
         if (videoId.startsWith('screen-')) {
             setUserScreenVolume(userId, volume);
+
+            // Sync with video element volume
+            const video = videoRefs.current.get(videoId);
+            if (video) {
+                const isMuted = getUserScreenMuted(userId);
+                video.volume = isMuted ? 0 : volume;
+            }
+            // Also sync fullscreen if active
+            if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
+                const isMuted = getUserScreenMuted(userId);
+                fullscreenVideoRef.current.volume = isMuted ? 0 : volume;
+            }
         } else {
             setUserVoiceVolume(userId, volume);
         }
-    }, [setUserScreenVolume, setUserVoiceVolume]);
+    }, [setUserScreenVolume, setUserVoiceVolume, fullscreenVideoId]);
 
     const openFullscreen = (videoId: string) => {
         setFullscreenVideoId(videoId);
@@ -222,6 +248,23 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
 
     const closeFullscreen = () => {
         setFullscreenVideoId(null);
+    };
+
+    const handleTogglePiP = async (streamId: string) => {
+        const videoElement = videoRefs.current.get(streamId);
+
+        if (videoElement) {
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                }
+                if (document.pictureInPictureElement !== videoElement) {
+                    await videoElement.requestPictureInPicture();
+                }
+            } catch (error) {
+                console.error('Error toggling PiP:', error);
+            }
+        }
     };
 
     const hasAnyStreams = cameraParticipants.length > 0 || screenSharingParticipants.length > 0;
@@ -428,7 +471,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             }}
                                             autoPlay
                                             playsInline
-                                            muted={true}
+                                            muted={false} // Unmuted by default for screens, sync logic in useEffect
                                             className={`w-full h-full bg-black ${isMaximized ? 'object-contain' : 'object-contain'}`}
                                         />
                                     )}
@@ -600,6 +643,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                         streamId={volumeContextMenu.streamId}
                         isIgnored={ignoredStreams.has(volumeContextMenu.streamId)}
                         onToggleIgnore={toggleIgnoreStream}
+                        onTogglePiP={handleTogglePiP}
                     />
                 )
             }

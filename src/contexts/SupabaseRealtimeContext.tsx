@@ -174,8 +174,8 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         // Send initial heartbeat
         sendHeartbeat();
 
-        // Set up heartbeat interval (every 60 seconds)
-        const heartbeatInterval = setInterval(sendHeartbeat, 60000);
+        // Set up heartbeat interval (every 3 minutes)
+        const heartbeatInterval = setInterval(sendHeartbeat, 180000);
 
         // Only add listener, don't call immediately
         window.addEventListener('beforeunload', sendHeartbeat);

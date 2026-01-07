@@ -239,26 +239,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 setLocalStream(stream);
             },
             onRemoteStream: (stream) => {
-                console.log('[CallContext] Remote stream received');
-                setRemoteStream(new MediaStream(stream.getTracks()));
+                console.log('[CallContext] Remote stream received/updated');
+                // Use the stable stream reference
+                setRemoteStream(stream);
             },
             onRemoteSoundpad: (stream) => {
-                console.log('[CallContext] Remote soundpad received');
+                console.log('[CallContext] Remote soundpad received/updated');
                 setRemoteSoundpadStream(stream);
             },
             onRemoteScreenStream: (stream) => {
-                console.log('[CallContext] Remote screen stream received (with audio)');
+                console.log('[CallContext] Remote screen stream received/updated');
                 setRemoteScreenStream(stream);
-                // Ensure we know they are sharing
                 setIsRemoteScreenSharing(true);
             },
             onRemoteTrackChanged: () => {
                 if (sessionRef.current) {
                     const stream = sessionRef.current.getRemoteStream();
                     if (stream) {
-                        console.log('[CallContext] Remote tracks changed, updating stream');
-                        setRemoteStream(new MediaStream(stream.getTracks()));
+                        console.log('[CallContext] Remote tracks changed, updating main stream');
+                        setRemoteStream(stream);
                     }
+                    // Also check for remote screen stream updates
+                    // Note: sessionRef.current doesn't have a direct getRemoteScreenStream 
+                    // but onRemoteScreenStream callback is fired by handleRemoteTrack
                 }
             },
             onRemoteScreenShareStarted: () => {

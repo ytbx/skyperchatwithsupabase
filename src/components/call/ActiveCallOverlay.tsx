@@ -35,7 +35,7 @@ export const ActiveCallOverlay: React.FC = () => {
         ping
     } = useCall();
 
-    const [callDuration, setCallDuration] = useState(0);
+
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
     const {
         getUserScreenVolume,
@@ -95,6 +95,31 @@ export const ActiveCallOverlay: React.FC = () => {
     const localAudioContextRef = useRef<AudioContext | null>(null);
     const remoteAnalyserRef = useRef<AnalyserNode | null>(null);
     const localAnalyserRef = useRef<AnalyserNode | null>(null);
+
+    const handleTogglePiP = async (streamId: string) => {
+        let videoElement: HTMLVideoElement | null = null;
+
+        if (streamId === 'remote-camera') {
+            videoElement = remoteCameraVideoRef.current;
+        } else if (streamId === 'remote-screen') {
+            videoElement = remoteScreenVideoRef.current;
+        } else if (streamId === 'local-screen') {
+            videoElement = localScreenVideoRef.current;
+        }
+
+        if (videoElement) {
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                }
+                if (document.pictureInPictureElement !== videoElement) {
+                    await videoElement.requestPictureInPicture();
+                }
+            } catch (error) {
+                console.error('Error toggling PiP:', error);
+            }
+        }
+    };
 
     // Fetch contact name and profile images from activeCall
     useEffect(() => {
@@ -232,7 +257,18 @@ export const ActiveCallOverlay: React.FC = () => {
         if (video.srcObject !== stream) {
             console.log(`[ActiveCallOverlay] Attaching stream to ${videoId}`);
             video.srcObject = stream;
-            video.muted = true; // Mute video element, audio is handled by GlobalAudio
+
+            // UNMUTE for remote screen shares to fix Lip Sync (audio plays in video element)
+            // Local streams and camera streams remain muted in the video element 
+            // because their audio is handled elsewhere or not needed there.
+            const isRemoteScreen = videoId === 'remote-screen';
+            video.muted = !isRemoteScreen;
+
+            if (isRemoteScreen) {
+                const volume = getUserScreenVolume(contactId);
+                const isUserMuted = getUserScreenMuted(contactId);
+                video.volume = isUserMuted ? 0 : volume;
+            }
 
             try {
                 await video.play();
@@ -299,6 +335,11 @@ export const ActiveCallOverlay: React.FC = () => {
     const handleVolumeChange = (videoId: string, volume: number) => {
         if (videoId === 'remote-screen' || videoId === 'local-screen') {
             setUserScreenVolume(contactId, volume);
+
+            // Sync with video element volume if it's the remote screen
+            if (videoId === 'remote-screen' && remoteScreenVideoRef.current) {
+                remoteScreenVideoRef.current.volume = volume;
+            }
         } else {
             setUserVoiceVolume(contactId, volume);
         }
@@ -318,8 +359,9 @@ export const ActiveCallOverlay: React.FC = () => {
         if (!video || !fullscreenVideoId) return;
 
         let stream: MediaStream | null = null;
+        const isRemoteScreen = fullscreenVideoId === 'remote-screen';
 
-        if (fullscreenVideoId === 'remote-screen' && remoteScreenStream) {
+        if (isRemoteScreen && remoteScreenStream) {
             stream = remoteScreenStream;
         } else if (fullscreenVideoId === 'local-screen' && screenStream) {
             stream = screenStream;
@@ -331,33 +373,26 @@ export const ActiveCallOverlay: React.FC = () => {
             // Only update srcObject if it changed
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
-                video.muted = true;
+
+                // UNMUTE for remote screen shares in fullscreen too
+                video.muted = !isRemoteScreen;
+
+                if (isRemoteScreen) {
+                    const volume = getUserScreenVolume(contactId);
+                    const isUserMuted = getUserScreenMuted(contactId);
+                    video.volume = isUserMuted ? 0 : volume;
+                }
+
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
-            }
-            if (!video.muted) {
-                video.muted = true;
             }
         }
     }, [fullscreenVideoId, remoteScreenStream, screenStream, remoteStream]);
 
     // Call duration timer
-    useEffect(() => {
-        if (callStatus === 'active') {
-            const interval = setInterval(() => {
-                setCallDuration(prev => prev + 1);
-            }, 1000);
-            return () => clearInterval(interval);
-        } else {
-            setCallDuration(0);
-        }
-    }, [callStatus]);
+
 
     // Format call duration
-    const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    };
+
 
 
 
@@ -519,7 +554,7 @@ export const ActiveCallOverlay: React.FC = () => {
                         <div>
                             <h3 className="text-white font-medium">{contactName}</h3>
                             <p className="text-xs text-gray-400">
-                                {callStatus === 'connecting' ? 'Connecting...' : formatDuration(callDuration)}
+                                {callStatus === 'connecting' ? 'Connecting...' : 'Active Call'}
                             </p>
                         </div>
                     </div>
@@ -795,6 +830,7 @@ export const ActiveCallOverlay: React.FC = () => {
                     streamId={volumeContextMenu.streamId}
                     isIgnored={volumeContextMenu.streamId ? ignoredStreams.has(volumeContextMenu.streamId) : false}
                     onToggleIgnore={toggleIgnoreStream}
+                    onTogglePiP={handleTogglePiP}
                 />
             )}
         </>
