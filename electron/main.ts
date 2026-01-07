@@ -6,12 +6,12 @@ import { startAudioCapture, stopAudioCapture, setExecutablesRoot, getWindowPid }
 // In production (asar), binaries are usually unpacked to a specific folder
 const isProd = app.isPackaged;
 if (isProd) {
-    // Adjust this path based on your builder configuration (e.g. electron-builder extraResources)
-    // For now, assuming standard unpacking behavior for native modules
-    const possiblePath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@skyperchat', 'audio-loopback', 'bin');
-    setExecutablesRoot(possiblePath);
+    // In production, files are unpacked from ASAR to app.asar.unpacked
+    // Based on our package.json mapping: native-audio-loopback -> node_modules/@skyperchat/audio-loopback
+    const unpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@skyperchat', 'audio-loopback', 'bin');
+    console.log('Setting executables root to:', unpackedPath);
+    setExecutablesRoot(unpackedPath);
 } else {
-    // In development, it's in node_modules
     setExecutablesRoot(path.join(__dirname, '..', 'node_modules', '@skyperchat', 'audio-loopback', 'bin'));
 }
 

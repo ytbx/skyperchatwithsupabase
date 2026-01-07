@@ -100,7 +100,9 @@ export function startAudioCapture(processId: string, options: { onData?: (data: 
    }
 
    const args = [processId, options.mode || 'include'];
-   const cppProcess = spawn(`${path.resolve(__dirname, getLoopbackBinaryPath())}`, args, {
+   const exePath = getLoopbackBinaryPath();
+   console.log(`[native-audio-loopback] Spawning: ${exePath} with args:`, args);
+   const cppProcess = spawn(exePath, args, {
       detached: true,
       stdio: "pipe",
    });
