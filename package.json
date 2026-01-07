@@ -1,7 +1,7 @@
 {
   "name": "ovox",
   "private": true,
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "A modern voice and text chat application",
   "author": "Yusuf",
   "main": "dist-electron/main.js",
@@ -25,7 +25,15 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "node_modules/@skyperchat/audio-loopback/**/*"
+      {
+        "from": "native-audio-loopback",
+        "to": "node_modules/@skyperchat/audio-loopback",
+        "filter": [
+          "dist/**/*",
+          "bin/**/*",
+          "package.json"
+        ]
+      }
     ],
     "asarUnpack": [
       "node_modules/@skyperchat/audio-loopback/bin/**/*"
