@@ -18,7 +18,8 @@ export type SignalType =
     | 'call-cancelled'
     | 'screen-share-started'
     | 'screen-share-stopped'
-    | 'audio-state-change';
+    | 'audio-state-change'
+    | 'heartbeat';
 
 export interface CallSignal {
     id: string;
@@ -111,8 +112,9 @@ export class SignalingChannel {
         // Wait for channel to be subscribed
         await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => {
+                console.error('[SignalingChannel] Channel subscription TIMED OUT');
                 reject(new Error('Channel subscription timeout'));
-            }, 10000);
+            }, 20000); // Increased to 20s
 
             this.channel!.subscribe((status) => {
                 console.log('[SignalingChannel] Channel status:', status);
@@ -123,6 +125,7 @@ export class SignalingChannel {
                     resolve();
                 } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
                     clearTimeout(timeout);
+                    console.error(`[SignalingChannel] Subscription error: ${status}`);
                     reject(new Error(`Channel subscription failed: ${status}`));
                 }
             });
@@ -199,6 +202,13 @@ export class SignalingChannel {
     async sendAudioState(isMuted: boolean, isDeafened: boolean): Promise<void> {
         console.log('[SignalingChannel] Sending audio-state-change:', { isMuted, isDeafened });
         await this.sendSignal('audio-state-change', { isMuted, isDeafened } as any);
+    }
+
+    /**
+     * Send heartbeat signal
+     */
+    async sendHeartbeat(): Promise<void> {
+        await this.sendSignal('heartbeat', {});
     }
 
     /**

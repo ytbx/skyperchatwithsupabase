@@ -60,6 +60,11 @@ export class CallSession {
     private pendingOffer: PendingOffer | null = null;
     private lastProcessedOfferSdp: string | null = null;
 
+    // Heartbeat/Stability refs
+    private heartbeatTimer: any = null;
+    private lastHeartbeatReceived = Date.now();
+    private connectionFailedTimer: any = null;
+
     constructor(
         callId: string,
         localUserId: string,
@@ -126,9 +131,24 @@ export class CallSession {
                     if (state === 'connected' && this.state !== 'active') {
                         console.log('[CallSession] Connection established - setting state to active');
                         this.setState('active');
-                    } else if (state === 'failed' || state === 'disconnected') {
-                        // Connection lost - might recover or need to end
-                        console.warn('[CallSession] Connection issue:', state);
+                        this.startHeartbeat(); // Start heartbeat when connected
+
+                        // Clear any failure timers if we recover
+                        if (this.connectionFailedTimer) {
+                            clearTimeout(this.connectionFailedTimer);
+                            this.connectionFailedTimer = null;
+                        }
+                    } else if (state === 'failed') {
+                        // Connection lost - provide a 10s grace period before ending
+                        console.warn('[CallSession] Connection failed - starting 10s grace period');
+                        if (!this.connectionFailedTimer) {
+                            this.connectionFailedTimer = setTimeout(() => {
+                                console.error('[CallSession] Connection recovery timed out - ending call');
+                                this.handleRemoteEnd('remote_ended'); // Or local end
+                            }, 10000);
+                        }
+                    } else if (state === 'disconnected') {
+                        console.warn('[CallSession] Connection disconnected - waiting for reconnect');
                     }
                 },
                 onNegotiationNeeded: async () => {
@@ -240,6 +260,10 @@ export class CallSession {
                     const { isMuted, isDeafened } = signal.payload as any;
                     console.log('[CallSession] Remote audio state changed:', { isMuted, isDeafened });
                     this.callbacks.onRemoteAudioStateChanged(isMuted, isDeafened);
+                    break;
+
+                case 'heartbeat':
+                    this.lastHeartbeatReceived = Date.now();
                     break;
             }
         } catch (error) {
@@ -654,6 +678,15 @@ export class CallSession {
             this.rawLocalStream = null;
         }
 
+        if (this.heartbeatTimer) {
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
+
+        if (this.connectionFailedTimer) {
+            clearTimeout(this.connectionFailedTimer);
+            this.connectionFailedTimer = null;
+        }
 
         this.isProcessingOffer = false;
         this.pendingOffer = null;
@@ -726,5 +759,31 @@ export class CallSession {
      */
     getRemoteStream(): MediaStream | null {
         return this.peer?.getRemoteStream() ?? null;
+    }
+
+    /**
+     * Start sending/checking heartbeat
+     */
+    private startHeartbeat(): void {
+        if (this.heartbeatTimer) return;
+
+        this.lastHeartbeatReceived = Date.now();
+        this.heartbeatTimer = setInterval(async () => {
+            if (this.state !== 'active' || !this.signaling) return;
+
+            // Send heartbeat
+            try {
+                await this.signaling?.sendHeartbeat();
+            } catch (e) {
+                console.warn('[CallSession] Error sending heartbeat:', e);
+            }
+
+            // Check if remote is stale (45s without any signal/heartbeat)
+            const staleTime = Date.now() - this.lastHeartbeatReceived;
+            if (staleTime > 45000) {
+                console.error('[CallSession] Remote peer heartbeat timeout (45s)');
+                await this.handleRemoteEnd('remote_ended');
+            }
+        }, 15000); // Send every 15s
     }
 }

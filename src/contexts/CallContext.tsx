@@ -235,6 +235,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setRemoteDeafened(false);
         setConnectionState(null);
         setPing(null);
+
+        // Ensure temporary ringing signaling is closed
+        if (ringingSignalingRef.current) {
+            console.log('[CallContext] Cleaning up ringing signaling during reset');
+            ringingSignalingRef.current.close().catch(console.error);
+            ringingSignalingRef.current = null;
+        }
     }, []);
 
     /**
@@ -372,9 +379,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 setIncomingCall(null);
                 // Also close the temporary signaling channel for the incoming call
                 if (ringingSignalingRef.current) {
+                    console.log('[CallContext] Closing ringing signaling as call is accepted');
                     await ringingSignalingRef.current.close(false);
                     ringingSignalingRef.current = null;
                 }
+            } else if (ringingSignalingRef.current) {
+                // If we're accepting a call that wasn't the "incomingCall" (e.g. from notifications)
+                // still cleanup any lingering ringing signals
+                await ringingSignalingRef.current.close(false).catch(console.error);
+                ringingSignalingRef.current = null;
             }
 
             setCallStatus('connecting');
