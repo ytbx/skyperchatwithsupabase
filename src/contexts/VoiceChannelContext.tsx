@@ -869,15 +869,22 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     }, [isDeafened, participants, user?.id]);
 
     // Start screen share with a specific stream
-    const startScreenShareWithStream = async (screenStream: MediaStream) => {
+    const startScreenShareWithStream = async (screenStream: MediaStream, quality: 'standard' | 'fullhd' | '2k' = 'standard') => {
         screenStreamRef.current = screenStream;
 
         screenStream.getVideoTracks()[0].onended = () => {
             toggleScreenShare();
         };
 
+        // Map quality to bitrate (Kbps)
+        const bitrates = {
+            'standard': 3000,
+            'fullhd': 8000,
+            '2k': 15000
+        };
+
         for (const [peerId, manager] of peerManagers.current.entries()) {
-            await manager.startScreenShare(screenStream);
+            await manager.startScreenShare(screenStream, bitrates[quality]);
             const offer = await manager.createOffer();
             await sendSignal(peerId, 'offer', offer);
         }
@@ -942,29 +949,29 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     }, [isScreenSharing, user, activeChannelId, isConnected]);
 
     // Handle web quality selection
-    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
+    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd' | '2k') => {
         setIsQualityModalOpen(false);
         try {
             // Type assertion needed because suppressLocalAudioPlayback is not in standard TS definitions yet
             const constraints = {
                 video: {
-                    width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
-                    height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                    frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
+                    width: quality === '2k' ? { ideal: 2560 } : quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
+                    height: quality === '2k' ? { ideal: 1440 } : quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
+                    frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
                 },
                 audio: true, // Allow system audio sharing
                 selfBrowserSurface: 'exclude' as any
             };
 
             const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
-            await startScreenShareWithStream(screenStream);
+            await startScreenShareWithStream(screenStream, quality);
         } catch (error) {
             console.error('[VoiceChannelContext] Error starting web screen share:', error);
         }
     };
 
     // Handle screen share selection from modal
-    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd' | '2k', shareAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
             console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
@@ -974,12 +981,12 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: quality === 'fullhd' ? 1920 : 1280,
-                        maxWidth: quality === 'fullhd' ? 1920 : 1280,
-                        minHeight: quality === 'fullhd' ? 1080 : 720,
-                        maxHeight: quality === 'fullhd' ? 1080 : 720,
-                        minFrameRate: quality === 'fullhd' ? 60 : 30,
-                        maxFrameRate: quality === 'fullhd' ? 60 : 60 // Allow 60 fps even for standard if possible, but keep 60 for fullhd
+                        minWidth: quality === '2k' ? 2560 : quality === 'fullhd' ? 1920 : 1280,
+                        maxWidth: quality === '2k' ? 2560 : quality === 'fullhd' ? 1920 : 1280,
+                        minHeight: quality === '2k' ? 1440 : quality === 'fullhd' ? 1080 : 720,
+                        maxHeight: quality === '2k' ? 1440 : quality === 'fullhd' ? 1080 : 720,
+                        minFrameRate: quality === 'standard' ? 30 : 60,
+                        maxFrameRate: quality === 'standard' ? 30 : 60
                     }
                 }
             });
@@ -1030,7 +1037,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             }
 
             console.log('[VoiceChannelContext] Got screen stream:', finalStream.id);
-            await startScreenShareWithStream(finalStream);
+            await startScreenShareWithStream(finalStream, quality);
         } catch (e) {
             console.error('Error getting electron screen stream:', e);
         }

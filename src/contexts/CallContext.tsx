@@ -538,15 +538,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     /**
      * Start screen sharing with a specific stream
      */
-    const startScreenShareWithStream = async (stream: MediaStream) => {
+    const startScreenShareWithStream = async (stream: MediaStream, quality: 'standard' | 'fullhd' | '2k' = 'standard') => {
         try {
-            console.log('[CallContext] Starting screen share');
+            console.log('[CallContext] Starting screen share, quality:', quality);
 
             if (!sessionRef.current) {
                 throw new Error('No active session');
             }
 
-            await sessionRef.current.startScreenShare(stream);
+            await sessionRef.current.startScreenShare(stream, quality);
             setIsScreenSharing(true);
             setScreenStream(stream);
 
@@ -622,28 +622,28 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing, stopNativeAudio]);
 
-    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
+    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd' | '2k') => {
         setIsQualityModalOpen(false);
         try {
             // Type assertion needed because suppressLocalAudioPlayback is not in standard TS definitions yet
             const constraints = {
                 video: {
-                    width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
-                    height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                    frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
+                    width: quality === '2k' ? { ideal: 2560 } : quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
+                    height: quality === '2k' ? { ideal: 1440 } : quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
+                    frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
                 },
                 audio: true, // Allow system audio sharing
                 selfBrowserSurface: 'exclude' as any
             };
 
             const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
-            await startScreenShareWithStream(stream);
+            await startScreenShareWithStream(stream, quality);
         } catch (error) {
             console.error('[CallContext] Error starting web screen share:', error);
         }
     };
 
-    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd' | '2k', shareAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
             console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
@@ -655,12 +655,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: quality === 'fullhd' ? 1920 : 1280,
-                        maxWidth: quality === 'fullhd' ? 1920 : 1280,
-                        minHeight: quality === 'fullhd' ? 1080 : 720,
-                        maxHeight: quality === 'fullhd' ? 1080 : 720,
-                        minFrameRate: quality === 'fullhd' ? 60 : 30,
-                        maxFrameRate: quality === 'fullhd' ? 60 : 60
+                        minWidth: quality === '2k' ? 2560 : quality === 'fullhd' ? 1920 : 1280,
+                        maxWidth: quality === '2k' ? 2560 : quality === 'fullhd' ? 1920 : 1280,
+                        minHeight: quality === '2k' ? 1440 : quality === 'fullhd' ? 1080 : 720,
+                        maxHeight: quality === '2k' ? 1440 : quality === 'fullhd' ? 1080 : 720,
+                        minFrameRate: quality === 'standard' ? 30 : 60,
+                        maxFrameRate: quality === 'standard' ? 30 : 60
                     }
                 }
             });
@@ -727,7 +727,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             console.log('[CallContext] Audio tracks found:', finalStream.getAudioTracks().length);
             console.log('[CallContext] Video tracks found:', finalStream.getVideoTracks().length);
 
-            await startScreenShareWithStream(finalStream);
+            await startScreenShareWithStream(finalStream, quality);
         } catch (e) {
             console.error('Error getting electron screen stream:', e);
         }

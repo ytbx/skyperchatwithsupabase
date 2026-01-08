@@ -5,13 +5,13 @@ import { DesktopCapturerSource } from '@/types/electron';
 interface ScreenSharePickerModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => void;
+    onSelect: (sourceId: string, quality: 'standard' | 'fullhd' | '2k', shareAudio: boolean) => void;
 }
 
 export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenSharePickerModalProps) {
     const [sources, setSources] = useState<DesktopCapturerSource[]>([]);
     const [activeTab, setActiveTab] = useState<'screen' | 'window'>('screen');
-    const [quality, setQuality] = useState<'standard' | 'fullhd'>('standard');
+    const [quality, setQuality] = useState<'standard' | 'fullhd' | '2k'>('standard');
     const [shareAudio, setShareAudio] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -135,6 +135,15 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                                     }`}
                             >
                                 Full HD (1080p)
+                            </button>
+                            <button
+                                onClick={() => setQuality('2k')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${quality === '2k'
+                                    ? 'bg-purple-600 text-white shadow-sm'
+                                    : 'text-gray-400 hover:text-gray-200'
+                                    }`}
+                            >
+                                2K (1440p)
                             </button>
                         </div>
 

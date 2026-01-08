@@ -412,6 +412,9 @@ export class WebRTCPeer {
         console.log('[WebRTCPeer] Camera', enabled ? 'enabled' : 'disabled');
     }
 
+    /**
+     * Replace audio track mid-call
+     */
     async replaceAudioTrack(track: MediaStreamTrack): Promise<void> {
         if (!this.pc) return;
 
@@ -424,44 +427,6 @@ export class WebRTCPeer {
         }
 
         console.log('[WebRTCPeer] ✓ Audio track replaced');
-    }
-
-    /**
-     * Set video encoding parameters (bitrate, degradation preference, etc.)
-     */
-    async setVideoEncodingParameters(sender: RTCRtpSender, quality: 'standard' | 'fullhd', isScreenShare: boolean) {
-        try {
-            const parameters = sender.getParameters();
-            if (!parameters.encodings) {
-                parameters.encodings = [{}];
-            }
-
-            // Set bitrate (bit/s)
-            // standard (720p) -> ~2.5 Mbps
-            // fullhd (1080p) -> ~8 Mbps
-            const maxBitrate = quality === 'fullhd' ? 8000000 : 2500000;
-
-            parameters.encodings[0].maxBitrate = maxBitrate;
-
-            // Degradation preference: 
-            // - maintain-resolution: Good for screen sharing (keep text sharp)
-            // - maintain-framerate: Good for video (keep movement smooth)
-            if (isScreenShare) {
-                (sender as any).setDegradationPreference?.('maintain-resolution');
-
-                // Content hint for screen sharing tracks
-                if (sender.track) {
-                    (sender.track as any).contentHint = 'text';
-                }
-            } else {
-                (sender as any).setDegradationPreference?.('maintain-framerate');
-            }
-
-            await sender.setParameters(parameters);
-            console.log(`[WebRTCPeer] Applied encoding parameters: ${quality}, bitrate: ${maxBitrate}, isScreenShare: ${isScreenShare}`);
-        } catch (e) {
-            console.error('[WebRTCPeer] Error setting encoding parameters:', e);
-        }
     }
 
     /**
@@ -486,8 +451,6 @@ export class WebRTCPeer {
 
         if (this.cameraSender) {
             await this.cameraSender.replaceTrack(newTrack);
-            // Apply standard quality parameters for camera
-            await this.setVideoEncodingParameters(this.cameraSender, 'standard', false);
         }
 
         // Update cameraStream
@@ -535,10 +498,6 @@ export class WebRTCPeer {
             // instead of a new stream (Screen Share)
             const streams = this.localStream ? [this.localStream] : [cameraStream];
             this.cameraSender = this.pc.addTrack(videoTrack, ...streams);
-
-            // Apply standard quality parameters for camera
-            await this.setVideoEncodingParameters(this.cameraSender, 'standard', false);
-
             console.log('[WebRTCPeer] ✓ Camera track added mid-call (grouped with local stream)');
         }
 
@@ -574,10 +533,10 @@ export class WebRTCPeer {
     /**
      * Start screen sharing
      */
-    async startScreenShare(screenStream: MediaStream) {
+    async startScreenShare(screenStream: MediaStream, bitrateKbps?: number) {
         if (!this.pc) throw new Error('Peer connection not initialized');
+        console.log('[WebRTCPeer] Starting screen share, bitrate:', bitrateKbps);
 
-        console.log('[WebRTCPeer] Starting screen share');
         this.screenStream = screenStream;
 
         // Add screen share video track
@@ -587,12 +546,16 @@ export class WebRTCPeer {
             // Store the sender so we can remove exactly this one later
             this.screenSender = this.pc.addTrack(videoTrack, screenStream);
 
-            // Detect quality
-            const settings = videoTrack.getSettings();
-            const quality = (settings.width && settings.width > 1280) ? 'fullhd' : 'standard';
-
-            // Apply high quality parameters
-            await this.setVideoEncodingParameters(this.screenSender, quality, true);
+            // Apply bitrate if specified
+            if (bitrateKbps && this.screenSender) {
+                const params = this.screenSender.getParameters();
+                if (!params.encodings) {
+                    params.encodings = [{}];
+                }
+                params.encodings[0].maxBitrate = bitrateKbps * 1000;
+                await this.screenSender.setParameters(params);
+                console.log('[WebRTCPeer] Bitrate limit set to:', bitrateKbps, 'kbps');
+            }
 
             // Handle user stopping screen share via browser UI
             videoTrack.onended = () => {

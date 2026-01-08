@@ -2,6 +2,7 @@ export class PCMAudioProcessor {
     private audioContext: AudioContext;
     private destination: MediaStreamAudioDestinationNode;
     private nextStartTime: number = 0;
+    private scheduledSources: Set<AudioBufferSourceNode> = new Set();
 
     constructor() {
         this.audioContext = new AudioContext({ sampleRate: 48000 });
@@ -35,21 +36,29 @@ export class PCMAudioProcessor {
             rightChannel[i] = int16Array[i * 2 + 1] / 32768.0;
         }
 
-        // Create source and connect to destination
-        const source = this.audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(this.destination);
-
         // Scheduling logic
         const currentTime = this.audioContext.currentTime;
 
         // SYNC FIX: 
-        // If nextStartTime is too far in the future (buffer buildup > 200ms), 
+        // If nextStartTime is too far in the future (buffer buildup > 100ms), 
         // it means we've had stutters and the audio is now lagging behind "live".
-        // We reset nextStartTime to currentTime to "jump" to the present.
-        const MAX_BUFFER_OFFSET = 0.2; // 200ms
-        if (this.nextStartTime > currentTime + MAX_BUFFER_OFFSET) {
-            console.log(`[PCMAudioProcessor] Sync drift detected (${(this.nextStartTime - currentTime).toFixed(3)}s). Flushing buffer.`);
+        const MAX_BUFFER_OFFSET = 0.1; // 100ms
+        const drift = this.nextStartTime - currentTime;
+
+        if (drift > MAX_BUFFER_OFFSET) {
+            console.warn(`[PCMAudioProcessor] Sync drift detected (${drift.toFixed(3)}s). Clearing buffer to catch up.`);
+
+            // 1. Stop all previously scheduled sources to clear the backlog in AudioContext
+            this.scheduledSources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Ignore errors if source already stopped
+                }
+            });
+            this.scheduledSources.clear();
+
+            // 2. Reset nextStartTime to jump to the present
             this.nextStartTime = currentTime;
         }
 
@@ -57,6 +66,17 @@ export class PCMAudioProcessor {
         if (this.nextStartTime < currentTime) {
             this.nextStartTime = currentTime;
         }
+
+        // Create source and connect to destination
+        const source = this.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.destination);
+
+        // Track the source so we can cancel it if sync is lost
+        this.scheduledSources.add(source);
+        source.onended = () => {
+            this.scheduledSources.delete(source);
+        };
 
         source.start(this.nextStartTime);
         this.nextStartTime += audioBuffer.duration;
@@ -67,6 +87,10 @@ export class PCMAudioProcessor {
     }
 
     public close() {
+        this.scheduledSources.forEach(s => {
+            try { s.stop(); } catch (e) { }
+        });
+        this.scheduledSources.clear();
         this.audioContext.close();
     }
 }
