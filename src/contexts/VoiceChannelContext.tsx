@@ -979,7 +979,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                         minHeight: quality === 'fullhd' ? 1080 : 720,
                         maxHeight: quality === 'fullhd' ? 1080 : 720,
                         minFrameRate: quality === 'fullhd' ? 60 : 30,
-                        maxFrameRate: quality === 'fullhd' ? 60 : 30
+                        maxFrameRate: quality === 'fullhd' ? 60 : 60 // Allow 60 fps even for standard if possible, but keep 60 for fullhd
                     }
                 }
             });

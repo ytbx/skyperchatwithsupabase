@@ -403,9 +403,6 @@ export class WebRTCManager {
     }
 
     /**
-     * Replace audio track mid-session
-     */
-    /**
      * Replace audio track mid-session with a pre-acquired/processed track
      */
     async replaceAudioTrack(track: MediaStreamTrack): Promise<void> {
@@ -426,9 +423,6 @@ export class WebRTCManager {
         console.log('[WebRTCManager] ✓ Audio track replaced');
     }
 
-    /**
-     * Replace video track mid-session
-     */
     async replaceVideoTrack(deviceId: string): Promise<MediaStream | null> {
         if (!this.peerConnection) return;
 
@@ -453,6 +447,8 @@ export class WebRTCManager {
 
         if (sender) {
             await sender.replaceTrack(newTrack);
+            // Apply standard quality parameters for camera
+            await this.setVideoEncodingParameters(sender, 'standard', false);
         }
 
         // Update localStream
@@ -467,6 +463,45 @@ export class WebRTCManager {
 
         console.log('[WebRTCManager] ✓ Video track replaced');
         return this.localStream;
+    }
+
+    /**
+     * Set video encoding parameters (bitrate, degradation preference, etc.)
+     */
+    async setVideoEncodingParameters(sender: RTCRtpSender, quality: 'standard' | 'fullhd', isScreenShare: boolean) {
+        try {
+            const parameters = sender.getParameters();
+            if (!parameters.encodings) {
+                parameters.encodings = [{}];
+            }
+
+            // Set bitrate (bit/s)
+            // standard (720p) -> ~2.5 Mbps
+            // fullhd (1080p) -> ~8 Mbps
+            const maxBitrate = quality === 'fullhd' ? 8000000 : 2500000;
+
+            parameters.encodings[0].maxBitrate = maxBitrate;
+
+            // Degradation preference: 
+            // - maintain-resolution: Good for screen sharing (keep text sharp)
+            // - maintain-framerate: Good for video (keep movement smooth)
+            if (isScreenShare) {
+                (sender as any).setDegradationPreference?.('maintain-resolution');
+
+                // Content hint for screen sharing
+                if (sender.track) {
+                    (sender.track as any).contentHint = 'text';
+                    console.log('[WebRTCManager] Set contentHint to text for screen share');
+                }
+            } else {
+                (sender as any).setDegradationPreference?.('maintain-framerate');
+            }
+
+            await sender.setParameters(parameters);
+            console.log(`[WebRTCManager] Applied encoding parameters: ${quality}, bitrate: ${maxBitrate}, isScreenShare: ${isScreenShare}`);
+        } catch (e) {
+            console.error('[WebRTCManager] Error setting encoding parameters:', e);
+        }
     }
 
     /**
@@ -505,6 +540,13 @@ export class WebRTCManager {
                 const videoTrack = screenStream.getVideoTracks()[0];
                 console.log('[WebRTCManager] Adding screen share video track');
                 const newSender = this.peerConnection.addTrack(videoTrack, screenStream);
+
+                // Detect quality from track constraints or default to fullhd if high res
+                const settings = videoTrack.getSettings();
+                const quality = (settings.width && settings.width > 1280) ? 'fullhd' : 'standard';
+
+                // Apply high quality parameters
+                await this.setVideoEncodingParameters(newSender, quality, true);
 
                 // Ensure transceiver direction is correct
                 const transceiver = this.peerConnection.getTransceivers().find(t => t.sender === newSender);

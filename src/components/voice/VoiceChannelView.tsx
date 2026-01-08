@@ -230,7 +230,9 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             const video = videoRefs.current.get(videoId);
             if (video) {
                 const isMuted = getUserScreenMuted(userId);
-                video.volume = isMuted ? 0 : volume;
+                // Also mute grid video if it's currently fullscreened
+                const shouldMuteGrid = isMuted || fullscreenVideoId === videoId;
+                video.volume = shouldMuteGrid ? 0 : volume;
             }
             // Also sync fullscreen if active
             if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
@@ -460,7 +462,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.muted = true;
+                                                    // Mute background grid video if it's currently in fullscreen
+                                                    el.muted = fullscreenVideoId === videoId;
                                                     if (participant.screenStream && el.srcObject !== participant.screenStream) {
                                                         el.srcObject = participant.screenStream;
                                                         el.play().catch(e => console.error('Error playing screen video from ref:', e));
@@ -471,7 +474,10 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             }}
                                             autoPlay
                                             playsInline
-                                            muted={false} // Unmuted by default for screens, sync logic in useEffect
+                                            muted={fullscreenVideoId === videoId} // Ensure muted if in fullscreen
+                                            style={{
+                                                visibility: fullscreenVideoId === videoId ? 'hidden' : 'visible'
+                                            }}
                                             className={`w-full h-full bg-black ${isMaximized ? 'object-contain' : 'object-contain'}`}
                                         />
                                     )}

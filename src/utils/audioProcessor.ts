@@ -19,11 +19,9 @@ export class PCMAudioProcessor {
         }
 
         // Convert byte array to Int16 array
-        // Important: Create a copy of the buffer to ensure memory alignment and avoid offset issues
         const int16Array = new Int16Array(chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength));
 
         // Prepare Float32 array for Web Audio API
-        // Stereo: length is same as int16Array
         const channelCount = 2;
         const frameCount = int16Array.length / channelCount;
 
@@ -33,7 +31,6 @@ export class PCMAudioProcessor {
 
         // De-interleave and convert to float (-1.0 to 1.0)
         for (let i = 0; i < frameCount; i++) {
-            // Sample / 32768.0
             leftChannel[i] = int16Array[i * 2] / 32768.0;
             rightChannel[i] = int16Array[i * 2 + 1] / 32768.0;
         }
@@ -45,6 +42,17 @@ export class PCMAudioProcessor {
 
         // Scheduling logic
         const currentTime = this.audioContext.currentTime;
+
+        // SYNC FIX: 
+        // If nextStartTime is too far in the future (buffer buildup > 200ms), 
+        // it means we've had stutters and the audio is now lagging behind "live".
+        // We reset nextStartTime to currentTime to "jump" to the present.
+        const MAX_BUFFER_OFFSET = 0.2; // 200ms
+        if (this.nextStartTime > currentTime + MAX_BUFFER_OFFSET) {
+            console.log(`[PCMAudioProcessor] Sync drift detected (${(this.nextStartTime - currentTime).toFixed(3)}s). Flushing buffer.`);
+            this.nextStartTime = currentTime;
+        }
+
         // If nextStartTime is in the past (buffer underflow), reset to now
         if (this.nextStartTime < currentTime) {
             this.nextStartTime = currentTime;

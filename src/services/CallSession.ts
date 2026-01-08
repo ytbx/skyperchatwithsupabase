@@ -580,19 +580,20 @@ export class CallSession {
             return;
         }
 
-        console.log('[CallSession] Ending call');
+        const prevState = this.state;
+        console.log('[CallSession] Ending call, previous state:', prevState);
         this.setState('ending');
 
         // Send appropriate end signal based on state
         if (this.signaling) {
             try {
-                if ((this.state === 'ringing' || this.state === 'starting') && this.role === 'caller') {
+                if ((prevState === 'ringing' || prevState === 'starting') && this.role === 'caller') {
                     await this.signaling.sendCallCancelled();
                 } else {
                     await this.signaling.sendCallEnded();
                 }
                 // Wait for signal to be delivered before cleaning up
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 500));
             } catch (e) {
                 console.error('[CallSession] Error sending end signal:', e);
             }

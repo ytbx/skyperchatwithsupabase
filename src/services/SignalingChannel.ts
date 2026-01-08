@@ -225,9 +225,10 @@ export class SignalingChannel {
 
     /**
      * Cleanup and close channel
+     * @param deleteFromDb Whether to delete signals from the database (default: true)
      */
-    async close(): Promise<void> {
-        console.log('[SignalingChannel] Closing channel');
+    async close(deleteFromDb: boolean = true): Promise<void> {
+        console.log('[SignalingChannel] Closing channel, deleteFromDb:', deleteFromDb);
 
         this.isSubscribed = false;
         this.processedIds.clear();
@@ -238,12 +239,15 @@ export class SignalingChannel {
             this.channel = null;
         }
 
-        // Clean up signals from database
-        await supabase
-            .from('webrtc_signals')
-            .delete()
-            .eq('call_id', this.callId);
+        // Clean up signals from database if requested
+        if (deleteFromDb) {
+            await supabase
+                .from('webrtc_signals')
+                .delete()
+                .eq('call_id', this.callId);
+            console.log('[SignalingChannel] ✓ Database signals cleaned up');
+        }
 
-        console.log('[SignalingChannel] ✓ Closed and cleaned up');
+        console.log('[SignalingChannel] ✓ Closed');
     }
 }

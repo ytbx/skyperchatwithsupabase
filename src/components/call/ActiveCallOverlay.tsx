@@ -340,6 +340,11 @@ export const ActiveCallOverlay: React.FC = () => {
             if (videoId === 'remote-screen' && remoteScreenVideoRef.current) {
                 remoteScreenVideoRef.current.volume = volume;
             }
+
+            // Sync with fullscreen video if active
+            if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
+                fullscreenVideoRef.current.volume = volume;
+            }
         } else {
             setUserVoiceVolume(contactId, volume);
         }
@@ -627,13 +632,17 @@ export const ActiveCallOverlay: React.FC = () => {
                                             if (el.srcObject !== streamInfo.stream) {
                                                 el.srcObject = streamInfo.stream;
                                             }
-                                            // CRITICAL: Always force mute local stream
+                                            // CRITICAL: Always force mute local stream or if this stream is currently fullscreen
                                             el.muted = true;
                                         }
                                     }}
                                     autoPlay
                                     playsInline
                                     muted={true}
+                                    style={{
+                                        // Reduce visibility/interactivity of background video when in fullscreen to save resources and avoid audio
+                                        visibility: fullscreenVideoId === streamInfo.id ? 'hidden' : 'visible'
+                                    }}
                                     className={`w-full h-full object-cover bg-black ${streamInfo.isMirror ? 'mirror' : ''}`}
                                 />
                             ) : (

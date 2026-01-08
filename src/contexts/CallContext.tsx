@@ -76,6 +76,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
 
+    // State refs for Realtime handlers (avoids stale closures)
+    const activeCallRef = useRef<DirectCall | null>(null);
+    const incomingCallRef = useRef<DirectCall | null>(null);
+    const callStatusRef = useRef<CallStatus>('idle');
+
+    // Keep refs in sync with state
+    useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+    useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
+    useEffect(() => { callStatusRef.current = callStatus; }, [callStatus]);
+
 
 
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
@@ -84,6 +94,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const nativeAudioProcessorRef = useRef<PCMAudioProcessor | null>(null);
     const nativeAudioUnsubscribeRef = useRef<(() => void) | null>(null);
     const activeNativeAudioPidRef = useRef<string | null>(null);
+
+    // Keep track of the temporary signaling channel used for ringing/cancelling
+    const ringingSignalingRef = useRef<SignalingChannel | null>(null);
 
     // Initialize ringtone
     useEffect(() => {
@@ -197,6 +210,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
      */
     const resetCallState = useCallback(() => {
         console.log('[CallContext] Resetting call state');
+
+        // Ensure session is properly ended and cleaned up
+        if (sessionRef.current) {
+            console.log('[CallContext] Cleaning up active session during reset');
+            sessionRef.current.end().catch(err => console.error('[CallContext] Error ending session during reset:', err));
+            sessionRef.current = null;
+        }
+
         setActiveCall(null);
         setIncomingCall(null); // Also clear incoming call
         setCallStatus('idle');
@@ -214,7 +235,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setRemoteDeafened(false);
         setConnectionState(null);
         setPing(null);
-        sessionRef.current = null;
     }, []);
 
     /**
@@ -350,6 +370,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
             // Clear incoming call state if this was the incoming call
             if (incomingCall && incomingCall.id === call.id) {
                 setIncomingCall(null);
+                // Also close the temporary signaling channel for the incoming call
+                if (ringingSignalingRef.current) {
+                    await ringingSignalingRef.current.close(false);
+                    ringingSignalingRef.current = null;
+                }
             }
 
             setCallStatus('connecting');
@@ -409,6 +434,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
             if (isRejectingIncoming) {
                 setIncomingCall(null);
+                // Also close the temporary signaling channel for the incoming call
+                if (ringingSignalingRef.current) {
+                    await ringingSignalingRef.current.close().catch(console.error);
+                    ringingSignalingRef.current = null;
+                }
             } else {
                 resetCallState();
             }
@@ -630,7 +660,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         minHeight: quality === 'fullhd' ? 1080 : 720,
                         maxHeight: quality === 'fullhd' ? 1080 : 720,
                         minFrameRate: quality === 'fullhd' ? 60 : 30,
-                        maxFrameRate: quality === 'fullhd' ? 60 : 30
+                        maxFrameRate: quality === 'fullhd' ? 60 : 60
                     }
                 }
             });
@@ -728,8 +758,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const isRecent = callAge < 30000;
 
                     if (call.status === 'ringing' && isRecent) {
-                        // Check if we already have an active call
-                        if (activeCall) {
+                        // Close any existing ringing signaling before starting a new one
+                        if (ringingSignalingRef.current) {
+                            console.log('[CallContext] Closing previous ringing signaling before new call');
+                            ringingSignalingRef.current.close().catch(console.error);
+                            ringingSignalingRef.current = null;
+                        }
+
+                        // Check if we already have an active call using ref
+                        if (activeCallRef.current) {
                             console.log('[CallContext] Receiving incoming call while busy:', call);
                             setIncomingCall(call);
                             // Do NOT change callStatus or activeCall
@@ -740,12 +777,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
                         // Listen for call cancellation / end
                         const signaling = new SignalingChannel(call.id, user.id, call.caller_id);
+                        ringingSignalingRef.current = signaling;
+
                         await signaling.subscribe(async (signal) => {
                             if (signal.signal_type === 'call-cancelled' || signal.signal_type === 'call-ended' || signal.signal_type === 'call-rejected') {
                                 console.log(`[CallContext] Call was ${signal.signal_type} by remote side`);
                                 await signaling.close();
+                                if (ringingSignalingRef.current === signaling) {
+                                    ringingSignalingRef.current = null;
+                                }
 
-                                // Check if it was the incoming call or active call
+                                // Check if it was the incoming call or active call using refs
                                 setIncomingCall(prev => (prev && prev.id === call.id) ? null : prev);
                                 setActiveCall(prev => {
                                     if (prev && prev.id === call.id) {
@@ -771,11 +813,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const call = payload.old as DirectCall;
                     console.log('[CallContext] Call deleted (as caller):', call.id);
 
-                    if (activeCall && call.id === activeCall.id) {
+                    if (activeCallRef.current && call.id === activeCallRef.current.id) {
                         resetCallState();
                     }
-                    if (incomingCall && call.id === incomingCall.id) {
+                    if (incomingCallRef.current && call.id === incomingCallRef.current.id) {
                         setIncomingCall(null);
+                        // Also close the temporary signaling channel
+                        if (ringingSignalingRef.current) {
+                            ringingSignalingRef.current.close().catch(console.error);
+                            ringingSignalingRef.current = null;
+                        }
                     }
                 }
             )
@@ -791,11 +838,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     const call = payload.old as DirectCall;
                     console.log('[CallContext] Call deleted (as callee):', call.id);
 
-                    if (activeCall && call.id === activeCall.id) {
+                    if (activeCallRef.current && call.id === activeCallRef.current.id) {
                         resetCallState();
                     }
-                    if (incomingCall && call.id === incomingCall.id) {
+                    if (incomingCallRef.current && call.id === incomingCallRef.current.id) {
                         setIncomingCall(null);
+                        // Also close the temporary signaling channel
+                        if (ringingSignalingRef.current) {
+                            ringingSignalingRef.current.close().catch(console.error);
+                            ringingSignalingRef.current = null;
+                        }
                     }
                 }
             )
