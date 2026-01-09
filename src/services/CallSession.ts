@@ -60,9 +60,6 @@ export class CallSession {
     private pendingOffer: PendingOffer | null = null;
     private lastProcessedOfferSdp: string | null = null;
 
-    // Heartbeat/Stability refs
-    private heartbeatTimer: any = null;
-    private lastHeartbeatReceived = Date.now();
     private connectionFailedTimer: any = null;
 
     constructor(
@@ -131,7 +128,6 @@ export class CallSession {
                     if (state === 'connected' && this.state !== 'active') {
                         console.log('[CallSession] Connection established - setting state to active');
                         this.setState('active');
-                        this.startHeartbeat(); // Start heartbeat when connected
 
                         // Clear any failure timers if we recover
                         if (this.connectionFailedTimer) {
@@ -194,12 +190,21 @@ export class CallSession {
 
             if (this.role === 'caller') {
                 // Caller sends offer after signaling is ready
-                this.setState('ringing');
+                // Only set ringing if we haven't already moved to connecting/active via historical signals
+                if ((this.state as string) === 'starting') {
+                    this.setState('ringing');
+                }
                 await this.sendOffer();
             } else {
                 // Callee waits for offer (will be processed in handleSignal)
-                this.setState('connecting');
+                // Only set connecting if we haven't already moved to active via historical signals
+                if ((this.state as string) === 'starting') {
+                    this.setState('connecting');
+                }
             }
+            // Riverside: added explicit cast to string to bypass narrowing
+
+
 
         } catch (error) {
             console.error('[CallSession] Start error:', error);
@@ -261,14 +266,11 @@ export class CallSession {
                     console.log('[CallSession] Remote audio state changed:', { isMuted, isDeafened });
                     this.callbacks.onRemoteAudioStateChanged(isMuted, isDeafened);
                     break;
-
-                case 'heartbeat':
-                    this.lastHeartbeatReceived = Date.now();
-                    break;
             }
         } catch (error) {
-            console.error('[CallSession] Error handling signal:', error);
+            console.error('[CallSession] Error handling signal:', signal.signal_type, error);
         }
+
     }
 
     /**
@@ -674,13 +676,12 @@ export class CallSession {
         this.soundpadStream = null;
 
         if (this.rawLocalStream) {
-            this.rawLocalStream.getTracks().forEach(t => t.stop());
+            try {
+                this.rawLocalStream.getTracks().forEach(t => t.stop());
+            } catch (e) {
+                console.warn('[CallSession] Error stopping local tracks:', e);
+            }
             this.rawLocalStream = null;
-        }
-
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-            this.heartbeatTimer = null;
         }
 
         if (this.connectionFailedTimer) {
@@ -693,6 +694,7 @@ export class CallSession {
         this.lastProcessedOfferSdp = null;
 
         console.log('[CallSession] ✓ Cleanup complete');
+
     }
 
     /**
@@ -759,31 +761,5 @@ export class CallSession {
      */
     getRemoteStream(): MediaStream | null {
         return this.peer?.getRemoteStream() ?? null;
-    }
-
-    /**
-     * Start sending/checking heartbeat
-     */
-    private startHeartbeat(): void {
-        if (this.heartbeatTimer) return;
-
-        this.lastHeartbeatReceived = Date.now();
-        this.heartbeatTimer = setInterval(async () => {
-            if (this.state !== 'active' || !this.signaling) return;
-
-            // Send heartbeat
-            try {
-                await this.signaling?.sendHeartbeat();
-            } catch (e) {
-                console.warn('[CallSession] Error sending heartbeat:', e);
-            }
-
-            // Check if remote is stale (45s without any signal/heartbeat)
-            const staleTime = Date.now() - this.lastHeartbeatReceived;
-            if (staleTime > 45000) {
-                console.error('[CallSession] Remote peer heartbeat timeout (45s)');
-                await this.handleRemoteEnd('remote_ended');
-            }
-        }, 15000); // Send every 15s
     }
 }

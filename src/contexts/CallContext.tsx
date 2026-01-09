@@ -214,8 +214,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // Ensure session is properly ended and cleaned up
         if (sessionRef.current) {
             console.log('[CallContext] Cleaning up active session during reset');
-            sessionRef.current.end().catch(err => console.error('[CallContext] Error ending session during reset:', err));
+            const session = sessionRef.current;
             sessionRef.current = null;
+            // Catch error but don't re-call resetCallState (circularity protection)
+            session.end().catch(err => console.error('[CallContext] Error ending session during reset:', err));
         }
 
         setActiveCall(null);
@@ -239,10 +241,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // Ensure temporary ringing signaling is closed
         if (ringingSignalingRef.current) {
             console.log('[CallContext] Cleaning up ringing signaling during reset');
-            ringingSignalingRef.current.close().catch(console.error);
+            const signaling = ringingSignalingRef.current;
             ringingSignalingRef.current = null;
+            signaling.close().catch(console.error);
         }
     }, []);
+
 
     /**
      * Create a new CallSession with callbacks
@@ -320,6 +324,32 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }, [user?.id, mapSessionStateToStatus, resetCallState]);
 
     /**
+     * End the active call
+     */
+    const endCall = useCallback(async () => {
+        try {
+            console.log('[CallContext] Ending call');
+
+            if (sessionRef.current) {
+                await sessionRef.current.end();
+            }
+
+            if (activeCallRef.current) {
+                // Delete the call record
+                await supabase
+                    .from('direct_calls')
+                    .delete()
+                    .eq('id', activeCallRef.current.id);
+            }
+
+            resetCallState();
+        } catch (error) {
+            console.error('[CallContext] Error ending call:', error);
+            resetCallState();
+        }
+    }, [resetCallState]);
+
+    /**
      * Initiate a call to a contact
      */
     const initiateCall = useCallback(async (contactId: string, contactName: string, callType: 'voice' | 'video') => {
@@ -364,30 +394,33 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const acceptCall = useCallback(async (call: DirectCall) => {
         if (!user) return;
 
+        // Prevent double-clicking/processing the same call
+        // Only block if we are already connecting or active with THIS call
+        if (activeCallRef.current?.id === call.id &&
+            (callStatus === 'connecting' || callStatus === 'active')) {
+            console.log('[CallContext] Already connecting/active with this call, ignoring accept');
+            return;
+        }
+
+
         try {
             console.log('[CallContext] Accepting call:', call.id);
 
             // If we are already in a call, end it first
-            if (activeCall && activeCall.id !== call.id) {
+            if (activeCallRef.current && activeCallRef.current.id !== call.id) {
                 console.log('[CallContext] Ending existing call before accepting new one');
                 await endCall();
-                // Consider adding a small delay if needed, but endCall is async
             }
 
-            // Clear incoming call state if this was the incoming call
-            if (incomingCall && incomingCall.id === call.id) {
-                setIncomingCall(null);
-                // Also close the temporary signaling channel for the incoming call
-                if (ringingSignalingRef.current) {
-                    console.log('[CallContext] Closing ringing signaling as call is accepted');
-                    await ringingSignalingRef.current.close(false);
-                    ringingSignalingRef.current = null;
-                }
-            } else if (ringingSignalingRef.current) {
-                // If we're accepting a call that wasn't the "incomingCall" (e.g. from notifications)
-                // still cleanup any lingering ringing signals
-                await ringingSignalingRef.current.close(false).catch(console.error);
+            // Clear incoming call state
+            setIncomingCall(null);
+
+            // Ensure temporary ringing signaling for THIS call is closed
+            if (ringingSignalingRef.current) {
+                console.log('[CallContext] Closing ringing signaling as call is accepted');
+                const sig = ringingSignalingRef.current;
                 ringingSignalingRef.current = null;
+                await sig.close(false);
             }
 
             setCallStatus('connecting');
@@ -395,13 +428,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setIsCameraOff(call.call_type === 'voice');
 
             // Update call status in database
-            await supabase
+            const { error: updateError } = await supabase
                 .from('direct_calls')
                 .update({
                     status: 'active',
                     answered_at: new Date().toISOString()
                 })
                 .eq('id', call.id);
+
+            if (updateError) throw updateError;
 
             // Create and start session
             const session = createSession(call.id, call.caller_id, 'callee');
@@ -413,7 +448,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
             console.error('[CallContext] Error accepting call:', error);
             resetCallState();
         }
-    }, [user?.id, createSession, resetCallState, activeCall, incomingCall]);
+    }, [user?.id, createSession, resetCallState, endCall]);
+
 
     /**
      * Reject an incoming call
@@ -464,31 +500,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [activeCall, incomingCall, user, resetCallState]);
 
-    /**
-     * End the active call
-     */
-    const endCall = useCallback(async () => {
-        try {
-            console.log('[CallContext] Ending call');
 
-            if (sessionRef.current) {
-                await sessionRef.current.end();
-            }
-
-            if (activeCall) {
-                // Delete the call record
-                await supabase
-                    .from('direct_calls')
-                    .delete()
-                    .eq('id', activeCall.id);
-            }
-
-            resetCallState();
-        } catch (error) {
-            console.error('[CallContext] Error ending call:', error);
-            resetCallState();
-        }
-    }, [activeCall, resetCallState]);
 
     /**
      * Toggle microphone mute

@@ -18,8 +18,7 @@ export type SignalType =
     | 'call-cancelled'
     | 'screen-share-started'
     | 'screen-share-stopped'
-    | 'audio-state-change'
-    | 'heartbeat';
+    | 'audio-state-change';
 
 export interface CallSignal {
     id: string;
@@ -123,11 +122,12 @@ export class SignalingChannel {
                     this.isSubscribed = true;
                     console.log('[SignalingChannel] ✓ Subscribed successfully');
                     resolve();
-                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || (status === 'CLOSED' && this.handler)) {
                     clearTimeout(timeout);
                     console.error(`[SignalingChannel] Subscription error: ${status}`);
                     reject(new Error(`Channel subscription failed: ${status}`));
                 }
+
             });
         });
     }
@@ -204,12 +204,7 @@ export class SignalingChannel {
         await this.sendSignal('audio-state-change', { isMuted, isDeafened } as any);
     }
 
-    /**
-     * Send heartbeat signal
-     */
-    async sendHeartbeat(): Promise<void> {
-        await this.sendSignal('heartbeat', {});
-    }
+
 
     /**
      * Generic signal sender
@@ -245,9 +240,11 @@ export class SignalingChannel {
         this.handler = null;
 
         if (this.channel) {
-            await this.channel.unsubscribe();
+            const channel = this.channel;
             this.channel = null;
+            await channel.unsubscribe();
         }
+
 
         // Clean up signals from database if requested
         if (deleteFromDb) {
