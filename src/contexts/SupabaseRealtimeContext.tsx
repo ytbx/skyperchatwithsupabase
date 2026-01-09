@@ -23,6 +23,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
     const [presenceChannel, setPresenceChannel] = useState<RealtimeChannel | null>(null);
+    const disconnectionTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Keep refs to current state to access in channel callback without re-subscribing
     const cleanupRefs = useRef({ activeCall, activeChannelId, endCall, leaveChannel });
@@ -96,8 +97,17 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                 });
             })
             .subscribe(async (status) => {
+                console.log('[SupabaseRealtime] Subscription status change:', status);
+
                 if (status === 'SUBSCRIBED') {
                     console.log('[SupabaseRealtime] Presence channel subscribed');
+
+                    // Clear any pending disconnection cleanup if we recover
+                    if (disconnectionTimerRef.current) {
+                        console.log('[SupabaseRealtime] Connection recovered, cancelling cleanup');
+                        clearTimeout(disconnectionTimerRef.current);
+                        disconnectionTimerRef.current = null;
+                    }
 
                     // Track this user's presence
                     await channel.track({
@@ -108,18 +118,25 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     console.log('[SupabaseRealtime] User presence tracked');
                 }
 
-                // Handle disconnection
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.log(`[SupabaseRealtime] Connection issue detected: ${status}`);
-                    const { activeCall, endCall, activeChannelId, leaveChannel } = cleanupRefs.current;
+                // Handle disconnection with a grace period
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.warn(`[SupabaseRealtime] Connection issue detected: ${status}. Waiting 15s before ending calls.`);
 
-                    if (activeCall) {
-                        console.log('[SupabaseRealtime] Ending call due to connection loss');
-                        endCall();
-                    }
-                    if (activeChannelId) {
-                        console.log('[SupabaseRealtime] Leaving voice channel due to connection loss');
-                        leaveChannel();
+                    if (!disconnectionTimerRef.current) {
+                        disconnectionTimerRef.current = setTimeout(() => {
+                            console.error(`[SupabaseRealtime] Connection recovery timed out (${status}) - Cleanly ending sessions`);
+                            const { activeCall, endCall, activeChannelId, leaveChannel } = cleanupRefs.current;
+
+                            if (activeCall) {
+                                console.log('[SupabaseRealtime] Grace period over: Ending call');
+                                endCall();
+                            }
+                            if (activeChannelId) {
+                                console.log('[SupabaseRealtime] Grace period over: Leaving voice channel');
+                                leaveChannel();
+                            }
+                            disconnectionTimerRef.current = null;
+                        }, 15000); // 15s grace period
                     }
                 }
             });
@@ -174,8 +191,8 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         // Send initial heartbeat
         sendHeartbeat();
 
-        // Set up heartbeat interval (every 3 minutes)
-        const heartbeatInterval = setInterval(sendHeartbeat, 180000);
+        // Set up heartbeat interval (every 45 seconds for better presence accuracy)
+        const heartbeatInterval = setInterval(sendHeartbeat, 45000);
 
         // Only add listener, don't call immediately
         window.addEventListener('beforeunload', sendHeartbeat);
@@ -183,8 +200,11 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         return () => {
             console.log('[SupabaseRealtime] Cleaning up subscriptions');
 
-            // Clear heartbeat interval
+            // Clear timers
             clearInterval(heartbeatInterval);
+            if (disconnectionTimerRef.current) {
+                clearTimeout(disconnectionTimerRef.current);
+            }
 
             // Untrack presence
             if (channel) {
