@@ -563,7 +563,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     /**
      * Start screen sharing with a specific stream
      */
-    const startScreenShareWithStream = async (stream: MediaStream, quality: 'standard' | 'fullhd' | '2k' = 'standard') => {
+    const startScreenShareWithStream = async (stream: MediaStream, quality: 'standard' | 'fullhd' = 'standard') => {
         try {
             console.log('[CallContext] Starting screen share, quality:', quality);
 
@@ -571,6 +571,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 throw new Error('No active session');
             }
 
+            // Removed bitrate logic to use WebRTC default
             await sessionRef.current.startScreenShare(stream, quality);
             setIsScreenSharing(true);
             setScreenStream(stream);
@@ -647,14 +648,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing, stopNativeAudio]);
 
-    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd' | '2k') => {
+    const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
         setIsQualityModalOpen(false);
         try {
             // Type assertion needed because suppressLocalAudioPlayback is not in standard TS definitions yet
             const constraints = {
                 video: {
-                    width: quality === '2k' ? { ideal: 2560 } : quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
-                    height: quality === '2k' ? { ideal: 1440 } : quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
+                    width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
+                    height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
                     frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
                 },
                 audio: true, // Allow system audio sharing
@@ -668,7 +669,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd' | '2k', shareAudio: boolean) => {
+    const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => {
         setIsScreenShareModalOpen(false);
         try {
             console.log('[CallContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
@@ -680,10 +681,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: quality === '2k' ? 2560 : quality === 'fullhd' ? 1920 : 1280,
-                        maxWidth: quality === '2k' ? 2560 : quality === 'fullhd' ? 1920 : 1280,
-                        minHeight: quality === '2k' ? 1440 : quality === 'fullhd' ? 1080 : 720,
-                        maxHeight: quality === '2k' ? 1440 : quality === 'fullhd' ? 1080 : 720,
+                        minWidth: quality === 'fullhd' ? 1920 : 1280,
+                        maxWidth: quality === 'fullhd' ? 1920 : 1280,
+                        minHeight: quality === 'fullhd' ? 1080 : 720,
+                        maxHeight: quality === 'fullhd' ? 1080 : 720,
                         minFrameRate: quality === 'standard' ? 30 : 60,
                         maxFrameRate: quality === 'standard' ? 30 : 60
                     }

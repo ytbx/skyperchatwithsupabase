@@ -560,21 +560,15 @@ export class CallSession {
     /**
      * Start screen sharing
      */
-    async startScreenShare(stream: MediaStream, quality: 'standard' | 'fullhd' | '2k' = 'standard'): Promise<void> {
+    async startScreenShare(stream: MediaStream, quality: 'standard' | 'fullhd' = 'standard'): Promise<void> {
         if (!this.peer || !this.signaling) {
             throw new Error('Cannot start screen share - not connected');
         }
 
         console.log('[CallSession] Starting screen share with quality:', quality);
 
-        // Map quality to bitrate (Kbps)
-        const bitrates = {
-            'standard': 3000,
-            'fullhd': 8000,
-            '2k': 15000
-        };
-
-        await this.peer.startScreenShare(stream, bitrates[quality]);
+        // We use WebRTC default bitrate management now
+        await this.peer.startScreenShare(stream);
 
         // Send signal first so remote is ready for tracks
         await this.signaling.sendScreenShareStarted();

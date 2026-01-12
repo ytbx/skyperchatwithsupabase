@@ -79,6 +79,41 @@ export class WebRTCManager {
                 return;
             }
 
+            // CRITICAL FIX: Handle track removal to prevent black screens on restart
+            stream.onremovetrack = (ev) => {
+                console.log('[WebRTCManager] Track removed:', ev.track.kind, ev.track.label);
+
+                // Clean up remoteScreenStream
+                if (this.remoteScreenStream) {
+                    const foundTrack = this.remoteScreenStream.getTracks().find(t => t.id === ev.track.id);
+                    if (foundTrack) {
+                        this.remoteScreenStream.removeTrack(foundTrack);
+                        console.log('[WebRTCManager] Removed track from remoteScreenStream');
+                        this.onRemoteScreenCallback?.(this.remoteScreenStream);
+                    }
+                }
+
+                // Clean up remoteStream (Voice/Camera)
+                if (this.remoteStream) {
+                    const foundTrack = this.remoteStream.getTracks().find(t => t.id === ev.track.id);
+                    if (foundTrack) {
+                        this.remoteStream.removeTrack(foundTrack);
+                        console.log('[WebRTCManager] Removed track from remoteStream');
+                        this.onRemoteStreamCallback?.(this.remoteStream);
+                    }
+                }
+
+                // Clean up remoteSoundpadStream
+                if (this.remoteSoundpadStream) {
+                    const foundTrack = this.remoteSoundpadStream.getTracks().find(t => t.id === ev.track.id);
+                    if (foundTrack) {
+                        this.remoteSoundpadStream.removeTrack(foundTrack);
+                        console.log('[WebRTCManager] Removed track from remoteSoundpadStream');
+                        this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
+                    }
+                }
+            };
+
             if (track.kind === 'audio') {
                 console.log('[WebRTCManager] Processing audio track:', track.label, 'Stream ID:', stream.id);
 
@@ -481,8 +516,8 @@ export class WebRTCManager {
     /**
      * Start screen sharing
      */
-    async startScreenShare(screenStream: MediaStream, bitrateKbps?: number): Promise<MediaStream> {
-        console.log('[WebRTCManager] Starting screen share, bitrate:', bitrateKbps);
+    async startScreenShare(screenStream: MediaStream): Promise<MediaStream> {
+        console.log('[WebRTCManager] Starting screen share');
 
         try {
             this.screenStream = screenStream;
@@ -506,16 +541,7 @@ export class WebRTCManager {
                 console.log('[WebRTCManager] Adding screen share video track');
                 const newSender = this.peerConnection.addTrack(videoTrack, screenStream);
 
-                // Apply bitrate if specified
-                if (bitrateKbps && newSender) {
-                    const params = newSender.getParameters();
-                    if (!params.encodings) {
-                        params.encodings = [{}];
-                    }
-                    params.encodings[0].maxBitrate = bitrateKbps * 1000;
-                    await newSender.setParameters(params);
-                    console.log('[WebRTCManager] Bitrate limit set to:', bitrateKbps, 'kbps');
-                }
+                // Removed bitrate limit logic to rely on WebRTC defaults
 
                 // Ensure transceiver direction is correct
                 const transceiver = this.peerConnection.getTransceivers().find(t => t.sender === newSender);

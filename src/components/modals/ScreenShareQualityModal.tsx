@@ -3,7 +3,7 @@ import { X, Tv, Monitor } from 'lucide-react';
 interface ScreenShareQualityModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (quality: 'standard' | 'fullhd' | '2k') => void;
+    onSelect: (quality: 'standard' | 'fullhd') => void;
 }
 
 export function ScreenShareQualityModal({ isOpen, onClose, onSelect }: ScreenShareQualityModalProps) {
@@ -48,19 +48,6 @@ export function ScreenShareQualityModal({ isOpen, onClose, onSelect }: ScreenSha
                         <div className="flex-1">
                             <h3 className="font-semibold text-white group-hover:text-green-400 transition-colors">Full HD Kalite</h3>
                             <p className="text-sm text-gray-400">1080p • 60 FPS • En iyi görüntü</p>
-                        </div>
-                    </button>
-
-                    <button
-                        onClick={() => onSelect('2k')}
-                        className="w-full group flex items-center gap-4 p-4 rounded-xl bg-gray-800 hover:bg-gray-700 transition-all border border-transparent hover:border-purple-500/50 text-left"
-                    >
-                        <div className="w-12 h-12 rounded-lg bg-purple-500/10 flex items-center justify-center group-hover:bg-purple-500/20 transition-colors">
-                            <Monitor className="w-6 h-6 text-purple-400" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="font-semibold text-white group-hover:text-purple-400 transition-colors">2K Ultra Kalite</h3>
-                            <p className="text-sm text-gray-400">1440p • 60 FPS • En yüksek görüntü</p>
                         </div>
                     </button>
                 </div>

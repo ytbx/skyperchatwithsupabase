@@ -533,9 +533,9 @@ export class WebRTCPeer {
     /**
      * Start screen sharing
      */
-    async startScreenShare(screenStream: MediaStream, bitrateKbps?: number) {
+    async startScreenShare(screenStream: MediaStream) {
         if (!this.pc) throw new Error('Peer connection not initialized');
-        console.log('[WebRTCPeer] Starting screen share, bitrate:', bitrateKbps);
+        console.log('[WebRTCPeer] Starting screen share');
 
         this.screenStream = screenStream;
 
@@ -546,16 +546,7 @@ export class WebRTCPeer {
             // Store the sender so we can remove exactly this one later
             this.screenSender = this.pc.addTrack(videoTrack, screenStream);
 
-            // Apply bitrate if specified
-            if (bitrateKbps && this.screenSender) {
-                const params = this.screenSender.getParameters();
-                if (!params.encodings) {
-                    params.encodings = [{}];
-                }
-                params.encodings[0].maxBitrate = bitrateKbps * 1000;
-                await this.screenSender.setParameters(params);
-                console.log('[WebRTCPeer] Bitrate limit set to:', bitrateKbps, 'kbps');
-            }
+            // Removed bitrate limit logic to rely on WebRTC defaults
 
             // Handle user stopping screen share via browser UI
             videoTrack.onended = () => {
