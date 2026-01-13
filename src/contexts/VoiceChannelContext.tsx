@@ -11,6 +11,7 @@ import { PCMAudioProcessor } from '@/utils/audioProcessor';
 import { useDeviceSettings } from './DeviceSettingsContext';
 import { useNoiseSuppression } from './NoiseSuppressionContext';
 import { noiseSuppressionService } from '@/services/NoiseSuppression';
+import { useAudioNotifications } from '@/hooks/useAudioNotifications';
 
 
 interface VoiceParticipant {
@@ -61,6 +62,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
+    const { playStreamStarted, playStreamStopped } = useAudioNotifications();
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
@@ -84,6 +86,45 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         activeChannelIdRef.current = activeChannelId;
     }, [activeChannelId]);
+
+    // Track participant stream states to play sounds
+    const prevStreamStatesRef = useRef<Map<string, { screen: boolean; video: boolean }>>(new Map());
+
+    useEffect(() => {
+        participants.forEach(p => {
+            const prevState = prevStreamStatesRef.current.get(p.user_id);
+
+            if (prevState) {
+                // Check screen sharing
+                if (p.is_screen_sharing && !prevState.screen) {
+                    playStreamStarted();
+                } else if (!p.is_screen_sharing && prevState.screen) {
+                    playStreamStopped();
+                }
+
+                // Check camera (video)
+                if (p.is_video_enabled && !prevState.video) {
+                    playStreamStarted();
+                } else if (!p.is_video_enabled && prevState.video) {
+                    playStreamStopped();
+                }
+            }
+
+            // Update ref
+            prevStreamStatesRef.current.set(p.user_id, {
+                screen: !!p.is_screen_sharing,
+                video: !!p.is_video_enabled
+            });
+        });
+
+        // Cleanup removed participants from ref
+        const currentIds = new Set(participants.map(p => p.user_id));
+        for (const userId of Array.from(prevStreamStatesRef.current.keys())) {
+            if (!currentIds.has(userId)) {
+                prevStreamStatesRef.current.delete(userId);
+            }
+        }
+    }, [participants, playStreamStarted, playStreamStopped]);
 
     const playJoinSound = useCallback(() => {
         const audio = new Audio('sounds/joinovox.mp3');

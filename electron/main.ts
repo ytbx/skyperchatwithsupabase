@@ -414,7 +414,8 @@ function createWindow() {
 
 app.whenReady().then(() => {
     // Check for updates first in production
-    if (!isDev) {
+    // Skip update check if running as a Windows Store app (updates handled by Store)
+    if (!isDev && !process.windowsStore) {
         try {
             autoUpdater.checkForUpdates();
         } catch (e) {

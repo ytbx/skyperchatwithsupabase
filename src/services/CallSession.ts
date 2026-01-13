@@ -24,6 +24,8 @@ export interface CallSessionCallbacks {
     onRemoteScreenStream: (stream: MediaStream) => void;  // New: separate screen stream
     onRemoteScreenShareStarted: () => void;
     onRemoteScreenShareStopped: () => void;
+    onRemoteCameraStarted: () => void;
+    onRemoteCameraStopped: () => void;
     onRemoteTrackChanged: () => void;
     onRemoteAudioStateChanged: (isMuted: boolean, isDeafened: boolean) => void;
     onCallEnded: (reason: 'remote_ended' | 'remote_rejected' | 'remote_cancelled' | 'local_ended') => void;
@@ -261,6 +263,16 @@ export class CallSession {
                     this.callbacks.onRemoteScreenShareStopped();
                     break;
 
+                case 'camera-share-started':
+                    console.log('[CallSession] Remote started camera');
+                    this.callbacks.onRemoteCameraStarted();
+                    break;
+
+                case 'camera-share-stopped':
+                    console.log('[CallSession] Remote stopped camera');
+                    this.callbacks.onRemoteCameraStopped();
+                    break;
+
                 case 'audio-state-change':
                     const { isMuted, isDeafened } = signal.payload as any;
                     console.log('[CallSession] Remote audio state changed:', { isMuted, isDeafened });
@@ -478,6 +490,7 @@ export class CallSession {
         const cameraStream = await this.peer.startCamera();
 
         // Renegotiate to add the new track
+        await this.signaling.sendCameraShareStarted();
         await this.sendOffer();
 
         console.log('[CallSession] ✓ Camera started and renegotiated');
@@ -552,6 +565,7 @@ export class CallSession {
         await this.peer.stopCamera();
 
         // Renegotiate to remove the track
+        await this.signaling.sendCameraShareStopped();
         await this.sendOffer();
 
         console.log('[CallSession] ✓ Camera stopped');

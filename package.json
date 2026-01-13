@@ -1,7 +1,7 @@
 {
   "name": "ovox",
   "private": true,
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "A modern voice and text chat application",
   "author": "Yusuf",
   "main": "dist-electron/main.js",
@@ -14,7 +14,8 @@
     "install-deps": "pnpm install --prefer-offline",
     "clean": "rm -rf node_modules .pnpm-store pnpm-lock.yaml && pnpm store prune",
     "electron:dev": "concurrently \"pnpm dev\" \"wait-on tcp:5173 && tsc -p electron/tsconfig.json && electron .\"",
-    "electron:build": "tsc -p electron/tsconfig.json && vite build && electron-builder"
+    "electron:build": "tsc -p electron/tsconfig.json && vite build && electron-builder",
+    "electron:build:msix": "tsc -p electron/tsconfig.json && vite build && electron-builder --win appx"
   },
   "build": {
     "appId": "com.ovox.app",
@@ -31,8 +32,26 @@
       "**/node_modules/@skyperchat/audio-loopback/bin/**/*"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "appx"
+      ],
       "icon": "public/icon.ico"
+    },
+    "appx": {
+      "applicationId": "Ovox",
+      "backgroundColor": "#1a1a1a",
+      "displayName": "Ovox",
+      "identityName": "Ovox.ovox",
+      "publisher": "CN=A88C2469-F5AC-4051-8F73-1796F3C79FA2",
+      "publisherDisplayName": "Ovox",
+      "languages": [
+        "en-US",
+        "tr-TR"
+      ],
+      "addAutoLaunchExtension": false,
+      "showNameOnTiles": true,
+      "setBuildNumber": true
     },
     "publish": {
       "provider": "github",

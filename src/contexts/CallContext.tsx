@@ -9,6 +9,7 @@ import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityM
 import { useDeviceSettings } from './DeviceSettingsContext';
 import { PCMAudioProcessor } from '@/utils/audioProcessor';
 import { useNoiseSuppression } from './NoiseSuppressionContext';
+import { useAudioNotifications } from '@/hooks/useAudioNotifications';
 
 type CallStatus = 'idle' | 'ringing_outgoing' | 'ringing_incoming' | 'connecting' | 'active';
 
@@ -75,6 +76,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
+    const { playStreamStarted, playStreamStopped, playCallEnded } = useAudioNotifications();
 
     // State refs for Realtime handlers (avoids stale closures)
     const activeCallRef = useRef<DirectCall | null>(null);
@@ -298,11 +300,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
             onRemoteScreenShareStarted: () => {
                 console.log('[CallContext] Remote screen share started');
                 setIsRemoteScreenSharing(true);
+                playStreamStarted();
             },
             onRemoteScreenShareStopped: () => {
                 console.log('[CallContext] Remote screen share stopped');
                 setIsRemoteScreenSharing(false);
                 setRemoteScreenStream(null);
+                playStreamStopped();
+            },
+            onRemoteCameraStarted: () => {
+                console.log('[CallContext] Remote camera started');
+                playStreamStarted();
+            },
+            onRemoteCameraStopped: () => {
+                console.log('[CallContext] Remote camera stopped');
+                playStreamStopped();
             },
             onRemoteAudioStateChanged: (isMuted, isDeafened) => {
                 console.log('[CallContext] Remote audio state changed signal received:', { isMuted, isDeafened });
@@ -311,6 +323,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             },
             onCallEnded: (reason) => {
                 console.log('[CallContext] Call ended:', reason);
+                playCallEnded();
                 resetCallState();
             },
             onError: (error) => {
@@ -333,6 +346,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
             if (sessionRef.current) {
                 await sessionRef.current.end();
             }
+
+            playCallEnded();
 
             if (activeCallRef.current) {
                 // Delete the call record
@@ -546,6 +561,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 const stream = await sessionRef.current.startCamera();
                 setCameraStream(stream);
                 setIsCameraOff(false);
+                playStreamStarted();
                 console.log('[CallContext] ✓ Camera started');
             } else {
                 // Turn camera OFF - remove camera track
@@ -553,6 +569,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 await sessionRef.current.stopCamera();
                 setCameraStream(null);
                 setIsCameraOff(true);
+                playStreamStopped();
                 console.log('[CallContext] ✓ Camera stopped');
             }
         } catch (error) {
@@ -575,6 +592,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             await sessionRef.current.startScreenShare(stream, quality);
             setIsScreenSharing(true);
             setScreenStream(stream);
+            playStreamStarted();
 
             // Handle stream stop (user clicks "Stop sharing" in browser UI)
             stream.getVideoTracks()[0].onended = () => {
@@ -599,6 +617,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 }
                 setIsScreenSharing(false);
                 setScreenStream(null);
+                playStreamStopped();
                 console.log('[CallContext] Screen sharing stopped');
             } else {
                 // Check if Electron
