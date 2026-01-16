@@ -171,13 +171,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.screenStream;
 
-                // UNMUTE for screen shares to fix Lip Sync (audio plays in video element)
-                video.muted = false;
-
-                const volume = getUserScreenVolume(participant.user_id);
-                const isMuted = getUserScreenMuted(participant.user_id);
-                video.volume = isMuted ? 0 : volume;
-
+                video.muted = true; // Always muted locally
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
@@ -208,14 +202,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
 
-                const isScreen = fullscreenVideoId?.startsWith('screen-');
-                video.muted = !isScreen; // Unmute if screen share
-
-                if (isScreen && participantId) {
-                    const volume = getUserScreenVolume(participantId);
-                    const isMuted = getUserScreenMuted(participantId);
-                    video.volume = isMuted ? 0 : volume;
-                }
+                video.muted = true;
 
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
@@ -226,19 +213,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         if (videoId.startsWith('screen-')) {
             setUserScreenVolume(userId, volume);
 
-            // Sync with video element volume
-            const video = videoRefs.current.get(videoId);
-            if (video) {
-                const isMuted = getUserScreenMuted(userId);
-                // Also mute grid video if it's currently fullscreened
-                const shouldMuteGrid = isMuted || fullscreenVideoId === videoId;
-                video.volume = shouldMuteGrid ? 0 : volume;
-            }
-            // Also sync fullscreen if active
-            if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
-                const isMuted = getUserScreenMuted(userId);
-                fullscreenVideoRef.current.volume = isMuted ? 0 : volume;
-            }
+            // Volume settings are handled by GlobalAudio for remote users
+            // and local user volume doesn't affect their own broadcast playback (which is now muted)
         } else {
             setUserVoiceVolume(userId, volume);
         }
@@ -462,8 +438,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    // Mute background grid video if it's currently in fullscreen
-                                                    el.muted = fullscreenVideoId === videoId;
+                                                    el.muted = true;
                                                     if (participant.screenStream && el.srcObject !== participant.screenStream) {
                                                         el.srcObject = participant.screenStream;
                                                         el.play().catch(e => console.error('Error playing screen video from ref:', e));
@@ -474,7 +449,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             }}
                                             autoPlay
                                             playsInline
-                                            muted={fullscreenVideoId === videoId} // Ensure muted if in fullscreen
+                                            muted={true} // Ensure muted always
                                             style={{
                                                 visibility: fullscreenVideoId === videoId ? 'hidden' : 'visible'
                                             }}
@@ -577,6 +552,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     ref={fullscreenVideoRef}
                                     autoPlay
                                     playsInline
+                                    muted={true}
                                     className="w-full h-full object-contain"
                                 />
 
@@ -594,7 +570,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     <StreamVolumeControl
                                         volume={currentVolume}
                                         onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId!, participantId, v)}
-                                        isMuted={isLocalUser}
+                                        isMuted={isMuted}
                                         className="scale-125"
                                     />
                                 </div>

@@ -68,18 +68,6 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
     voiceChannelsRef.current = voiceChannels;
   }, [voiceChannels]);
 
-  // Render audio elements for remote participants
-  useEffect(() => {
-    activeParticipants.forEach(participant => {
-      if (participant.stream && participant.user_id !== user?.id) {
-        const audio = document.getElementById(`audio-${participant.user_id}`) as HTMLAudioElement;
-        if (audio && audio.srcObject !== participant.stream) {
-          audio.srcObject = participant.stream;
-          audio.play().catch(e => console.error('Error playing audio:', e));
-        }
-      }
-    });
-  }, [activeParticipants, user]);
 
   // Voice activity detection for each participant
   useEffect(() => {
@@ -648,16 +636,6 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
           )}
         </div>
 
-        {/* Hidden Audio Elements */}
-        {activeParticipants.map((participant) => (
-          <audio
-            key={participant.user_id}
-            id={`audio-${participant.user_id}`}
-            autoPlay
-            playsInline
-            className="hidden"
-          />
-        ))}
 
         {/* Voice Controls (if connected) */}
         {activeChannelId && (

@@ -21,7 +21,7 @@ export const GlobalAudio: React.FC = () => {
     // Refs to keep track of audio elements
     const voiceAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
     const soundpadAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
-    const screenAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map()); // NEW: Screen audio
+    const screenAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map()); //Persistent screen audio
     const callAudioRef = useRef<HTMLAudioElement | null>(null);
     const callSoundpadAudioRef = useRef<HTMLAudioElement | null>(null);
     const callScreenAudioRef = useRef<HTMLAudioElement | null>(null); // NEW: Screen audio for calls
@@ -96,8 +96,7 @@ export const GlobalAudio: React.FC = () => {
 
             manageAudio(participant.stream, voiceAudioRefs.current, 'VOICE', getEffectiveVoiceVolume);
             manageAudio(participant.soundpadStream, soundpadAudioRefs.current, 'SOUNDPAD', getEffectiveSoundpadVolume);
-            // SCREEN audio is now handled by the <video> element in VoiceChannelView.tsx
-            // manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
+            manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
         });
 
         // Cleanup on unmount
