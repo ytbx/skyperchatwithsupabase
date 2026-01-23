@@ -233,8 +233,8 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
               <div
                 key={conversation.contactId}
                 className={`p-3 rounded-lg cursor-pointer transition-colors group ${selectedContactId === conversation.contactId
-                    ? 'bg-blue-600/20 border border-blue-600/30'
-                    : 'hover:bg-gray-800'
+                  ? 'bg-blue-600/20 border border-blue-600/30'
+                  : 'hover:bg-gray-800'
                   }`}
                 onClick={() => onConversationSelect(conversation.contactId, conversation.contactName)}
               >

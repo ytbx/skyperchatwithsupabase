@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Phone, PhoneOff, Video, X } from 'lucide-react';
 import { useCall } from '@/contexts/CallContext';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/lib/types';
 
 export const CallNotification: React.FC = () => {
+    const { user } = useAuth();
     const { activeCall, incomingCall, callStatus, acceptCall, rejectCall, endCall } = useCall();
     const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [callerProfile, setCallerProfile] = useState<Profile | null>(null);
@@ -16,15 +18,14 @@ export const CallNotification: React.FC = () => {
 
     // Load caller profile for incoming calls
     useEffect(() => {
-        if (callToShow) {
-            // Depending on if it's incoming or outgoing, the "other person" ID differs
-            const otherUserId = callToShow === incomingCall || callStatus === 'ringing_incoming'
-                ? callToShow.caller_id
-                : callToShow.callee_id;
-
+        if (callToShow && user) {
+            // Determine who the other person is based on auth user ID
+            const otherUserId = callToShow.caller_id === user.id ? callToShow.callee_id : callToShow.caller_id;
             loadProfile(otherUserId);
+        } else if (!callToShow) {
+            setCallerProfile(null);
         }
-    }, [callToShow, incomingCall, callStatus]);
+    }, [callToShow, user?.id]);
 
     const loadProfile = async (userId: string) => {
         const { data, error } = await supabase
@@ -62,7 +63,10 @@ export const CallNotification: React.FC = () => {
 
     const isIncoming = !!incomingCall || callStatus === 'ringing_incoming';
     const isOutgoing = !incomingCall && callStatus === 'ringing_outgoing';
-    const displayName = isIncoming ? (callerProfile?.username || 'Unknown') : (callerProfile?.username || 'Calling...');
+
+    // Friendly fallbacks in Turkish
+    const fallbackName = isIncoming ? 'Birisi arıyor' : 'Aranıyor...';
+    const displayName = callerProfile?.username || fallbackName;
 
     return (
         <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-5">
@@ -76,7 +80,7 @@ export const CallNotification: React.FC = () => {
                             <Phone size={20} className="text-green-500" />
                         )}
                         <span className="text-white font-medium">
-                            {callToShow.call_type === 'video' ? 'Video Call' : 'Voice Call'}
+                            {callToShow.call_type === 'video' ? 'Görüntülü Arama' : 'Sesli Arama'}
                         </span>
                     </div>
                 </div>
@@ -85,10 +89,18 @@ export const CallNotification: React.FC = () => {
                 <div className="flex items-center space-x-4 mb-4">
                     {/* Avatar with pulse animation for incoming calls */}
                     <div className={`relative ${isIncoming ? 'animate-pulse' : ''}`}>
-                        <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-                            <span className="text-white text-xl font-bold">
-                                {displayName.charAt(0).toUpperCase()}
-                            </span>
+                        <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center overflow-hidden border-2 border-gray-700">
+                            {callerProfile?.profile_image_url ? (
+                                <img
+                                    src={callerProfile.profile_image_url}
+                                    alt={displayName}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <span className="text-white text-xl font-bold">
+                                    {displayName.charAt(0).toUpperCase()}
+                                </span>
+                            )}
                         </div>
                         {isIncoming && (
                             <div className="absolute inset-0 rounded-full border-4 border-green-500 animate-ping" />
@@ -101,9 +113,8 @@ export const CallNotification: React.FC = () => {
                             {displayName}
                         </h3>
                         <p className="text-gray-400 text-sm">
-                            {isIncoming && (incomingCall ? 'Incoming call (Busy)' : 'Incoming call...')}
-                            {isOutgoing && 'Calling...'}
-
+                            {isIncoming && (incomingCall ? 'Gelen arama (Meşgul)' : 'Gelen arama...')}
+                            {isOutgoing && 'Aranıyor...'}
                         </p>
                     </div>
                 </div>
@@ -118,7 +129,7 @@ export const CallNotification: React.FC = () => {
                                 className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 font-medium"
                             >
                                 <Phone size={18} />
-                                <span>Accept</span>
+                                <span>Kabul Et</span>
                             </button>
 
                             {/* Reject Button */}
@@ -127,7 +138,7 @@ export const CallNotification: React.FC = () => {
                                 className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 font-medium"
                             >
                                 <PhoneOff size={18} />
-                                <span>Reject</span>
+                                <span>Reddet</span>
                             </button>
                         </>
                     )}
@@ -140,7 +151,7 @@ export const CallNotification: React.FC = () => {
                                 className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 font-medium"
                             >
                                 <X size={18} />
-                                <span>Cancel</span>
+                                <span>İptal Et</span>
                             </button>
                         </>
                     )}

@@ -242,8 +242,8 @@ export function ServerList({
           toast.info(`Gürültü Engelleme: ${!isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'}`);
         }}
         className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:shadow-glow-sm group ${isNoiseSuppressionEnabled
-            ? 'bg-indigo-600 text-white shadow-glow'
-            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+          ? 'bg-indigo-600 text-white shadow-glow'
+          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
           }`}
         title={`Gürültü Engelleme (${isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'})`}
       >

@@ -26,6 +26,7 @@ interface NotificationContextType {
   setActiveChannel: (channelId: number | null) => void;
   // Debug functions
   createTestNotification: () => void;
+  updateBadge: (count: number) => void;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -725,6 +726,62 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  /**
+   * Sync unread count to tab title and Electron badge
+   */
+  useEffect(() => {
+    const displayCount = unreadCount > 9 ? '9+' : unreadCount;
+    const baseTitle = 'Ovox';
+
+    if (unreadCount > 0) {
+      document.title = `(${displayCount}) ${baseTitle}`;
+    } else {
+      document.title = baseTitle;
+    }
+
+    // Update Electron badge if available
+    if ((window as any).electron?.updateBadge) {
+      (window as any).electron.updateBadge(unreadCount);
+    }
+
+    // NEW: Update Taskbar Overlay Icon (Numeric Badge)
+    if ((window as any).electron?.updateBadgeOverlay) {
+      if (unreadCount > 0) {
+        // Generate a 32x32 image with a red circle and white number
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+
+        if (ctx) {
+          // Draw bright red circle
+          ctx.beginPath();
+          ctx.arc(16, 16, 14, 0, Math.PI * 2);
+          ctx.fillStyle = '#ff0000'; // Pure bright red
+          ctx.fill();
+
+          // Draw white border
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Draw number
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 18px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          const text = unreadCount > 9 ? '9+' : unreadCount.toString();
+          ctx.fillText(text, 16, 17); // Offset y slightly for better alignment
+
+          (window as any).electron.updateBadgeOverlay(canvas.toDataURL());
+        }
+      } else {
+        (window as any).electron.updateBadgeOverlay(null);
+      }
+    }
+  }, [unreadCount]);
+
   const value: NotificationContextType = {
     notifications,
     unreadCount,
@@ -737,6 +794,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setActiveChat,
     setActiveChannel,
     createTestNotification,
+    updateBadge: (count: number) => {
+      if ((window as any).electron?.updateBadge) {
+        (window as any).electron.updateBadge(count);
+      }
+    }
   };
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

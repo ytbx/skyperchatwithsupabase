@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, globalShortcut, systemPreferences, shell, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { startAudioCapture, stopAudioCapture, setExecutablesRoot, getWindowPid } from '@skyperchat/audio-loopback';
 
@@ -52,6 +52,8 @@ autoUpdater.logger = console;
 
 let mainWindow: BrowserWindow | null = null;
 let updateWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 
 // Soundboard storage directory
 const getSoundboardDir = () => {
@@ -410,7 +412,91 @@ function createWindow() {
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+
+    // Handle window close: hide instead of quit
+    mainWindow.on('close', (event) => {
+        if (!isQuitting) {
+            event.preventDefault();
+            mainWindow?.hide();
+        }
+        return false;
+    });
 }
+
+function createTray() {
+    const iconPath = isDev
+        ? path.join(__dirname, '..', 'public', 'icon.ico')
+        : path.join(__dirname, '..', 'dist', 'icon.ico');
+
+    const trayIcon = nativeImage.createFromPath(iconPath);
+    tray = new Tray(trayIcon);
+
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Ovox\'u Aç',
+            click: () => {
+                mainWindow?.show();
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'Çıkış',
+            click: () => {
+                isQuitting = true;
+                app.quit();
+            }
+        }
+    ]);
+
+    tray.setToolTip('Ovox');
+    tray.setContextMenu(contextMenu);
+
+    tray.on('click', () => {
+        if (mainWindow?.isVisible()) {
+            mainWindow.hide();
+        } else {
+            mainWindow?.show();
+        }
+    });
+}
+
+// IPC handler for notification badges
+ipcMain.on('update-badge', (event, count: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (process.platform === 'win32') {
+            // On Windows, we can use setOverlayIcon or just let it be
+            // But usually we set the badge count on the taskbar icon
+            if (count > 0) {
+                // Remove setProgressBar to prevent green flash
+                // tray?.setToolTip(`Ovox (${count > 9 ? '9+' : count} yeni bildirim)`);
+                tray?.setToolTip(`Ovox (${count > 9 ? '9+' : count} yeni bildirim)`);
+            } else {
+                tray?.setToolTip('Ovox');
+            }
+        }
+
+        // Update taskbar badge (macOS/some Linux)
+        if (process.platform === 'darwin') {
+            app.setBadgeCount(count);
+        }
+    }
+});
+
+// New IPC handler for setting the taskbar overlay icon with a rendered badge
+ipcMain.on('update-badge-overlay', (event, dataUrl: string | null) => {
+    if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
+        if (dataUrl) {
+            try {
+                const overlay = nativeImage.createFromDataURL(dataUrl);
+                mainWindow.setOverlayIcon(overlay, 'Bildirimler');
+            } catch (error) {
+                console.error('[Electron] Failed to set overlay icon:', error);
+            }
+        } else {
+            mainWindow.setOverlayIcon(null, '');
+        }
+    }
+});
 
 app.whenReady().then(() => {
     // Check for updates first in production
@@ -429,8 +515,16 @@ app.whenReady().then(() => {
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
+        } else {
+            mainWindow?.show();
         }
     });
+
+    createTray();
+});
+
+app.on('before-quit', () => {
+    isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

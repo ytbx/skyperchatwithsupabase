@@ -38,7 +38,9 @@ contextBridge.exposeInMainWorld('electron', {
             ipcRenderer.on('global-shortcut-triggered', subscription);
             return () => ipcRenderer.removeListener('global-shortcut-triggered', subscription);
         }
-    }
+    },
+    updateBadge: (count: number) => ipcRenderer.send('update-badge', count),
+    updateBadgeOverlay: (dataUrl: string | null) => ipcRenderer.send('update-badge-overlay', dataUrl)
 })
 
 // Expose update events for update window
