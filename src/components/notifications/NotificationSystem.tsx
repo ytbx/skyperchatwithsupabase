@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Bell, X, MessageCircle, UserPlus, Phone, Trash2 } from 'lucide-react';
+import { Bell, X, MessageCircle, UserPlus, Phone, Trash2, CheckCircle } from 'lucide-react';
+import { useNotifications as useNotificationContext } from '../../contexts/NotificationContext';
 
 interface Notification {
   id: string;
@@ -30,7 +31,7 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [notificationCount, setNotificationCount] = useState(0);
+  const { markAllAsRead, unreadCount } = useNotificationContext();
 
   useEffect(() => {
     if (user) {
@@ -72,9 +73,8 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    setNotificationCount(notifications.length);
-  }, [notifications]);
+  // We use unreadCount from context instead of local state
+  // This helps keep both in sync
 
   const loadNotifications = async () => {
     if (!user) return;
@@ -203,13 +203,22 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
     <div className="relative">
       {/* Notification Bell */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 hover:bg-gray-700 rounded-lg transition-colors"
+        onClick={() => {
+          setIsOpen(!isOpen);
+          if (!isOpen) {
+            markAllAsRead();
+          }
+        }}
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:shadow-glow-sm group ${isOpen
+          ? 'bg-primary-500 text-white shadow-glow'
+          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+          }`}
+        title="Bildirimler"
       >
-        <Bell size={20} className="text-gray-400" />
-        {notificationCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1">
-            {notificationCount > 99 ? '99+' : notificationCount}
+        <Bell size={20} className={isOpen ? 'text-white' : 'group-hover:text-white'} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 border-2 border-gray-900 shadow-lg">
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
@@ -224,7 +233,8 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ onNaviga
           />
 
           {/* Panel */}
-          <div className="absolute right-0 top-full mt-2 w-80 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50">
+          {/* Panel - Positioned to the right of the sidebar button */}
+          <div className="absolute left-full top-0 ml-4 w-80 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl z-50 animate-in fade-in slide-in-from-left-2 duration-200">
             {/* Header */}
             <div className="p-4 border-b border-gray-700">
               <div className="flex items-center justify-between">

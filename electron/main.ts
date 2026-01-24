@@ -31,11 +31,9 @@ app.commandLine.appendSwitch('enable-blink-features', 'SuppressLocalAudioPlaybac
 // 2. Feature-based switches
 // ExcludeCurrentProcessFromAudioCapture: Explicitly tells Chromium to omit this process's output
 // AudioServiceOutOfProcess: Required for modern Windows loopback exclusion to function
+// DrawSnapshotEdge: Disables the yellow border on Windows 10/11 when sharing screen
 app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,AudioServiceOutOfProcess,ExcludeCurrentProcessFromAudioCapture,WASAPIRawAudioCapture');
-
-// 3. Platform & Service Specifics
-// Disable sandbox for the Audio Service on Windows to allow it to identify process IDs for exclusion
-app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox');
+app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox,DrawSnapshotEdge');
 app.commandLine.appendSwitch('auto-select-desktop-capture-source', 'Entire screen');
 
 if (process.platform === 'win32') {

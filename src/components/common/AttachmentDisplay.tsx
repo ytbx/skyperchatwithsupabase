@@ -1,6 +1,7 @@
 import { Download, FileText, Image as ImageIcon } from 'lucide-react';
 import { FileUploadService } from '@/services/FileUploadService';
 import { useState } from 'react';
+import { GifPlayer } from './GifPlayer';
 
 interface AttachmentDisplayProps {
     fileUrl: string;
@@ -21,12 +22,21 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: Att
         return (
             <>
                 <div className="mt-2 max-w-sm">
-                    <img
-                        src={fileUrl}
-                        alt={fileName}
-                        className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px] object-cover"
-                        onClick={() => setLightboxOpen(true)}
-                    />
+                    {fileType === 'image/gif' || fileName.toLowerCase().endsWith('.gif') ? (
+                        <GifPlayer
+                            src={fileUrl}
+                            alt={fileName}
+                            className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px]"
+                            onClick={() => setLightboxOpen(true)}
+                        />
+                    ) : (
+                        <img
+                            src={fileUrl}
+                            alt={fileName}
+                            className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px] object-cover"
+                            onClick={() => setLightboxOpen(true)}
+                        />
+                    )}
                     <div className="flex items-center justify-between mt-1 text-xs text-gray-400">
                         <span className="truncate">{fileName}</span>
                         <button

@@ -678,7 +678,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
                 },
                 audio: true, // Allow system audio sharing
-                selfBrowserSurface: 'exclude' as any
+                selfBrowserSurface: 'exclude' as any,
+                surfaceSwitching: 'include' as any,
+                systemAudio: 'include' as any
             };
 
             const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
@@ -695,16 +697,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
             // Get video stream (audio: false because we handle it natively in Electron)
             const videoStream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: false, // We'll add native audio track later if needed
+                audio: false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: quality === 'fullhd' ? 1920 : 1280,
                         maxWidth: quality === 'fullhd' ? 1920 : 1280,
-                        minHeight: quality === 'fullhd' ? 1080 : 720,
                         maxHeight: quality === 'fullhd' ? 1080 : 720,
-                        minFrameRate: quality === 'standard' ? 30 : 60,
                         maxFrameRate: quality === 'standard' ? 30 : 60
                     }
                 }

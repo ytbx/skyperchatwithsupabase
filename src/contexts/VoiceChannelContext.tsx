@@ -996,7 +996,9 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
                 },
                 audio: true, // Allow system audio sharing
-                selfBrowserSurface: 'exclude' as any
+                selfBrowserSurface: 'exclude' as any,
+                surfaceSwitching: 'include' as any,
+                systemAudio: 'include' as any
             };
 
             const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
@@ -1017,11 +1019,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        minWidth: quality === 'fullhd' ? 1920 : 1280,
                         maxWidth: quality === 'fullhd' ? 1920 : 1280,
-                        minHeight: quality === 'fullhd' ? 1080 : 720,
                         maxHeight: quality === 'fullhd' ? 1080 : 720,
-                        minFrameRate: quality === 'standard' ? 30 : 60,
                         maxFrameRate: quality === 'standard' ? 30 : 60
                     }
                 }

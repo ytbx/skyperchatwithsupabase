@@ -7,6 +7,7 @@ import { Server } from '@/lib/types';
 import { ServerContextMenu } from '@/components/server/ServerContextMenu';
 import { useNoiseSuppression } from '@/contexts/NoiseSuppressionContext';
 import { toast } from 'sonner';
+import { NotificationSystem } from '@/components/notifications/NotificationSystem';
 
 const MUTED_SERVERS_KEY = 'muted_servers';
 
@@ -18,6 +19,7 @@ interface ServerListProps {
   onAddAction: () => void; // Context-aware add action
   onSettings: () => void;
   onSearch: () => void; // Global search action
+  onNotificationNavigate?: (type: 'channel' | 'dm', id: string, serverId?: string) => void;
 }
 
 export function ServerList({
@@ -27,7 +29,8 @@ export function ServerList({
   onViewChange,
   onAddAction,
   onSettings,
-  onSearch
+  onSearch,
+  onNotificationNavigate
 }: ServerListProps) {
   const [servers, setServers] = useState<Server[]>([]);
   const { user } = useAuth();
@@ -193,6 +196,9 @@ export function ServerList({
         <Users className="w-7 h-7 text-white" />
       </button>
 
+      {/* Notifications Button */}
+      <NotificationSystem onNavigate={onNotificationNavigate} />
+
       <div className="w-8 h-px bg-gray-700 my-1" />
 
       {/* Server Icons */}
@@ -279,6 +285,8 @@ export function ServerList({
       >
         <Settings className="w-5 h-5 text-gray-400 group-hover:text-white" />
       </button>
+
+      <div className="w-8 h-px bg-gray-700 my-1" />
 
       {/* Server Context Menu */}
       {contextMenu && (

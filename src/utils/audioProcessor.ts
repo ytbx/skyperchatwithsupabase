@@ -36,35 +36,32 @@ export class PCMAudioProcessor {
             rightChannel[i] = int16Array[i * 2 + 1] / 32768.0;
         }
 
-        // Scheduling logic
-        const currentTime = this.audioContext.currentTime;
-
         // SYNC FIX: 
-        // If nextStartTime is too far in the future (buffer buildup > 100ms), 
-        // it means we've had stutters and the audio is now lagging behind "live".
-        const MAX_BUFFER_OFFSET = 0.1; // 100ms
+        // We want to keep audio slightly behind or exactly at "live" to match video latency.
+        // If nextStartTime is too far in the future (buffer buildup > 60ms), 
+        // it means audio is accumulating too much delay.
+        const MAX_BUFFER_OFFSET = 0.06; // 60ms - tighter for better sync
+        const currentTime = this.audioContext.currentTime;
         const drift = this.nextStartTime - currentTime;
 
         if (drift > MAX_BUFFER_OFFSET) {
             console.warn(`[PCMAudioProcessor] Sync drift detected (${drift.toFixed(3)}s). Clearing buffer to catch up.`);
 
-            // 1. Stop all previously scheduled sources to clear the backlog in AudioContext
+            // 1. Stop all previously scheduled sources
             this.scheduledSources.forEach(source => {
                 try {
                     source.stop();
-                } catch (e) {
-                    // Ignore errors if source already stopped
-                }
+                } catch (e) { /* ignore */ }
             });
             this.scheduledSources.clear();
 
-            // 2. Reset nextStartTime to jump to the present
-            this.nextStartTime = currentTime;
+            // 2. Reset nextStartTime to jump to the present (plus a tiny safety buffer)
+            this.nextStartTime = currentTime + 0.01; // 10ms safety buffer
         }
 
         // If nextStartTime is in the past (buffer underflow), reset to now
         if (this.nextStartTime < currentTime) {
-            this.nextStartTime = currentTime;
+            this.nextStartTime = currentTime + 0.005; // 5ms lead
         }
 
         // Create source and connect to destination
@@ -72,7 +69,7 @@ export class PCMAudioProcessor {
         source.buffer = audioBuffer;
         source.connect(this.destination);
 
-        // Track the source so we can cancel it if sync is lost
+        // Track the source
         this.scheduledSources.add(source);
         source.onended = () => {
             this.scheduledSources.delete(source);
