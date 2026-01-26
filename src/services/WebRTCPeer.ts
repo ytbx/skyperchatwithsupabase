@@ -148,8 +148,17 @@ export class WebRTCPeer {
             // Check if this stream has a video track (Screen Share)
             const hasVideo = stream.getVideoTracks().length > 0;
 
-            if (hasVideo) {
-                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video)');
+            // PRIORITY 1: Are we expecting a screen share?
+            // If so, the next audio track (especially if it's not the main voice stream) is likely screen audio.
+            const isExpectedScreenAudio = this.expectScreenShare && (!this.remoteStreamId || stream.id !== this.remoteStreamId);
+
+            if (hasVideo || isExpectedScreenAudio || track.label.toLowerCase().includes('screen')) {
+                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio');
+                if (isExpectedScreenAudio) {
+                    console.log('[WebRTCPeer] (Identification based on expectScreenShare flag)');
+                    // We don't reset expectScreenShare here because we might still be waiting for the video track
+                }
+
                 // Create/Update screen stream - maintain stable reference
                 if (!this.remoteScreenStream) {
                     this.remoteScreenStream = new MediaStream();
@@ -176,7 +185,7 @@ export class WebRTCPeer {
                         this.remoteStream.addTrack(track);
                     }
 
-                    this.callbacks.onRemoteStream(this.remoteStream);
+                    this.callbacks.onRemoteStream(new MediaStream(this.remoteStream.getTracks()));
                     console.log('[WebRTCPeer] ✓ Voice track added');
                 } else {
                     // Subsequent audio without video -> Soundpad
@@ -188,7 +197,7 @@ export class WebRTCPeer {
                         this.remoteSoundpadStream.addTrack(track);
                     }
 
-                    this.callbacks.onRemoteSoundpad(this.remoteSoundpadStream);
+                    this.callbacks.onRemoteSoundpad(new MediaStream(this.remoteSoundpadStream.getTracks()));
                     console.log('[WebRTCPeer] ✓ Soundpad track added');
                 }
             }
@@ -229,7 +238,7 @@ export class WebRTCPeer {
                     this.remoteStream.addTrack(track);
                 }
 
-                this.callbacks.onRemoteStream(this.remoteStream);
+                this.callbacks.onRemoteStream(new MediaStream(this.remoteStream.getTracks()));
             } else {
                 // Different stream ID -> Screen Share
                 console.log('[WebRTCPeer] Assigning as Secondary (Screen) Video');
@@ -242,7 +251,7 @@ export class WebRTCPeer {
                     this.remoteScreenStream.addTrack(track);
                 }
 
-                this.callbacks.onRemoteVideo(this.remoteScreenStream);
+                this.callbacks.onRemoteVideo(new MediaStream(this.remoteScreenStream.getTracks()));
             }
         }
     }

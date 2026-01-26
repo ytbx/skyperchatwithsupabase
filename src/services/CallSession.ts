@@ -61,6 +61,7 @@ export class CallSession {
     private isProcessingOffer = false;
     private pendingOffer: PendingOffer | null = null;
     private lastProcessedOfferSdp: string | null = null;
+    private lastProcessedAnswerSdp: string | null = null;
 
     private connectionFailedTimer: any = null;
 
@@ -350,7 +351,20 @@ export class CallSession {
             return;
         }
 
+        // Deduplicate answers
+        if (this.lastProcessedAnswerSdp === answer.sdp) {
+            console.log('[CallSession] Ignoring duplicate answer');
+            return;
+        }
+
+        const signalingState = this.peer.getSignalingState();
+        if (signalingState !== 'have-local-offer') {
+            console.warn('[CallSession] Cannot handle answer in state:', signalingState);
+            return;
+        }
+
         console.log('[CallSession] Processing answer');
+        this.lastProcessedAnswerSdp = answer.sdp ?? null;
         await this.peer.setRemoteDescription(answer);
         console.log('[CallSession] ✓ Answer processed');
     }
@@ -700,6 +714,7 @@ export class CallSession {
         this.isProcessingOffer = false;
         this.pendingOffer = null;
         this.lastProcessedOfferSdp = null;
+        this.lastProcessedAnswerSdp = null;
 
         console.log('[CallSession] ✓ Cleanup complete');
 
