@@ -522,6 +522,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
      */
     const toggleMic = useCallback(() => {
         const newMutedState = !isMicMuted;
+
+        // Play audio feedback
+        const audio = new Audio(newMutedState ? 'sounds/closemicrofon.mp3' : 'sounds/openmicrofon1.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.error('Error playing mute toggle sound:', e));
+
         sessionRef.current?.setMicMuted(newMutedState);
         setIsMicMuted(newMutedState);
         // Broadcast the change

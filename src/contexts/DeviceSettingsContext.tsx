@@ -31,6 +31,8 @@ interface DeviceSettingsContextType {
     setKeybind: (action: keyof Keybinds, shortcut: string) => Promise<void>;
     clearKeybind: (action: keyof Keybinds) => Promise<void>;
     isElectron: boolean;
+    showTaskbarController: boolean;
+    setShowTaskbarController: (show: boolean) => void;
 }
 
 const DeviceSettingsContext = createContext<DeviceSettingsContextType | undefined>(undefined);
@@ -57,6 +59,9 @@ export function DeviceSettingsProvider({ children }: { children: ReactNode }) {
     // Keybind State
     const [keybinds, setKeybinds] = useState<Keybinds>(DEFAULT_KEYBINDS);
 
+    // Other settings
+    const [showTaskbarController, setShowTaskbarController] = useState<boolean>(true);
+
     // Electron Detection
     const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
 
@@ -81,6 +86,11 @@ export function DeviceSettingsProvider({ children }: { children: ReactNode }) {
                     if (parsed.deafen) (window as any).electron.globalShortcuts.register(parsed.deafen);
                 }
             }
+
+            const savedTaskbarSetting = localStorage.getItem('show_taskbar_controller');
+            if (savedTaskbarSetting !== null) {
+                setShowTaskbarController(savedTaskbarSetting === 'true');
+            }
         } catch (error) {
             console.error('[DeviceSettings] Error loading settings:', error);
         }
@@ -99,6 +109,10 @@ export function DeviceSettingsProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY_KEYBINDS, JSON.stringify(keybinds));
     }, [keybinds]);
+
+    useEffect(() => {
+        localStorage.setItem('show_taskbar_controller', String(showTaskbarController));
+    }, [showTaskbarController]);
 
     // Device Enumeration
     const refreshDevices = useCallback(async (includeVideo = false) => {
@@ -170,7 +184,9 @@ export function DeviceSettingsProvider({ children }: { children: ReactNode }) {
             keybinds,
             setKeybind,
             clearKeybind,
-            isElectron
+            isElectron,
+            showTaskbarController,
+            setShowTaskbarController
         }}>
             {children}
         </DeviceSettingsContext.Provider>

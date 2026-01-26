@@ -40,7 +40,16 @@ contextBridge.exposeInMainWorld('electron', {
         }
     },
     updateBadge: (count: number) => ipcRenderer.send('update-badge', count),
-    updateBadgeOverlay: (dataUrl: string | null) => ipcRenderer.send('update-badge-overlay', dataUrl)
+    updateBadgeOverlay: (dataUrl: string | null) => ipcRenderer.send('update-badge-overlay', dataUrl),
+    thumbar: {
+        setButtons: (buttons: any[]) => ipcRenderer.send('set-thumbar-buttons', buttons),
+        clearButtons: () => ipcRenderer.send('clear-thumbar-buttons'),
+        onButtonClicked: (callback: (id: string) => void) => {
+            const subscription = (_event: any, id: string) => callback(id);
+            ipcRenderer.on('thumbar-button-clicked', subscription);
+            return () => ipcRenderer.removeListener('thumbar-button-clicked', subscription);
+        }
+    }
 })
 
 // Expose update events for update window

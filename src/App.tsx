@@ -42,6 +42,7 @@ import { DeviceSettingsProvider } from '@/contexts/DeviceSettingsContext';
 import { GlobalAudio } from '@/components/layout/GlobalAudio';
 import { GlobalKeybindListener } from '@/components/GlobalKeybindListener';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { TaskbarControllerManager } from '@/components/layout/TaskbarControllerManager';
 
 import { FriendProvider } from '@/contexts/FriendContext';
 import { NoiseSuppressionProvider } from '@/contexts/NoiseSuppressionContext';
@@ -316,6 +317,7 @@ function AppContent() {
     return (
         <div className="h-screen bg-gray-900 flex overflow-hidden relative">
             <GlobalKeybindListener />
+            <TaskbarControllerManager />
             {/* Left Sidebar - Always visible */}
             <ServerList
                 selectedServerId={selectedServerId}

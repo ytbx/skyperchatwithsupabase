@@ -399,6 +399,27 @@ function createWindow() {
         return true;
     });
 
+    // Thumbar IPC handlers
+    ipcMain.on('set-thumbar-buttons', (event, buttons: Array<{ tooltip: string; iconBase64: string; flags?: string[]; id: string }>) => {
+        if (!mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') return;
+
+        const thumbarButtons = buttons.map(btn => ({
+            tooltip: btn.tooltip,
+            icon: nativeImage.createFromDataURL(btn.iconBase64),
+            click: () => {
+                mainWindow?.webContents.send('thumbar-button-clicked', btn.id);
+            },
+            flags: (btn.flags as any) || []
+        }));
+
+        mainWindow.setThumbarButtons(thumbarButtons);
+    });
+
+    ipcMain.on('clear-thumbar-buttons', () => {
+        if (!mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') return;
+        mainWindow.setThumbarButtons([]);
+    });
+
     if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
         mainWindow.webContents.openDevTools();

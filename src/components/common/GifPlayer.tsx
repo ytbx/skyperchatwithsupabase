@@ -59,13 +59,13 @@ export const GifPlayer: React.FC<GifPlayerProps> = ({ src, alt, className, onCli
                 <>
                     <canvas
                         ref={canvasRef}
-                        className={`w-full h-full object-cover ${isHovering ? 'hidden' : 'block'}`}
+                        className={`max-w-full h-auto block rounded-lg ${isHovering ? 'hidden' : 'block'}`}
                     />
                     <img
                         ref={imgRef}
                         src={src}
                         alt={alt}
-                        className={`w-full h-full object-cover ${isHovering ? 'block' : 'hidden'}`}
+                        className={`max-w-full h-auto block rounded-lg ${isHovering ? 'block' : 'hidden'}`}
                     />
                     {!isHovering && isLoaded && (
                         <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider backdrop-blur-sm">

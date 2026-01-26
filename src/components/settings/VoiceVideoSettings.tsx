@@ -19,7 +19,9 @@ export function VoiceVideoSettings() {
         keybinds,
         setKeybind,
         clearKeybind,
-        isElectron
+        isElectron,
+        showTaskbarController,
+        setShowTaskbarController
     } = useDeviceSettings();
 
     const { isEnabled: isNoiseSuppressionEnabled, toggleNoiseSuppression } = useNoiseSuppression();
@@ -153,6 +155,32 @@ export function VoiceVideoSettings() {
                             />
                         </button>
                     </div>
+
+                    {/* Taskbar Controller Toggle (Electron Only) */}
+                    {isElectron && (
+                        <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-lg transition-colors ${showTaskbarController ? 'bg-primary-500/20 text-primary-400' : 'bg-gray-700 text-gray-400'}`}>
+                                    <Keyboard className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-white font-medium">Görev Çubuğu Kontrolcüsü</h4>
+                                    <p className="text-sm text-gray-400">Windows görev çubuğu önizlemesinde kontrol butonlarını gösterir</p>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => setShowTaskbarController(!showTaskbarController)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ring-offset-gray-900 focus:ring-2 focus:ring-primary-500 ${showTaskbarController ? 'bg-primary-600' : 'bg-gray-700'
+                                    }`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showTaskbarController ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+                    )}
                 </div>
             </section>
 

@@ -1191,6 +1191,17 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isConnected]);
 
+    const toggleMute = useCallback(() => {
+        const newMutedState = !isMuted;
+
+        // Play audio feedback
+        const audio = new Audio(newMutedState ? 'sounds/closemicrofon.mp3' : 'sounds/openmicrofon1.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.error('Error playing mute toggle sound:', e));
+
+        setIsMuted(newMutedState);
+    }, [isMuted]);
+
     const value: VoiceChannelContextType = {
         activeChannelId,
         participants,
@@ -1201,7 +1212,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         isCameraEnabled,
         joinChannel,
         leaveChannel,
-        toggleMute: () => setIsMuted(!isMuted),
+        toggleMute,
         toggleDeafen: () => setIsDeafened(!isDeafened),
         toggleScreenShare,
         toggleCamera,

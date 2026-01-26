@@ -48,7 +48,7 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
     const hostname = new URL(url).hostname.replace('www.', '');
 
     return (
-        <div className="mt-2 max-w-[432px] overflow-hidden rounded-md bg-[#2b2d31] border-l-4 border-l-[#4e5058] hover:bg-[#2e3035] transition-colors group cursor-pointer"
+        <div className="mt-2 max-w-[550px] overflow-hidden rounded-md bg-[#2b2d31] border-l-4 border-l-[#4e5058] hover:bg-[#2e3035] transition-colors group cursor-pointer"
             onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>
             <div className="p-3 flex gap-3">
                 <div className="flex-1 min-w-0">
@@ -68,7 +68,7 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
                 </div>
 
                 {metadata.image && (
-                    <div className="flex-shrink-0 w-20 h-20 rounded overflow-hidden bg-[#1e1f22]">
+                    <div className="flex-shrink-0 w-28 h-28 rounded overflow-hidden bg-[#1e1f22]">
                         <img
                             src={metadata.image}
                             alt={metadata.title || 'Link preview'}

@@ -257,24 +257,22 @@ export const ActiveCallOverlay: React.FC = () => {
         if (video.srcObject !== stream) {
             console.log(`[ActiveCallOverlay] Attaching stream to ${videoId}`);
             video.srcObject = stream;
-
-            // UNMUTE for remote screen shares to fix Lip Sync (audio plays in video element)
-            // Local streams and camera streams remain muted in the video element 
-            // because their audio is handled elsewhere or not needed there.
-            const isRemoteScreen = videoId === 'remote-screen';
-            video.muted = !isRemoteScreen;
-
-            if (isRemoteScreen) {
-                const volume = getUserScreenVolume(contactId);
-                const isUserMuted = getUserScreenMuted(contactId);
-                video.volume = isUserMuted ? 0 : volume;
-            }
-
             try {
                 await video.play();
             } catch (e) {
                 console.error(`[ActiveCallOverlay] Error playing ${videoId}:`, e);
             }
+        }
+
+        // ALWAYS MUTE: Audio is handled by GlobalAudio centrally
+        video.muted = true;
+
+        // Volume setting is still applied for UI synchronization 
+        // if user interacts with local sliders, but video elements themselves stay silent
+        if (videoId === 'remote-screen') {
+            const volume = getUserScreenVolume(contactId);
+            const isUserMuted = getUserScreenMuted(contactId);
+            video.volume = isUserMuted ? 0 : volume;
         }
     };
 
@@ -289,7 +287,7 @@ export const ActiveCallOverlay: React.FC = () => {
             // Clear video if sharing stopped
             video.srcObject = null;
         }
-    }, [remoteScreenStream, isRemoteScreenSharing, ignoredStreams]);
+    }, [remoteScreenStream, isRemoteScreenSharing, ignoredStreams, fullscreenVideoId]);
 
     // Effect to handle Remote Camera Stream
     useEffect(() => {
@@ -303,7 +301,7 @@ export const ActiveCallOverlay: React.FC = () => {
                 video.srcObject = null;
             }
         }
-    }, [remoteStream, ignoredStreams]);
+    }, [remoteStream, ignoredStreams, fullscreenVideoId]);
 
     // Effect to handle Local Screen Stream
     useEffect(() => {
@@ -315,7 +313,7 @@ export const ActiveCallOverlay: React.FC = () => {
         } else {
             video.srcObject = null;
         }
-    }, [screenStream, isScreenSharing, ignoredStreams]);
+    }, [screenStream, isScreenSharing, ignoredStreams, fullscreenVideoId]);
 
     // Handle initial mute state
     useEffect(() => {
@@ -379,8 +377,8 @@ export const ActiveCallOverlay: React.FC = () => {
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
 
-                // UNMUTE for remote screen shares in fullscreen too
-                video.muted = !isRemoteScreen;
+                // ALWAYS MUTE in fullscreen too
+                video.muted = true;
 
                 if (isRemoteScreen) {
                     const volume = getUserScreenVolume(contactId);

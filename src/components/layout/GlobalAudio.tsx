@@ -194,12 +194,35 @@ export const GlobalAudio: React.FC = () => {
 
     // Handle Direct Call SCREEN Audio
     useEffect(() => {
-        // SCREEN audio is now handled by the <video> element in ActiveCallOverlay.tsx
-        // to ensure perfect Lip Sync. We disable it here for direct calls.
-        if (callScreenAudioRef.current && callScreenAudioRef.current.srcObject) {
-            callScreenAudioRef.current.srcObject = null;
+        if (!callScreenAudioRef.current) {
+            callScreenAudioRef.current = new Audio();
+            callScreenAudioRef.current.autoplay = true;
         }
-    }, [callScreenStream, activeCall]);
+
+        const audio = callScreenAudioRef.current;
+        const remoteUserId = getRemoteUserId();
+
+        if (callScreenStream && callScreenStream.getAudioTracks().length > 0) {
+            // Apply SCREEN volume settings for the remote user
+            let effectiveVolume = 0;
+            if (!isCallDeafened && !isGlobalMuted && remoteUserId) {
+                effectiveVolume = getEffectiveScreenVolume(remoteUserId);
+            }
+            const safeVol = safeVolume(effectiveVolume);
+            audio.volume = safeVol;
+            console.log(`[GlobalAudio] Setting direct call SCREEN volume to ${safeVol}`);
+
+            if (audio.srcObject !== callScreenStream) {
+                console.log('[GlobalAudio] Setting direct call remote SCREEN stream');
+                audio.srcObject = callScreenStream;
+                audio.play().catch(e => console.error('Error playing call screen audio:', e));
+            }
+        } else {
+            if (audio.srcObject) {
+                audio.srcObject = null;
+            }
+        }
+    }, [callScreenStream, activeCall, user, getEffectiveScreenVolume, isCallDeafened, isGlobalMuted]);
 
     // Update direct call volumes when settings change (including deafen state)
     useEffect(() => {

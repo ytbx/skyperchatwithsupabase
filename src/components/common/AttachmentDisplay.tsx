@@ -21,19 +21,19 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: Att
     if (isImage) {
         return (
             <>
-                <div className="mt-2 max-w-sm">
+                <div className="mt-2 max-w-[550px]">
                     {fileType === 'image/gif' || fileName.toLowerCase().endsWith('.gif') ? (
                         <GifPlayer
                             src={fileUrl}
                             alt={fileName}
-                            className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px]"
+                            className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                             onClick={() => setLightboxOpen(true)}
                         />
                     ) : (
                         <img
                             src={fileUrl}
                             alt={fileName}
-                            className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px] object-cover"
+                            className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[400px] max-w-full h-auto block"
                             onClick={() => setLightboxOpen(true)}
                         />
                     )}

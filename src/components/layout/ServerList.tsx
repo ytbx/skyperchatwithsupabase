@@ -199,94 +199,100 @@ export function ServerList({
       {/* Notifications Button */}
       <NotificationSystem onNavigate={onNotificationNavigate} />
 
-      <div className="w-8 h-px bg-gray-700 my-1" />
+      <div className="w-8 h-px bg-gray-700 my-1 shrink-0" />
 
-      {/* Server Icons */}
-      {servers.map((server) => (
+      {/* Scrollable Server List Area */}
+      <div className="flex-1 w-full flex flex-col items-center gap-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+        {/* Server Icons */}
+        {servers.map((server) => (
+          <button
+            key={server.id}
+            onClick={() => onSelectServer(server.id)}
+            onContextMenu={(e) => handleContextMenu(e, server)}
+            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden shrink-0 ${selectedServerId === server.id && currentView === 'servers'
+              ? 'bg-primary-500 rounded-lg shadow-glow-sm'
+              : 'bg-gray-800 hover:bg-gray-700'
+              } ${mutedServers.has(server.id) ? 'opacity-60' : ''}`}
+            title={`${server.name}${mutedServers.has(server.id) ? ' (Bildirimler Kapalı)' : ''}`}
+          >
+            {server.server_image_url ? (
+              <img
+                src={server.server_image_url}
+                alt={server.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-lg font-bold text-white">
+                {server.name.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </button>
+        ))}
+
+        {/* Add Button - Global Server Creation */}
         <button
-          key={server.id}
-          onClick={() => onSelectServer(server.id)}
-          onContextMenu={(e) => handleContextMenu(e, server)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden ${selectedServerId === server.id && currentView === 'servers'
-            ? 'bg-primary-500 rounded-lg shadow-glow-sm'
-            : 'bg-gray-800 hover:bg-gray-700'
-            } ${mutedServers.has(server.id) ? 'opacity-60' : ''}`}
-          title={`${server.name}${mutedServers.has(server.id) ? ' (Bildirimler Kapalı)' : ''}`}
+          onClick={onAddAction}
+          className="w-14 h-14 rounded-full border-2 border-dashed border-neutral-400 flex items-center justify-center transition-all duration-normal hover:border-primary-500 hover:text-primary-500 hover:shadow-glow-sm shrink-0"
+          title="Sunucu Ekle"
         >
-          {server.server_image_url ? (
-            <img
-              src={server.server_image_url}
-              alt={server.name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-lg font-bold text-white">
-              {server.name.charAt(0).toUpperCase()}
-            </span>
-          )}
+          <Plus className="w-6 h-6 text-neutral-400 hover:text-primary-500" />
         </button>
-      ))}
+      </div>
 
-      {/* Add Button - Global Server Creation */}
-      <button
-        onClick={onAddAction}
-        className="w-14 h-14 rounded-full border-2 border-dashed border-neutral-400 flex items-center justify-center transition-all duration-normal hover:border-primary-500 hover:text-primary-500 hover:shadow-glow-sm"
-        title="Sunucu Ekle"
-      >
-        <Plus className="w-6 h-6 text-neutral-400 hover:text-primary-500" />
-      </button>
-
-      <div className="flex-1" />
+      {/* Fixed Bottom Actions */}
+      <div className="flex flex-col items-center gap-2 mt-2 shrink-0">
 
 
 
 
-      {/* Noise Suppression Toggle */}
-      <button
-        onClick={() => {
-          toggleNoiseSuppression();
-          toast.info(`Gürültü Engelleme: ${!isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'}`);
-        }}
-        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:shadow-glow-sm group ${isNoiseSuppressionEnabled
-          ? 'bg-indigo-600 text-white shadow-glow'
-          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-          }`}
-        title={`Gürültü Engelleme (${isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'})`}
-      >
-        <Sparkles className={`w-5 h-5 ${isNoiseSuppressionEnabled ? 'text-white animate-pulse' : 'group-hover:text-indigo-400'}`} />
-      </button>
-
-      {/* Search Button */}
-      <button
-        onClick={onSearch}
-        className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-all duration-normal hover:bg-primary-500 hover:shadow-glow-sm group"
-        title="Arama"
-      >
-        <Search className="w-5 h-5 text-gray-400 group-hover:text-white" />
-      </button>
-
-      {/* Download Desktop App Button - Only visible in web version */}
-      {!isElectron && (
-        <a
-          href="https://github.com/ytbx/skyperchatwithsupabase/releases/download/v0.3.10/Ovox-Setup-0.3.10.exe"
-          download="Ovox-Setup-0.3.10.exe"
-          className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-gpu duration-normal hover:bg-green-500 hover:shadow-glow-sm group"
-          title="Masaüstü Uygulamasını İndir"
+        {/* Noise Suppression Toggle */}
+        <button
+          onClick={() => {
+            toggleNoiseSuppression();
+            toast.info(`Gürültü Engelleme: ${!isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'}`);
+          }}
+          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:shadow-glow-sm group ${isNoiseSuppressionEnabled
+            ? 'bg-indigo-600 text-white shadow-glow'
+            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          title={`Gürültü Engelleme (${isNoiseSuppressionEnabled ? 'Açık' : 'Kapalı'})`}
         >
-          <Download className="w-5 h-5 text-gray-400 group-hover:text-white" />
-        </a>
-      )}
+          <Sparkles className={`w-5 h-5 ${isNoiseSuppressionEnabled ? 'text-white animate-pulse' : 'group-hover:text-indigo-400'}`} />
+        </button>
 
-      {/* Settings Button */}
-      <button
-        onClick={onSettings}
-        className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-all duration-normal hover:bg-gray-700 hover:shadow-glow-sm group"
-        title="Ayarlar"
-      >
-        <Settings className="w-5 h-5 text-gray-400 group-hover:text-white" />
-      </button>
+        {/* Search Button */}
+        <button
+          onClick={onSearch}
+          className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-all duration-normal hover:bg-primary-500 hover:shadow-glow-sm group"
+          title="Arama"
+        >
+          <Search className="w-5 h-5 text-gray-400 group-hover:text-white" />
+        </button>
 
-      <div className="w-8 h-px bg-gray-700 my-1" />
+        {/* Download Desktop App Button - Only visible in web version */}
+        {!isElectron && (
+          <a
+            href="https://github.com/ytbx/skyperchatwithsupabase/releases/download/v0.3.10/Ovox-Setup-0.3.10.exe"
+            download="Ovox-Setup-0.3.10.exe"
+            className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-gpu duration-normal hover:bg-green-500 hover:shadow-glow-sm group"
+            title="Masaüstü Uygulamasını İndir"
+          >
+            <Download className="w-5 h-5 text-gray-400 group-hover:text-white" />
+          </a>
+        )}
+
+        {/* Settings Button */}
+        <button
+          onClick={onSettings}
+          className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center transition-all duration-normal hover:bg-gray-700 hover:shadow-glow-sm group"
+          title="Ayarlar"
+        >
+          <Settings className="w-5 h-5 text-gray-400 group-hover:text-white" />
+        </button>
+
+
+
+      </div>
 
       {/* Server Context Menu */}
       {contextMenu && (

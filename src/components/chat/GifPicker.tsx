@@ -120,12 +120,12 @@ export const GifPicker: React.FC<GifPickerProps> = ({ onGifSelect }) => {
                                             onGifSelect(gif.media_formats.gif.url, gif.media_formats.gif.dims[0], gif.media_formats.gif.dims[1]);
                                             setIsOpen(false);
                                         }}
-                                        className="relative aspect-video rounded-lg overflow-hidden group bg-gray-800 hover:ring-2 hover:ring-blue-500 transition-all"
+                                        className="relative rounded-lg overflow-hidden group bg-gray-800 hover:ring-2 hover:ring-blue-500 transition-all"
                                     >
                                         <img
                                             src={gif.media_formats.tinygif.url}
                                             alt={gif.content_description}
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-auto block"
                                             loading="lazy"
                                         />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
