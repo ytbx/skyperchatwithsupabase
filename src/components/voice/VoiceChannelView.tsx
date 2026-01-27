@@ -151,16 +151,35 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         };
     }, [participants]);
 
+    // Helper to set video stream - clones stream to remove audio to prevent duplicate mixer entries
+    const attachStreamToVideo = useCallback(async (video: HTMLVideoElement, stream: MediaStream | undefined, videoId: string) => {
+        if (!video || !stream) return;
+
+        // Create a video-only version of the stream for the UI
+        const videoOnlyStream = new MediaStream(stream.getVideoTracks());
+        const currentStream = video.srcObject as MediaStream | null;
+
+        if (!currentStream || currentStream.id !== videoOnlyStream.id) {
+            console.log(`[VoiceChannelView] Attaching video-only stream to ${videoId}`);
+            video.srcObject = videoOnlyStream;
+            video.muted = true; // Always forced muted
+
+            try {
+                await video.play();
+            } catch (e) {
+                console.error(`[VoiceChannelView] Error playing ${videoId}:`, e);
+            }
+        }
+    }, []);
+
     // Update video elements when streams change
     useEffect(() => {
         // Update camera streams
         cameraParticipants.forEach(participant => {
             const videoId = `camera-${participant.user_id}`;
             const video = videoRefs.current.get(videoId);
-            if (video && participant.cameraStream && video.srcObject !== participant.cameraStream && !ignoredStreams.has(videoId)) {
-                video.srcObject = participant.cameraStream;
-                video.muted = true; // Mute video element, audio is handled by GlobalAudio
-                video.play().catch(e => console.error('Error playing video:', e));
+            if (video && participant.cameraStream && !ignoredStreams.has(videoId)) {
+                attachStreamToVideo(video, participant.cameraStream, videoId);
             }
         });
 
@@ -168,14 +187,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         screenSharingParticipants.forEach(participant => {
             const videoId = `screen-${participant.user_id}`;
             const video = videoRefs.current.get(videoId);
-            if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
-                video.srcObject = participant.screenStream;
-
-                video.muted = true; // Always muted locally
-                video.play().catch(e => console.error('Error playing video:', e));
+            if (video && participant.screenStream && !ignoredStreams.has(videoId)) {
+                attachStreamToVideo(video, participant.screenStream, videoId);
             }
         });
-    }, [cameraParticipants, screenSharingParticipants, ignoredStreams, videoRefs.current]);
+    }, [cameraParticipants, screenSharingParticipants, ignoredStreams, attachStreamToVideo]);
 
     // Get the current fullscreen stream
     const getFullscreenStream = useCallback((): { stream: MediaStream | null; isLocalUser: boolean } => {
@@ -195,19 +211,11 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
     useEffect(() => {
         const { stream } = getFullscreenStream();
         const video = fullscreenVideoRef.current;
-        const participantId = fullscreenVideoId?.split('-')[1];
 
-        if (video && stream) {
-            // Only update srcObject if it changed
-            if (video.srcObject !== stream) {
-                video.srcObject = stream;
-
-                video.muted = true;
-
-                video.play().catch(e => console.error('Error playing fullscreen video:', e));
-            }
+        if (video && stream && fullscreenVideoId) {
+            attachStreamToVideo(video, stream, `fullscreen-${fullscreenVideoId}`);
         }
-    }, [fullscreenVideoId, getFullscreenStream]);
+    }, [fullscreenVideoId, getFullscreenStream, attachStreamToVideo]);
 
     const handleVolumeChange = useCallback((videoId: string, userId: string, volume: number) => {
         if (videoId.startsWith('screen-')) {
@@ -327,11 +335,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.muted = true;
-                                                    if (participant.cameraStream && el.srcObject !== participant.cameraStream) {
-                                                        el.srcObject = participant.cameraStream;
-                                                        el.play().catch(e => console.error('Error playing camera video from ref:', e));
-                                                    }
+                                                    attachStreamToVideo(el, participant.cameraStream, videoId);
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }
@@ -438,11 +442,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.muted = true;
-                                                    if (participant.screenStream && el.srcObject !== participant.screenStream) {
-                                                        el.srcObject = participant.screenStream;
-                                                        el.play().catch(e => console.error('Error playing screen video from ref:', e));
-                                                    }
+                                                    attachStreamToVideo(el, participant.screenStream, videoId);
                                                 } else {
                                                     videoRefs.current.delete(videoId);
                                                 }

@@ -205,20 +205,27 @@ export const GlobalAudio: React.FC = () => {
         if (callScreenStream) {
             // Apply SCREEN volume settings for the remote user
             let effectiveVolume = 0;
+
             if (!isCallDeafened && !isGlobalMuted && remoteUserId) {
                 effectiveVolume = getEffectiveScreenVolume(remoteUserId);
+            } else if (!remoteUserId && callScreenStream.getAudioTracks().length > 0) {
+                // Fallback: if we have a stream but no user ID yet, default to full volume 
+                // to avoid the 1% / muted issue during initialization
+                effectiveVolume = 1.0;
             }
+
             const safeVol = safeVolume(effectiveVolume);
             audio.volume = safeVol;
-            console.log(`[GlobalAudio] Setting direct call SCREEN volume to ${safeVol} (deafened: ${isCallDeafened})`);
+            console.log(`[GlobalAudio] Direct call SCREEN: vol=${safeVol}, tracks=${callScreenStream.getAudioTracks().length}, remoteUser=${remoteUserId || 'unknown'}`);
 
             if (audio.srcObject !== callScreenStream) {
-                console.log('[GlobalAudio] Setting direct call remote SCREEN stream');
+                console.log('[GlobalAudio] Setting direct call remote SCREEN stream source');
                 audio.srcObject = callScreenStream;
                 audio.play().catch(e => console.error('Error playing call screen audio:', e));
             }
         } else {
             if (audio.srcObject) {
+                console.log('[GlobalAudio] Clearing direct call remote SCREEN stream');
                 audio.srcObject = null;
             }
         }

@@ -254,13 +254,15 @@ export const ActiveCallOverlay: React.FC = () => {
 
     // Helper to set video stream - handles race conditions with play
     const attachStreamToVideo = async (video: HTMLVideoElement, stream: MediaStream, videoId: string) => {
-        if (video.srcObject !== stream) {
-            console.log(`[ActiveCallOverlay] Attaching stream to ${videoId}`);
-            video.srcObject = stream;
+        // Create a video-only version of the stream for the UI
+        // This prevents Windows from seeing multiple audio sessions for the same app
+        const videoOnlyStream = new MediaStream(stream.getVideoTracks());
 
-            // CRITICAL: Always mute video elements in the UI. 
-            // Audio is now handled by GlobalAudio.tsx for consistency and better quality.
-            video.muted = true;
+        const currentStream = video.srcObject as MediaStream | null;
+        if (!currentStream || currentStream.id !== videoOnlyStream.id) {
+            console.log(`[ActiveCallOverlay] Attaching video-only stream to ${videoId}`);
+            video.srcObject = videoOnlyStream;
+            video.muted = true; // Still force mute for safety
 
             try {
                 await video.play();
@@ -357,13 +359,13 @@ export const ActiveCallOverlay: React.FC = () => {
         }
 
         if (stream) {
-            // Only update srcObject if it changed
-            if (video.srcObject !== stream) {
-                video.srcObject = stream;
+            // Create a video-only version of the stream for the UI
+            const videoOnlyStream = new MediaStream(stream.getVideoTracks());
+            const currentStream = video.srcObject as MediaStream | null;
 
-                // CRITICAL: Always mute fullscreen video too.
+            if (!currentStream || currentStream.id !== videoOnlyStream.id) {
+                video.srcObject = videoOnlyStream;
                 video.muted = true;
-
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
         }
@@ -747,6 +749,7 @@ export const ActiveCallOverlay: React.FC = () => {
                                 ref={fullscreenVideoRef}
                                 autoPlay
                                 playsInline
+                                muted={true}
                                 className="w-full h-full object-contain"
                             />
 
