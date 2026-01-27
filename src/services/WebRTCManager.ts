@@ -10,6 +10,8 @@ export class WebRTCManager {
     private remoteScreenStream: MediaStream | null = null;    // Unified screen share stream (audio+video)
     private screenStream: MediaStream | null = null;
     private screenAudioSender: RTCRtpSender | null = null;
+    private remoteStreamId: string | null = null;
+    private expectScreenShare: boolean = false;
     private audioTrackCount: number = 0;  // Track how many audio tracks we've received
 
     // ICE servers configuration (using free STUN servers)
@@ -29,6 +31,14 @@ export class WebRTCManager {
     private onICECandidateCallback?: (candidate: RTCIceCandidateInit) => void;
     private onConnectionStateChangeCallback?: (state: RTCPeerConnectionState) => void;
     private onNegotiationNeededCallback?: () => void;
+
+    /**
+     * Set flag to expect a screen share from the remote peer
+     */
+    setExpectScreenShare(expect: boolean) {
+        console.log('[WebRTCManager] Setting expectScreenShare:', expect);
+        this.expectScreenShare = expect;
+    }
 
     /**
      * Initialize peer connection
@@ -89,7 +99,7 @@ export class WebRTCManager {
                     if (foundTrack) {
                         this.remoteScreenStream.removeTrack(foundTrack);
                         console.log('[WebRTCManager] Removed track from remoteScreenStream');
-                        this.onRemoteScreenCallback?.(this.remoteScreenStream);
+                        this.onRemoteScreenCallback?.(new MediaStream(this.remoteScreenStream.getTracks()));
                     }
                 }
 
@@ -99,7 +109,7 @@ export class WebRTCManager {
                     if (foundTrack) {
                         this.remoteStream.removeTrack(foundTrack);
                         console.log('[WebRTCManager] Removed track from remoteStream');
-                        this.onRemoteStreamCallback?.(this.remoteStream);
+                        this.onRemoteStreamCallback?.(new MediaStream(this.remoteStream.getTracks()));
                     }
                 }
 
@@ -109,7 +119,7 @@ export class WebRTCManager {
                     if (foundTrack) {
                         this.remoteSoundpadStream.removeTrack(foundTrack);
                         console.log('[WebRTCManager] Removed track from remoteSoundpadStream');
-                        this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
+                        this.onRemoteSoundpadCallback?.(new MediaStream(this.remoteSoundpadStream.getTracks()));
                     }
                 }
             };
@@ -120,16 +130,24 @@ export class WebRTCManager {
                 // Check if this stream has a video track (likely screen share)
                 const hasVideo = stream.getVideoTracks().length > 0;
 
-                if (hasVideo) {
+                // PRIORITY 1: Are we expecting a screen share?
+                // If so, the next audio track (especially if it's not the main voice stream) is likely screen audio.
+                const isExpectedScreenAudio = this.expectScreenShare && (!this.remoteStreamId || stream.id !== this.remoteStreamId);
+
+                if (hasVideo || isExpectedScreenAudio || track.label.toLowerCase().includes('screen')) {
                     // This is SCREEN SHARE audio
-                    console.log('[WebRTCManager] Identified as SCREEN SHARE audio (associated with video)');
+                    console.log('[WebRTCManager] Identified as SCREEN SHARE audio');
+                    if (isExpectedScreenAudio) {
+                        console.log('[WebRTCManager] (Identification based on expectScreenShare flag)');
+                    }
+
                     if (!this.remoteScreenStream) {
                         this.remoteScreenStream = new MediaStream();
                     }
                     if (!this.remoteScreenStream.getTracks().find(t => t.id === track.id)) {
                         this.remoteScreenStream.addTrack(track);
                     }
-                    this.onRemoteScreenCallback?.(this.remoteScreenStream);
+                    this.onRemoteScreenCallback?.(new MediaStream(this.remoteScreenStream.getTracks()));
                 } else {
                     this.audioTrackCount++;
 
@@ -137,11 +155,12 @@ export class WebRTCManager {
                         console.log('[WebRTCManager] Identified as VOICE audio');
                         if (!this.remoteStream) {
                             this.remoteStream = new MediaStream();
+                            this.remoteStreamId = stream.id;
                         }
                         if (!this.remoteStream.getTracks().find(t => t.id === track.id)) {
                             this.remoteStream.addTrack(track);
                         }
-                        this.onRemoteStreamCallback?.(this.remoteStream);
+                        this.onRemoteStreamCallback?.(new MediaStream(this.remoteStream.getTracks()));
                     } else {
                         console.log('[WebRTCManager] Identified as SOUNDPAD audio');
                         if (!this.remoteSoundpadStream) {
@@ -150,41 +169,53 @@ export class WebRTCManager {
                         if (!this.remoteSoundpadStream.getTracks().find(t => t.id === track.id)) {
                             this.remoteSoundpadStream.addTrack(track);
                         }
-                        this.onRemoteSoundpadCallback?.(this.remoteSoundpadStream);
+                        this.onRemoteSoundpadCallback?.(new MediaStream(this.remoteSoundpadStream.getTracks()));
                     }
                 }
             } else if (track.kind === 'video') {
-                console.log('[WebRTCManager] Processing video track');
+                console.log('[WebRTCManager] Processing video track:', track.label, 'Stream ID:', stream.id);
 
-                const processVideoTrack = async () => {
-                    // Wait for track to be ready if it's not yet
-                    if (track.readyState !== 'live') {
-                        console.log('[WebRTCManager] Track not live yet, waiting...');
-                        await new Promise<void>((resolve) => {
-                            const checkState = () => {
-                                if (track.readyState === 'live') resolve();
-                                else setTimeout(checkState, 50);
-                            };
-                            setTimeout(resolve, 500);
-                            checkState();
-                        });
+                let isCamera = false;
+
+                // Priority 1: Are we expecting a screen share?
+                if (this.expectScreenShare) {
+                    console.log('[WebRTCManager] Expected screen share flag set -> Treating as Screen Share');
+                    isCamera = false;
+                    this.expectScreenShare = false; // Reset flag after use
+                }
+                // Priority 2: Does the track label indicate it's a screen share?
+                else if (track.label.toLowerCase().includes('screen')) {
+                    console.log('[WebRTCManager] Track label contains "screen" -> Treating as Screen Share');
+                    isCamera = false;
+                }
+                // Priority 3: Stream ID matching
+                else if (this.remoteStreamId && stream.id === this.remoteStreamId) {
+                    isCamera = true;
+                } else {
+                    // Fallback: If default remoteStream has NO video tracks, assume this IS the camera.
+                    if (this.remoteStream && this.remoteStream.getVideoTracks().length === 0) {
+                        console.log('[WebRTCManager] Stream ID mismatch but Main Stream has no video -> Adopting as Camera');
+                        isCamera = true;
                     }
+                }
 
-                    // For WebRTCManager, we often map the first video to remoteStream (Camera)
-                    // and we also add it to remoteScreenStream if it's logically a screen share.
-                    // However, to keep sync, we MUST ensure the same stream object is used.
-
+                if (isCamera) {
+                    console.log('[WebRTCManager] Assigning as Primary (Camera) Video');
                     if (!this.remoteStream) {
                         this.remoteStream = new MediaStream();
+                        this.remoteStreamId = stream.id;
                     }
 
                     if (!this.remoteStream.getTracks().find(t => t.id === track.id)) {
                         this.remoteStream.addTrack(track);
                     }
 
-                    this.onRemoteStreamCallback?.(this.remoteStream);
+                    this.onRemoteStreamCallback?.(new MediaStream(this.remoteStream.getTracks()));
+                    this.onRemoteCameraCallback?.(new MediaStream(this.remoteStream.getTracks()));
+                } else {
+                    // Different stream ID -> Screen Share
+                    console.log('[WebRTCManager] Assigning as Secondary (Screen) Video');
 
-                    // If it belongs to a screen share stream (identifiable by having audio or our own labels)
                     if (!this.remoteScreenStream) {
                         this.remoteScreenStream = new MediaStream();
                     }
@@ -193,15 +224,8 @@ export class WebRTCManager {
                         this.remoteScreenStream.addTrack(track);
                     }
 
-                    this.onRemoteScreenCallback?.(this.remoteScreenStream);
-
-                    // Legacy/Camera specific callback
-                    this.onRemoteCameraCallback?.(this.remoteStream);
-
-                    console.log('[WebRTCManager] ========== VIDEO TRACK PROCESSING COMPLETE ==========');
-                };
-
-                processVideoTrack();
+                    this.onRemoteScreenCallback?.(new MediaStream(this.remoteScreenStream.getTracks()));
+                }
             }
         };
 
@@ -711,9 +735,8 @@ export class WebRTCManager {
             this.peerConnection = null;
         }
 
-        this.remoteStream = null;
-        this.remoteSoundpadStream = null;
-        this.remoteScreenStream = null;
+        this.remoteStreamId = null;
+        this.expectScreenShare = false;
         this.pendingCandidates = [];
     }
 }

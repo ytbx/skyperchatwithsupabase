@@ -103,7 +103,7 @@ export const GlobalAudio: React.FC = () => {
         return () => {
             // We don't stop tracks here, just clear refs, as context manages streams
         };
-    }, [voiceParticipants, user, getEffectiveVoiceVolume, getEffectiveSoundpadVolume, isVoiceChannelDeafened, isGlobalMuted]);
+    }, [voiceParticipants, user, getEffectiveVoiceVolume, getEffectiveSoundpadVolume, getEffectiveScreenVolume, isVoiceChannelDeafened, isGlobalMuted]);
 
     // Update volumes when they change (separate effect to avoid recreating audio elements)
     useEffect(() => {

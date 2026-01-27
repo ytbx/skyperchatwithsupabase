@@ -585,6 +585,16 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 // Merge existing streams with new data
                 return data.map((p: any) => {
                     const existing = prev.find(prevP => prevP.user_id === p.user_id);
+
+                    // If is_screen_sharing just turned true for a remote user, set the expect flag on the manager
+                    if (p.user_id !== user?.id && p.is_screen_sharing && existing && !existing.is_screen_sharing) {
+                        const manager = peerManagers.current.get(p.user_id);
+                        if (manager) {
+                            console.log('[VoiceChannelContext] Remote user started screen sharing, setting expect flag:', p.user_id);
+                            manager.setExpectScreenShare(true);
+                        }
+                    }
+
                     // If this is the local user, use the local stream
                     const stream = p.user_id === user?.id ? localStreamRef.current : existing?.stream;
                     return {
