@@ -258,17 +258,9 @@ export const ActiveCallOverlay: React.FC = () => {
             console.log(`[ActiveCallOverlay] Attaching stream to ${videoId}`);
             video.srcObject = stream;
 
-            // UNMUTE for remote screen shares to fix Lip Sync (audio plays in video element)
-            // Local streams and camera streams remain muted in the video element 
-            // because their audio is handled elsewhere or not needed there.
-            const isRemoteScreen = videoId === 'remote-screen';
-            video.muted = !isRemoteScreen;
-
-            if (isRemoteScreen) {
-                const volume = getUserScreenVolume(contactId);
-                const isUserMuted = getUserScreenMuted(contactId);
-                video.volume = isUserMuted ? 0 : volume;
-            }
+            // CRITICAL: Always mute video elements in the UI. 
+            // Audio is now handled by GlobalAudio.tsx for consistency and better quality.
+            video.muted = true;
 
             try {
                 await video.play();
@@ -335,16 +327,6 @@ export const ActiveCallOverlay: React.FC = () => {
     const handleVolumeChange = (videoId: string, volume: number) => {
         if (videoId === 'remote-screen' || videoId === 'local-screen') {
             setUserScreenVolume(contactId, volume);
-
-            // Sync with video element volume if it's the remote screen
-            if (videoId === 'remote-screen' && remoteScreenVideoRef.current) {
-                remoteScreenVideoRef.current.volume = volume;
-            }
-
-            // Sync with fullscreen video if active
-            if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
-                fullscreenVideoRef.current.volume = volume;
-            }
         } else {
             setUserVoiceVolume(contactId, volume);
         }
@@ -379,14 +361,8 @@ export const ActiveCallOverlay: React.FC = () => {
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
 
-                // UNMUTE for remote screen shares in fullscreen too
-                video.muted = !isRemoteScreen;
-
-                if (isRemoteScreen) {
-                    const volume = getUserScreenVolume(contactId);
-                    const isUserMuted = getUserScreenMuted(contactId);
-                    video.volume = isUserMuted ? 0 : volume;
-                }
+                // CRITICAL: Always mute fullscreen video too.
+                video.muted = true;
 
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }

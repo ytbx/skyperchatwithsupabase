@@ -62,7 +62,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
-    const { playStreamStarted, playStreamStopped } = useAudioNotifications();
+    const { playStreamStarted, playStreamStopped, playMicMuted, playMicUnmuted } = useAudioNotifications();
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
@@ -863,6 +863,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         });
 
         if (activeChannelId && user && isConnected) {
+            if (isMuted) {
+                playMicMuted();
+            } else {
+                playMicUnmuted();
+            }
             supabase
                 .from('voice_channel_users')
                 .update({ is_muted: isMuted })
@@ -872,7 +877,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     if (error) console.error('Error updating mute state:', error);
                 });
         }
-    }, [isMuted, activeChannelId, user?.id, isConnected]);
+    }, [isMuted, activeChannelId, user?.id, isConnected, playMicMuted, playMicUnmuted]);
 
     // Handle deafen toggle
     useEffect(() => {

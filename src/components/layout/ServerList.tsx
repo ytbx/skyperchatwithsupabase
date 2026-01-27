@@ -286,7 +286,6 @@ export function ServerList({
         <Settings className="w-5 h-5 text-gray-400 group-hover:text-white" />
       </button>
 
-      <div className="w-8 h-px bg-gray-700 my-1" />
 
       {/* Server Context Menu */}
       {contextMenu && (

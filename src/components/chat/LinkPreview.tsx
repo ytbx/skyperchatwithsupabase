@@ -48,35 +48,43 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
     const hostname = new URL(url).hostname.replace('www.', '');
 
     return (
-        <div className="mt-2 max-w-[432px] overflow-hidden rounded-md bg-[#2b2d31] border-l-4 border-l-[#4e5058] hover:bg-[#2e3035] transition-colors group cursor-pointer"
+        <div className="mt-2 max-w-[520px] overflow-hidden rounded-md bg-[#2b2d31] border-l-4 border-l-[#00a8fc] hover:bg-[#2e3035] transition-colors group cursor-pointer shadow-lg"
             onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>
-            <div className="p-3 flex gap-3">
-                <div className="flex-1 min-w-0">
-                    {metadata.siteName && (
-                        <div className="text-[12px] text-[#dbdee1] font-medium mb-1 truncate uppercase tracking-tight">
-                            {metadata.siteName}
-                        </div>
-                    )}
-                    <div className="text-[14px] font-semibold text-[#00a8fc] hover:underline mb-1 line-clamp-2">
-                        {metadata.title}
+            <div className="p-4">
+                <div className="min-w-0">
+                    <div className="text-[14px] text-white font-bold mb-1 truncate">
+                        {metadata.title || metadata.siteName}
                     </div>
+
                     {metadata.description && (
-                        <div className="text-[13px] text-[#dbdee1] line-clamp-3 leading-tight">
+                        <div className="text-[14px] text-[#dbdee1] line-clamp-4 leading-normal mb-3">
                             {metadata.description}
                         </div>
                     )}
                 </div>
 
                 {metadata.image && (
-                    <div className="flex-shrink-0 w-20 h-20 rounded overflow-hidden bg-[#1e1f22]">
+                    <div className="mt-3 rounded-lg overflow-hidden bg-[#1e1f22] border border-[#3f4147]/50 max-h-[400px]">
                         <img
                             src={metadata.image}
                             alt={metadata.title || 'Link preview'}
-                            className="w-full h-full object-cover"
-                            onError={(e) => (e.currentTarget.style.display = 'none')}
+                            className="w-full h-auto block max-h-[400px] object-cover"
+                            onError={(e) => {
+                                e.currentTarget.parentElement!.style.display = 'none';
+                            }}
                         />
                     </div>
                 )}
+
+                <div className="mt-3 flex items-center gap-2 text-[#949ba4] text-[12px]">
+                    {hostname.includes('twitter.com') || hostname.includes('x.com') ? (
+                        <span className="font-medium">X</span>
+                    ) : (
+                        <span className="font-medium uppercase tracking-tight">{hostname}</span>
+                    )}
+                    <span>•</span>
+                    <span>{new Date().toLocaleDateString('tr-TR')}</span>
+                </div>
             </div>
         </div>
     );

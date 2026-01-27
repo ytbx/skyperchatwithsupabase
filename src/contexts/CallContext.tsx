@@ -76,7 +76,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
-    const { playStreamStarted, playStreamStopped, playCallEnded } = useAudioNotifications();
+    const { playStreamStarted, playStreamStopped, playCallEnded, playMicMuted, playMicUnmuted } = useAudioNotifications();
 
     // State refs for Realtime handlers (avoids stale closures)
     const activeCallRef = useRef<DirectCall | null>(null);
@@ -522,11 +522,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
      */
     const toggleMic = useCallback(() => {
         const newMutedState = !isMicMuted;
+        if (newMutedState) {
+            playMicMuted();
+        } else {
+            playMicUnmuted();
+        }
         sessionRef.current?.setMicMuted(newMutedState);
         setIsMicMuted(newMutedState);
         // Broadcast the change
         sessionRef.current?.sendAudioState(newMutedState, isDeafened);
-    }, [isMicMuted, isDeafened]);
+    }, [isMicMuted, isDeafened, playMicMuted, playMicUnmuted]);
 
     /**
      * Toggle deafen (mute incoming audio)

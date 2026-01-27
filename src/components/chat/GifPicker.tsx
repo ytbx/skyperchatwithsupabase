@@ -90,8 +90,8 @@ export const GifPicker: React.FC<GifPickerProps> = ({ onGifSelect }) => {
             </button>
 
             {isOpen && (
-                <div className="absolute bottom-full mb-2 right-0 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex flex-col h-96">
+                <div className="absolute bottom-full mb-2 right-0 w-[480px] bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex flex-col h-[550px]">
                         {/* Header / Search */}
                         <div className="p-3 border-b border-gray-800">
                             <div className="relative">
@@ -112,7 +112,7 @@ export const GifPicker: React.FC<GifPickerProps> = ({ onGifSelect }) => {
                             className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
                             onScroll={handleScroll}
                         >
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="columns-2 gap-2">
                                 {gifs.map((gif) => (
                                     <button
                                         key={gif.id}
@@ -120,12 +120,12 @@ export const GifPicker: React.FC<GifPickerProps> = ({ onGifSelect }) => {
                                             onGifSelect(gif.media_formats.gif.url, gif.media_formats.gif.dims[0], gif.media_formats.gif.dims[1]);
                                             setIsOpen(false);
                                         }}
-                                        className="relative aspect-video rounded-lg overflow-hidden group bg-gray-800 hover:ring-2 hover:ring-blue-500 transition-all"
+                                        className="relative w-full mb-2 break-inside-avoid rounded-lg overflow-hidden group bg-gray-800 hover:ring-2 hover:ring-blue-500 transition-all flex flex-col"
                                     >
                                         <img
                                             src={gif.media_formats.tinygif.url}
                                             alt={gif.content_description}
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-auto block"
                                             loading="lazy"
                                         />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
