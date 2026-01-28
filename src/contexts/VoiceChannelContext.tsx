@@ -62,7 +62,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
-    const { playStreamStarted, playStreamStopped } = useAudioNotifications();
+    const { playStreamStarted, playStreamStopped, playMicOpen, playMicClosed } = useAudioNotifications();
 
     // Map of userId -> WebRTCManager
     const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
@@ -848,8 +848,20 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [localStream, user, activeChannelId]);
 
+    // Track previous mute state to avoid playing sound on initial mount/join
+    const prevMuteRef = useRef(isMuted);
+
     // Handle mute toggle
     useEffect(() => {
+        if (prevMuteRef.current !== isMuted) {
+            if (isMuted) {
+                playMicClosed();
+            } else {
+                playMicOpen();
+            }
+        }
+        prevMuteRef.current = isMuted;
+
         // 1. Mute local stream (fallback/UI)
         if (localStreamRef.current) {
             localStreamRef.current.getAudioTracks().forEach(track => {

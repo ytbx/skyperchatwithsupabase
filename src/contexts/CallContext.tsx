@@ -76,7 +76,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
     const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
-    const { playStreamStarted, playStreamStopped, playCallEnded } = useAudioNotifications();
+    const { playStreamStarted, playStreamStopped, playCallEnded, playMicOpen, playMicClosed } = useAudioNotifications();
 
     // State refs for Realtime handlers (avoids stale closures)
     const activeCallRef = useRef<DirectCall | null>(null);
@@ -126,6 +126,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
             ringtoneRef.current.currentTime = 0;
         }
     }, [callStatus, incomingCall]);
+
+    // Track previous mute state to avoid playing sound on initial mount
+    const prevMicMuteRef = useRef(isMicMuted);
+
+    // Handle microphone mute sound
+    useEffect(() => {
+        if (prevMicMuteRef.current !== isMicMuted) {
+            if (isMicMuted) {
+                playMicClosed();
+            } else {
+                playMicOpen();
+            }
+        }
+        prevMicMuteRef.current = isMicMuted;
+    }, [isMicMuted, playMicOpen, playMicClosed]);
 
     // Poll for call stats (ping)
     useEffect(() => {

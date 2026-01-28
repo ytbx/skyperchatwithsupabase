@@ -30,9 +30,19 @@ export const useAudioNotifications = () => {
         playSound('sounds/logout.mp3');
     }, [playSound]);
 
+    const playMicOpen = useCallback(() => {
+        playSound('sounds/openmicrofon1.mp3');
+    }, [playSound]);
+
+    const playMicClosed = useCallback(() => {
+        playSound('sounds/closemicrofon.mp3');
+    }, [playSound]);
+
     return {
         playStreamStarted,
         playStreamStopped,
-        playCallEnded
+        playCallEnded,
+        playMicOpen,
+        playMicClosed
     };
 };
