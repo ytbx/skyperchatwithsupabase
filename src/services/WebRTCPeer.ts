@@ -145,11 +145,14 @@ export class WebRTCPeer {
         if (track.kind === 'audio') {
             console.log('[WebRTCPeer] Processing audio track:', track.label, 'Stream ID:', stream.id);
 
-            // Check if this stream has a video track (Screen Share)
+            // Determine if this is voice or screen share audio
+            // High probability indicator: screen share audio usually arrives in a stream with a video track
+            // OR the label contains 'screen'
             const hasVideo = stream.getVideoTracks().length > 0;
+            const isScreenLabel = track.label.toLowerCase().includes('screen');
 
-            if (hasVideo) {
-                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video)');
+            if (hasVideo || isScreenLabel) {
+                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video or labeled)');
                 // Create/Update screen stream - maintain stable reference
                 if (!this.remoteScreenStream) {
                     this.remoteScreenStream = new MediaStream();
@@ -161,9 +164,10 @@ export class WebRTCPeer {
                 }
 
                 this.callbacks.onRemoteVideo(this.remoteScreenStream);
+                if (this.callbacks.onRemoteTrackChanged) this.callbacks.onRemoteTrackChanged();
             } else {
                 this.audioTrackCount++;
-                console.log('[WebRTCPeer] Audio track #', this.audioTrackCount);
+                console.log('[WebRTCPeer] Audio track #', this.audioTrackCount, 'identified as potential VOICE or SOUNDPAD');
 
                 if (this.audioTrackCount === 1) {
                     // First audio stream -> Main Voice/Camera Stream

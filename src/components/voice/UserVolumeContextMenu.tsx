@@ -18,7 +18,7 @@ interface UserVolumeContextMenuProps {
     onTogglePiP?: (streamId: string) => void;
 }
 
-type TabType = 'voice' | 'soundpad';
+type TabType = 'voice' | 'soundpad' | 'screen';
 
 export function UserVolumeContextMenu({
     x,
@@ -37,19 +37,25 @@ export function UserVolumeContextMenu({
 
     const {
         getUserVoiceVolume,
-        getUserVoiceMuted,
         setUserVoiceVolume,
+        getUserVoiceMuted,
         toggleUserVoiceMute,
         getUserSoundpadVolume,
-        getUserSoundpadMuted,
         setUserSoundpadVolume,
-        toggleUserSoundpadMute
+        getUserSoundpadMuted,
+        toggleUserSoundpadMute,
+        getUserScreenVolume,
+        setUserScreenVolume,
+        getUserScreenMuted,
+        toggleUserScreenMute
     } = useUserAudio();
 
     const voiceVolume = getUserVoiceVolume(userId);
     const isVoiceMuted = getUserVoiceMuted(userId);
     const soundpadVolume = getUserSoundpadVolume(userId);
     const isSoundpadMuted = getUserSoundpadMuted(userId);
+    const screenVolume = getUserScreenVolume(userId);
+    const isScreenMuted = getUserScreenMuted(userId);
 
     // Notification mute state
     const [isNotificationMuted, setIsNotificationMuted] = useState<boolean>(() => {
@@ -145,15 +151,23 @@ export function UserVolumeContextMenu({
         return <Volume2 className="w-4 h-4" />;
     };
 
+    const getScreenIcon = () => {
+        if (isScreenMuted || screenVolume === 0) return <VolumeX className="w-4 h-4" />;
+        if (screenVolume < 0.5) return <Volume1 className="w-4 h-4" />;
+        return <Volume2 className="w-4 h-4" />;
+    };
+
     const getInitials = (name: string) => {
         return name?.charAt(0).toUpperCase() || 'U';
     };
 
-    const handleVolumeChange = (type: TabType, value: number) => {
-        if (type === 'voice') {
+    const handleVolumeChange = (value: number) => {
+        if (activeTab === 'voice') {
             setUserVoiceVolume(userId, value);
-        } else {
+        } else if (activeTab === 'soundpad') {
             setUserSoundpadVolume(userId, value);
+        } else if (activeTab === 'screen') {
+            setUserScreenVolume(userId, value);
         }
     };
 
@@ -183,7 +197,7 @@ export function UserVolumeContextMenu({
                         max="2"
                         step="0.05"
                         value={volume}
-                        onChange={(e) => handleVolumeChange(type, parseFloat(e.target.value))}
+                        onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
                         disabled={isMuted}
                         className={`flex-1 h-2 rounded-full appearance-none cursor-pointer transition-opacity ${isMuted ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
@@ -247,51 +261,63 @@ export function UserVolumeContextMenu({
             </div>
 
             {/* Tab Buttons */}
-            <div className="flex border-b border-gray-700/50">
+            <div className="flex bg-gray-900/50 p-1 rounded-lg mb-4">
                 <button
                     onClick={() => setActiveTab('voice')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${activeTab === 'voice'
-                        ? 'text-blue-400 bg-blue-500/10 border-b-2 border-blue-400'
-                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${activeTab === 'voice'
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'text-gray-400 hover:text-gray-200'
                         }`}
                 >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>Mikrofon</span>
-                    {isVoiceMuted && <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />}
+                    Voice
                 </button>
                 <button
                     onClick={() => setActiveTab('soundpad')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${activeTab === 'soundpad'
-                        ? 'text-purple-400 bg-purple-500/10 border-b-2 border-purple-400'
-                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${activeTab === 'soundpad'
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'text-gray-400 hover:text-gray-200'
                         }`}
                 >
-                    <Music2 className="w-3.5 h-3.5" />
-                    <span>Soundpad</span>
-                    {isSoundpadMuted && <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />}
+                    Soundpad
+                </button>
+                <button
+                    onClick={() => setActiveTab('screen')}
+                    className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${activeTab === 'screen'
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                >
+                    Screen
                 </button>
             </div>
 
             {/* Volume Control */}
             <div className="p-3">
-                {activeTab === 'voice' ? (
-                    renderVolumeControl(
-                        'voice',
-                        voiceVolume,
-                        isVoiceMuted,
-                        getVoiceIcon(),
-                        () => toggleUserVoiceMute(userId),
-                        'Mikrofon Sesi'
-                    )
-                ) : (
-                    renderVolumeControl(
-                        'soundpad',
-                        soundpadVolume,
-                        isSoundpadMuted,
-                        getSoundpadIcon(),
-                        () => toggleUserSoundpadMute(userId),
-                        'Soundpad Sesi'
-                    )
+                {activeTab === 'voice' && renderVolumeControl(
+                    'voice',
+                    getUserVoiceVolume(userId),
+                    getUserVoiceMuted(userId),
+                    getVoiceIcon(),
+                    () => toggleUserVoiceMute(userId),
+                    'Mikrofon Sesi'
+                )}
+
+                {activeTab === 'soundpad' && renderVolumeControl(
+                    'soundpad',
+                    getUserSoundpadVolume(userId),
+                    getUserSoundpadMuted(userId),
+                    getSoundpadIcon(),
+                    () => toggleUserSoundpadMute(userId),
+                    'Soundpad Sesi'
+                )}
+
+                {activeTab === 'screen' && renderVolumeControl(
+                    'screen',
+                    getUserScreenVolume(userId),
+                    getUserScreenMuted(userId),
+                    getScreenIcon(),
+                    () => toggleUserScreenMute(userId),
+                    'Ekran Sesi'
                 )}
             </div>
 

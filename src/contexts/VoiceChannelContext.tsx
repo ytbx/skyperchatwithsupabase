@@ -926,6 +926,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         for (const [peerId, manager] of peerManagers.current.entries()) {
             // Passing undefined for bitrate ensures WebRTC default behavior
             await manager.startScreenShare(screenStream);
+            await sendSignal(peerId, 'screen-share-started', {}); // Notify peer to expect screen share
             const offer = await manager.createOffer();
             await sendSignal(peerId, 'offer', offer);
         }

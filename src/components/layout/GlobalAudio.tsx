@@ -69,7 +69,10 @@ export const GlobalAudio: React.FC = () => {
             const manageAudio = (stream: MediaStream | undefined, map: Map<string, HTMLAudioElement>, volumeLabel: string, getVolume: (id: string) => number) => {
                 if (!stream || stream.getAudioTracks().length === 0) {
                     const audio = map.get(participant.user_id);
-                    if (audio) audio.srcObject = null;
+                    if (audio) {
+                        console.log(`[GlobalAudio] Removing ${volumeLabel} stream for ${participant.user_id} (no audio tracks)`);
+                        audio.srcObject = null;
+                    }
                     return;
                 }
 
