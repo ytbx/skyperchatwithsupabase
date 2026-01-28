@@ -150,9 +150,10 @@ export class WebRTCPeer {
             // OR the label contains 'screen'
             const hasVideo = stream.getVideoTracks().length > 0;
             const isScreenLabel = track.label.toLowerCase().includes('screen');
+            const isDifferentFromMain = this.remoteStreamId && stream.id !== this.remoteStreamId;
 
-            if (hasVideo || isScreenLabel) {
-                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video or labeled)');
+            if (hasVideo || isScreenLabel || isDifferentFromMain) {
+                console.log('[WebRTCPeer] Identified as SCREEN SHARE audio (associated with video, labeled, or different stream)');
                 // Create/Update screen stream - maintain stable reference
                 if (!this.remoteScreenStream) {
                     this.remoteScreenStream = new MediaStream();
@@ -163,8 +164,11 @@ export class WebRTCPeer {
                     this.remoteScreenStream.addTrack(track);
                 }
 
+                // Ensure the screen stream is reported to UI
                 this.callbacks.onRemoteVideo(this.remoteScreenStream);
                 if (this.callbacks.onRemoteTrackChanged) this.callbacks.onRemoteTrackChanged();
+
+                console.log('[WebRTCPeer] ✓ Screen audio track added to stream', this.remoteScreenStream.id);
             } else {
                 this.audioTrackCount++;
                 console.log('[WebRTCPeer] Audio track #', this.audioTrackCount, 'identified as potential VOICE or SOUNDPAD');
@@ -346,6 +350,13 @@ export class WebRTCPeer {
 
         console.log('[WebRTCPeer] Setting remote description:', description.type);
         console.log('[WebRTCPeer] Current signaling state:', this.pc.signalingState);
+
+        // Guard: If we are in 'stable' state and receive an 'answer', ignore it.
+        // This happens with duplicate signals and results in "Called in wrong state: stable" error.
+        if (this.pc.signalingState === 'stable' && description.type === 'answer') {
+            console.warn('[WebRTCPeer] Ignoring redundant answer in stable state');
+            return;
+        }
 
         await this.pc.setRemoteDescription(new RTCSessionDescription(description));
         this.hasRemoteDescription = true;

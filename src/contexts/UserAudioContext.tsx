@@ -65,7 +65,7 @@ const DEFAULT_SETTINGS: UserAudioSettings = {
     soundpadVolume: 1.0,
     soundpadMuted: false,
     screenVolume: 1.0,
-    screenMuted: false
+    screenMuted: false // Default to unmuted so it's heard immediately
 };
 
 export function UserAudioProvider({ children }: { children: ReactNode }) {

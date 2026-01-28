@@ -99,6 +99,10 @@ export const GlobalAudio: React.FC = () => {
 
             manageAudio(participant.stream, voiceAudioRefs.current, 'VOICE', getEffectiveVoiceVolume);
             manageAudio(participant.soundpadStream, soundpadAudioRefs.current, 'SOUNDPAD', getEffectiveSoundpadVolume);
+
+            if (participant.screenStream) {
+                console.log(`[GlobalAudio] Checking SCREEN stream for ${participant.user_id}: tracks=${participant.screenStream.getAudioTracks().length}`);
+            }
             manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
         });
 
