@@ -7,8 +7,8 @@ import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { useUserAudio } from '@/contexts/UserAudioContext';
 
 import { hasPermission, computeBasePermissions, computeChannelPermissions } from '@/utils/PermissionUtils';
-import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
 import { UserVolumeContextMenu } from '@/components/voice/UserVolumeContextMenu';
+import { UserConnectionPanel } from '@/components/layout/UserConnectionPanel';
 
 
 
@@ -34,7 +34,6 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ channels: Channel[], members: Profile[] }>({ channels: [], members: [] });
-  const [showSoundPanel, setShowSoundPanel] = useState(false);
   const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string } | null>(null);
 
   const { user, profile } = useAuth();
@@ -42,17 +41,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
     activeChannelId,
     joinChannel,
     leaveChannel,
-    isConnected,
-    isMuted,
-    isDeafened,
-    isScreenSharing,
-    isCameraEnabled,
-    toggleMute,
-    toggleDeafen,
-    toggleScreenShare,
-    toggleCamera,
-    participants: activeParticipants,
-    playSoundboardAudio
+    participants: activeParticipants
   } = useVoiceChannel();
   const { getUserMuted } = useUserAudio();
 
@@ -377,7 +366,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
 
   if (!serverId) {
     return (
-      <div className="w-60 bg-gray-900 flex flex-col border-r border-gray-800">
+      <div className="w-72 bg-gray-900 flex flex-col border-r border-gray-800">
         <div className="h-12 px-4 flex items-center border-b border-gray-900 shadow-sm">
           <h2 className="text-base font-semibold text-white">Direkt Mesajlar</h2>
         </div>
@@ -387,7 +376,7 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
 
   return (
     <>
-      <div className="hidden md:flex md:w-60 bg-gray-900 flex-col border-r border-gray-800 shadow-lg">
+      <div className="hidden md:flex md:w-72 bg-gray-900 flex-col border-r border-gray-800 shadow-lg">
         {/* Server Header */}
         <div className="h-12 px-4 flex items-center justify-between border-b border-gray-800 shadow-sm hover:bg-gray-800 transition-colors cursor-pointer">
           <h2 className="text-base font-semibold text-white truncate">{server?.name || 'Sunucu'}</h2>
@@ -493,12 +482,12 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
         )}
 
         {/* Channels */}
-        <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-3 py-2 custom-scrollbar overflow-x-hidden">
           {/* Text Channels */}
           <div className="mb-1">
             <button
               onClick={() => setTextChannelsExpanded(!textChannelsExpanded)}
-              className="w-full px-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
+              className="w-full pl-0 pr-2 py-1.5 flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase hover:text-gray-300 transition-colors group"
             >
               <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${textChannelsExpanded ? '' : '-rotate-90'}`} />
               <span>Metin Kanalları</span>
@@ -583,8 +572,6 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
                         draggable={canMoveMembers}
                         onDragStart={(e) => handleDragStart(e, participant.user_id, channel.id)}
                         onContextMenu={(e) => {
-                          // Don't show volume menu for self
-                          if (participant.user_id === user?.id) return;
                           e.preventDefault();
                           setVolumeContextMenu({
                             x: e.clientX,
@@ -637,104 +624,8 @@ export function ChannelList({ serverId, selectedChannelId, onSelectChannel, onCr
         </div>
 
 
-        {/* Voice Controls (if connected) */}
-        {activeChannelId && (
-          <div className="bg-gray-850 border-t border-gray-800 p-2 pb-0">
-            <div className="flex items-center justify-between px-2 py-1 bg-green-900/20 rounded border border-green-900/50 mb-2">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <Volume2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-green-500 truncate">Ses Bağlantısı</span>
-                  <span className="text-xs text-gray-400 truncate">
-                    {voiceChannels.find(c => c.id === activeChannelId)?.name}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  leaveChannel();
-                }}
-                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
-                title="Bağlantıyı Kes"
-              >
-                <PhoneOff size={16} />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-center gap-4 pb-2">
-              <button
-                onClick={toggleMute}
-                className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
-                title={isMuted ? "Sesi Aç" : "Sessize Al"}
-              >
-                {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
-              <button
-                onClick={toggleDeafen}
-                className={`p-2 rounded-full transition-colors ${isDeafened ? 'bg-red-500/20 text-red-500' : 'hover:bg-gray-700 text-gray-300'}`}
-                title={isDeafened ? "Sağırlaştır" : "Sağırlaştır"}
-              >
-                <Headphones size={18} />
-              </button>
-              <button
-                onClick={toggleScreenShare}
-                className={`p-2 rounded-full transition-colors ${isScreenSharing ? 'bg-green-500/20 text-green-500' : 'hover:bg-gray-700 text-gray-300'}`}
-                title={isScreenSharing ? "Ekran Paylaşımını Durdur" : "Ekran Paylaş"}
-              >
-                <MonitorUp size={18} />
-              </button>
-              <button
-                onClick={toggleCamera}
-                className={`p-2 rounded-full transition-colors ${isCameraEnabled ? 'bg-blue-500/20 text-blue-500' : 'hover:bg-gray-700 text-gray-300'}`}
-                title={isCameraEnabled ? "Kamerayı Kapat" : "Kamerayı Aç"}
-              >
-                {isCameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
-              </button>
-              {/* Sound Panel Button - Shows for all users */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowSoundPanel(!showSoundPanel)}
-                  className={`p-2 rounded-full transition-colors ${showSoundPanel ? 'bg-purple-500/20 text-purple-400' : 'hover:bg-gray-700 text-gray-300'}`}
-                  title="Ses Paneli"
-                >
-                  <Music2 size={18} />
-                </button>
-                <SoundPanelPopup
-                  isOpen={showSoundPanel}
-                  onClose={() => setShowSoundPanel(false)}
-                  anchorPosition="top"
-                  onPlaySound={playSoundboardAudio}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* User Profile Bar */}
-        <div className="h-14 px-2 flex items-center gap-2 bg-gray-900 border-t border-gray-800">
-          <div className="relative">
-            <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center overflow-hidden">
-              {profile?.profile_image_url ? (
-                <img src={profile.profile_image_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-sm font-semibold text-white">
-                  {profile?.username?.charAt(0).toUpperCase() || 'U'}
-                </span>
-              )}
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-gray-900" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-white truncate">
-              {profile?.username || 'Kullanıcı'}
-            </div>
-            <div className="text-xs text-gray-400">
-              Çevrimiçi
-            </div>
-          </div>
-
-
-        </div>
+        {/* User Connection Panel */}
+        <UserConnectionPanel />
 
         <style>{`
         .custom-scrollbar::-webkit-scrollbar {

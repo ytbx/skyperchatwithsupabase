@@ -45,38 +45,65 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
         );
     }
 
-    const hostname = new URL(url).hostname.replace('www.', '');
+    const getHostname = (url: string) => {
+        try {
+            return new URL(url).hostname.replace('www.', '');
+        } catch {
+            return '';
+        }
+    };
+
+    const hostname = getHostname(url);
+    const faviconUrl = `https://www.google.com/s2/favicons?sz=32&domain=${hostname}`;
 
     return (
-        <div className="mt-2 max-w-[432px] overflow-hidden rounded-md bg-[#2b2d31] border-l-4 border-l-[#4e5058] hover:bg-[#2e3035] transition-colors group cursor-pointer"
+        <div className="mt-2 max-w-[432px] overflow-hidden rounded-[4px] bg-[#2b2d31] border-l-4 border-l-[#00a8fc] hover:bg-[#2e3035] transition-colors group cursor-pointer flex flex-col pt-3 pb-2 px-3 relative"
             onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>
-            <div className="p-3 flex gap-3">
-                <div className="flex-1 min-w-0">
-                    {metadata.siteName && (
-                        <div className="text-[12px] text-[#dbdee1] font-medium mb-1 truncate uppercase tracking-tight">
-                            {metadata.siteName}
-                        </div>
-                    )}
-                    <div className="text-[14px] font-semibold text-[#00a8fc] hover:underline mb-1 line-clamp-2">
-                        {metadata.title}
-                    </div>
-                    {metadata.description && (
-                        <div className="text-[13px] text-[#dbdee1] line-clamp-3 leading-tight">
-                            {metadata.description}
-                        </div>
-                    )}
-                </div>
 
-                {metadata.image && (
-                    <div className="flex-shrink-0 w-20 h-20 rounded overflow-hidden bg-[#1e1f22]">
-                        <img
-                            src={metadata.image}
-                            alt={metadata.title || 'Link preview'}
-                            className="w-full h-full object-cover"
-                            onError={(e) => (e.currentTarget.style.display = 'none')}
-                        />
+            {/* Content Area */}
+            <div className="flex flex-col gap-1 mb-2">
+                {metadata.siteName && (
+                    <div className="text-[12px] text-[#dbdee1] font-medium leading-[16px] truncate">
+                        {metadata.siteName}
                     </div>
                 )}
+
+                <div className="text-[14px] font-bold text-[#00a8fc] hover:underline leading-[18px] mb-0.5">
+                    {metadata.title}
+                </div>
+
+                {metadata.description && (
+                    <div className="text-[13px] text-[#dbdee1] leading-[18px] whitespace-pre-wrap">
+                        {metadata.description}
+                    </div>
+                )}
+            </div>
+
+            {/* Large Image */}
+            {metadata.image && (
+                <div className="mt-2 mb-2 rounded-[4px] overflow-hidden border border-[#1e1f22] bg-[#1e1f22] relative group-hover:border-[#232428] transition-colors">
+                    <img
+                        src={metadata.image}
+                        alt={metadata.title || 'Link preview'}
+                        className="max-h-[300px] w-full object-cover"
+                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
+                </div>
+            )}
+
+            {/* Footer */}
+            <div className="flex items-center gap-2 mt-1">
+                <img
+                    src={faviconUrl}
+                    alt=""
+                    className="w-4 h-4 rounded-sm"
+                    onError={(e) => (e.currentTarget.style.display = 'none')}
+                />
+                <div className="text-[11px] text-[#dbdee1] font-medium flex items-center gap-1">
+                    <span>{metadata.siteName || hostname}</span>
+                    <span className="text-[#949ba4] font-normal">•</span>
+                    <span className="text-[#949ba4] font-normal">bağlantı</span>
+                </div>
             </div>
         </div>
     );

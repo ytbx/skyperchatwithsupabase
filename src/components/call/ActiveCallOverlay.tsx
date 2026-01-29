@@ -701,7 +701,7 @@ export const ActiveCallOverlay: React.FC = () => {
                 </div>
 
                 {/* Call Controls */}
-                <div className="p-4 flex justify-center bg-gray-900 shrink-0">
+                <div className="p-4 flex justify-center bg-gray-900 shrink-0 relative z-30">
                     <CallControls
                         isMicMuted={isMicMuted}
                         isDeafened={isDeafened}

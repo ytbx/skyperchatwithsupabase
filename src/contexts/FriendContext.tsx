@@ -14,6 +14,7 @@ interface FriendContextType {
     declineFriendRequest: (requestId: string) => Promise<void>;
     removeFriend: (friendId: string) => Promise<void>;
     sendFriendRequest: (targetUserId: string) => Promise<void>;
+    cancelFriendRequest: (requestId: string) => Promise<void>;
 }
 
 export interface ExtendedFriend {
@@ -285,6 +286,14 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (error) throw error;
     };
 
+    const cancelFriendRequest = async (requestId: string) => {
+        const { error } = await supabase
+            .from('friend_requests')
+            .delete()
+            .eq('id', requestId);
+        if (error) throw error;
+    };
+
     return (
         <FriendContext.Provider value={{
             friends,
@@ -295,7 +304,8 @@ export const FriendProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             acceptFriendRequest,
             declineFriendRequest,
             removeFriend,
-            sendFriendRequest
+            sendFriendRequest,
+            cancelFriendRequest
         }}>
             {children}
         </FriendContext.Provider>

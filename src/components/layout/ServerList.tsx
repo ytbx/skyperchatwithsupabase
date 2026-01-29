@@ -201,42 +201,55 @@ export function ServerList({
 
       <div className="w-8 h-px bg-gray-700 my-1" />
 
-      {/* Server Icons */}
-      {servers.map((server) => (
+      {/* Scrollable Server List Container */}
+      <div className="flex-1 w-full overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col items-center gap-2 py-1">
+        {/* Server Icons */}
+        {servers.map((server) => (
+          <button
+            key={server.id}
+            onClick={() => onSelectServer(server.id)}
+            onContextMenu={(e) => handleContextMenu(e, server)}
+            className={`w-14 h-14 rounded-full flex-shrink-0 flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden ${selectedServerId === server.id && currentView === 'servers'
+              ? 'bg-primary-500 rounded-lg shadow-glow-sm'
+              : 'bg-gray-800 hover:bg-gray-700'
+              } ${mutedServers.has(server.id) ? 'opacity-60' : ''}`}
+            title={`${server.name}${mutedServers.has(server.id) ? ' (Bildirimler Kapalı)' : ''}`}
+          >
+            {server.server_image_url ? (
+              <img
+                src={server.server_image_url}
+                alt={server.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-lg font-bold text-white">
+                {server.name.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </button>
+        ))}
+
+        {/* Add Button - Global Server Creation */}
         <button
-          key={server.id}
-          onClick={() => onSelectServer(server.id)}
-          onContextMenu={(e) => handleContextMenu(e, server)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-normal hover:rounded-lg overflow-hidden ${selectedServerId === server.id && currentView === 'servers'
-            ? 'bg-primary-500 rounded-lg shadow-glow-sm'
-            : 'bg-gray-800 hover:bg-gray-700'
-            } ${mutedServers.has(server.id) ? 'opacity-60' : ''}`}
-          title={`${server.name}${mutedServers.has(server.id) ? ' (Bildirimler Kapalı)' : ''}`}
+          onClick={onAddAction}
+          className="w-14 h-14 rounded-full flex-shrink-0 border-2 border-dashed border-neutral-400 flex items-center justify-center transition-all duration-normal hover:border-primary-500 hover:text-primary-500 hover:shadow-glow-sm"
+          title="Sunucu Ekle"
         >
-          {server.server_image_url ? (
-            <img
-              src={server.server_image_url}
-              alt={server.name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-lg font-bold text-white">
-              {server.name.charAt(0).toUpperCase()}
-            </span>
-          )}
+          <Plus className="w-6 h-6 text-neutral-400 hover:text-primary-500" />
         </button>
-      ))}
+      </div>
 
-      {/* Add Button - Global Server Creation */}
-      <button
-        onClick={onAddAction}
-        className="w-14 h-14 rounded-full border-2 border-dashed border-neutral-400 flex items-center justify-center transition-all duration-normal hover:border-primary-500 hover:text-primary-500 hover:shadow-glow-sm"
-        title="Sunucu Ekle"
-      >
-        <Plus className="w-6 h-6 text-neutral-400 hover:text-primary-500" />
-      </button>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 0px;
+          display: none;
+        }
+        .custom-scrollbar {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+      `}</style>
 
-      <div className="flex-1" />
 
 
 
@@ -286,7 +299,7 @@ export function ServerList({
         <Settings className="w-5 h-5 text-gray-400 group-hover:text-white" />
       </button>
 
-      <div className="w-8 h-px bg-gray-700 my-1" />
+
 
       {/* Server Context Menu */}
       {contextMenu && (

@@ -94,7 +94,15 @@ function AppContent() {
         };
 
         window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+
+        // Listen for custom open-settings event
+        const handleOpenSettings = () => setShowSettingsModal(true);
+        window.addEventListener('open-settings', handleOpenSettings);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('open-settings', handleOpenSettings);
+        };
     }, [showGlobalSearch]);
 
     // Load channel details when channel ID changes

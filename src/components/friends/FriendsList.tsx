@@ -10,6 +10,8 @@ import { UserVolumeContextMenu } from '../voice/UserVolumeContextMenu';
 // Local interfaces removed in favor of FriendContext types
 import { ExtendedFriend, ExtendedFriendRequest } from '../../contexts/FriendContext';
 
+import { UserConnectionPanel } from '../layout/UserConnectionPanel';
+
 interface FriendsListProps {
   onStartDM: (friendId: string, friendName: string, profileImageUrl: string | null) => void;
 }
@@ -21,7 +23,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   /* eslint-disable react-hooks/exhaustive-deps */
   const { user } = useAuth();
   const { isUserOnline } = useSupabaseRealtime();
-  const { friends, friendRequests, sentRequests, loading, acceptFriendRequest, declineFriendRequest, removeFriend, sendFriendRequest } = useFriend();
+  const { friends, friendRequests, sentRequests, loading, acceptFriendRequest, declineFriendRequest, removeFriend, sendFriendRequest, cancelFriendRequest } = useFriend();
 
   const [activeTab, setActiveTab] = useState<'friends' | 'pending' | 'add'>('friends');
   const [searchQuery, setSearchQuery] = useState('');
@@ -380,21 +382,39 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                         key={request.id}
                         className="p-3 bg-gray-800 rounded-lg border border-gray-800"
                       >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-                            <span className="text-white text-sm font-medium">
-                              {request.requested.username.charAt(0).toUpperCase()}
-                            </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                              <span className="text-white text-sm font-medium">
+                                {request.requested.username.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+
+                            <div className="flex-1">
+                              <h3 className="text-white font-medium text-sm">
+                                {request.requested.username}
+                              </h3>
+                              <p className="text-gray-400 text-xs">
+                                İstek gönderildi, bekliyor
+                              </p>
+                            </div>
                           </div>
 
-                          <div className="flex-1">
-                            <h3 className="text-white font-medium text-sm">
-                              {request.requested.username}
-                            </h3>
-                            <p className="text-gray-400 text-xs">
-                              İstek gönderildi, bekliyor
-                            </p>
-                          </div>
+                          <button
+                            onClick={async () => {
+                              if (window.confirm(`${request.requested.username} kullanıcısına gönderilen isteği iptal etmek istiyor musunuz?`)) {
+                                try {
+                                  await cancelFriendRequest(request.id);
+                                } catch (error) {
+                                  console.error('İstek iptal edilirken hata:', error);
+                                }
+                              }
+                            }}
+                            className="p-2 hover:bg-gray-700 rounded-full text-gray-400 hover:text-red-500 transition-colors"
+                            title="İsteği İptal Et"
+                          >
+                            <X size={18} />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -497,6 +517,9 @@ export const FriendsList: React.FC<FriendsListProps> = ({
             </div>
           )}
         </div>
+
+        {/* User Connection Panel */}
+        <UserConnectionPanel />
       </div>
 
       {/* Volume Context Menu */}

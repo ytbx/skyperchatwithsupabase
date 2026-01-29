@@ -196,7 +196,7 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
     }
 
     return (
-        <div className="p-3">
+        <div className="p-3 flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -228,8 +228,7 @@ export const SoundPanel: React.FC<SoundPanelProps> = ({ onPlaySound, audioContex
                 </div>
             ) : (
                 <div
-                    className="grid grid-cols-2 gap-3 overflow-y-auto pr-2 custom-scrollbar"
-                    style={{ maxHeight }}
+                    className="grid grid-cols-2 gap-2 overflow-y-auto pr-1 flex-1 min-h-[280px] max-h-[420px] custom-scrollbar scroll-smooth"
                 >
                     {sounds.map(sound => (
                         <div

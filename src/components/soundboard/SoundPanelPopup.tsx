@@ -63,10 +63,10 @@ export const SoundPanelPopup: React.FC<SoundPanelPopupProps> = ({
     return (
         <div
             ref={popupRef}
-            className={`absolute z-[999] ${anchorPosition === 'top'
+            className={`absolute z-[2000] ${anchorPosition === 'top'
                 ? 'bottom-full mb-3'
                 : 'top-full mt-3'
-                } left-1/2 transform -translate-x-1/2 w-80 sm:w-[400px] bg-[#1e1f22] border border-[#2b2d31] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden animate-fade-in-up`}
+                } left-1/2 transform -translate-x-1/2 w-[340px] sm:w-[400px] bg-[#1e1f22] border border-[#2b2d31] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]`}
         >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 bg-[#1e1f22] border-b border-[#2b2d31]">
@@ -104,8 +104,10 @@ export const SoundPanelPopup: React.FC<SoundPanelPopupProps> = ({
                 </div>
             )}
 
-            {/* Content */}
-            <SoundPanel onPlaySound={onPlaySound} audioContext={audioContext} />
+            {/* Content Container */}
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                <SoundPanel onPlaySound={onPlaySound} audioContext={audioContext} />
+            </div>
         </div>
     );
 };
