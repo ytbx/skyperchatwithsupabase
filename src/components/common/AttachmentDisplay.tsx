@@ -65,6 +65,51 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: Att
         );
     }
 
+    const isAudio = fileType?.startsWith('audio/');
+    const isVideo = fileType?.startsWith('video/');
+
+    if (isAudio) {
+        return (
+            <div className="mt-2 w-full max-w-sm">
+                <audio controls className="w-full">
+                    <source src={fileUrl} type={fileType || undefined} />
+                    Tarayıcınız audio elementini desteklemiyor.
+                </audio>
+                <div className="flex items-center justify-between mt-1 px-1">
+                    <span className="text-xs text-gray-400 truncate">{fileName}</span>
+                    <button
+                        onClick={handleDownload}
+                        className="hover:text-primary-500 transition-colors"
+                        title="İndir"
+                    >
+                        <Download className="w-3 h-3 text-gray-400" />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (isVideo) {
+        return (
+            <div className="mt-2 w-full max-w-sm">
+                <video controls className="w-full rounded-lg bg-black max-h-[300px]">
+                    <source src={fileUrl} type={fileType || undefined} />
+                    Tarayıcınız video elementini desteklemiyor.
+                </video>
+                <div className="flex items-center justify-between mt-1 px-1">
+                    <span className="text-xs text-gray-400 truncate">{fileName}</span>
+                    <button
+                        onClick={handleDownload}
+                        className="hover:text-primary-500 transition-colors"
+                        title="İndir"
+                    >
+                        <Download className="w-3 h-3 text-gray-400" />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     // Non-image file
     return (
         <div className="mt-2 inline-flex items-center gap-3 bg-gray-700 rounded-lg p-3 border border-gray-600 hover:border-primary-500 transition-colors">

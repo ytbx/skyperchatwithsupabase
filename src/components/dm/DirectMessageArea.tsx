@@ -612,14 +612,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
               <Phone size={20} />
             </button>
 
-            {/* Video Call Button */}
-            <button
-              onClick={() => initiateCall(contactId, contactName, 'video')}
-              className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white"
-              title="Start video call"
-            >
-              <Video size={20} />
-            </button>
+
 
             <button
               onClick={() => setShowSearch(!showSearch)}
@@ -915,7 +908,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
             type="file"
             onChange={handleFileSelect}
             className="hidden"
-            accept="image/*,application/pdf,.doc,.docx,.txt"
+            accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.txt,.zip,.rar,.7z"
           />
           <button
             onClick={() => fileInputRef.current?.click()}

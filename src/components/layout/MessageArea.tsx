@@ -684,7 +684,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                 type="file"
                 onChange={handleFileSelect}
                 className="hidden"
-                accept="image/*,application/pdf,.doc,.docx,.txt"
+                accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.txt,.zip,.rar,.7z"
               />
               <button
                 type="button"

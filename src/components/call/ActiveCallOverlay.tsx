@@ -61,6 +61,19 @@ export const ActiveCallOverlay: React.FC = () => {
         setIsMaximized(!isMaximized);
     };
 
+    const [showFullscreenControls, setShowFullscreenControls] = useState(true);
+    const fullscreenControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleFullscreenMouseMove = () => {
+        setShowFullscreenControls(true);
+        if (fullscreenControlsTimeoutRef.current) {
+            clearTimeout(fullscreenControlsTimeoutRef.current);
+        }
+        fullscreenControlsTimeoutRef.current = setTimeout(() => {
+            setShowFullscreenControls(false);
+        }, 3000);
+    };
+
     const toggleIgnoreStream = (streamId: string) => {
         const isScreen = streamId.includes('screen');
 
@@ -392,6 +405,23 @@ export const ActiveCallOverlay: React.FC = () => {
             }
         }
     }, [fullscreenVideoId, remoteScreenStream, screenStream, remoteStream]);
+
+    // Reset controls when entering fullscreen
+    useEffect(() => {
+        if (fullscreenVideoId) {
+            setShowFullscreenControls(true);
+            if (fullscreenControlsTimeoutRef.current) {
+                clearTimeout(fullscreenControlsTimeoutRef.current);
+            }
+            fullscreenControlsTimeoutRef.current = setTimeout(() => {
+                setShowFullscreenControls(false);
+            }, 3000);
+        } else {
+            if (fullscreenControlsTimeoutRef.current) {
+                clearTimeout(fullscreenControlsTimeoutRef.current);
+            }
+        }
+    }, [fullscreenVideoId]);
 
     // Call duration timer
 
@@ -760,8 +790,9 @@ export const ActiveCallOverlay: React.FC = () => {
 
                 return (
                     <div
-                        className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8"
+                        className={`fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8 transition-cursor duration-300 ${!showFullscreenControls ? 'cursor-none' : ''}`}
                         onClick={closeFullscreen}
+                        onMouseMove={handleFullscreenMouseMove}
                     >
                         <div
                             className="relative w-[95vw] h-[95vh] bg-black rounded-lg overflow-hidden"
@@ -777,14 +808,14 @@ export const ActiveCallOverlay: React.FC = () => {
                             {/* Close button */}
                             <button
                                 onClick={closeFullscreen}
-                                className="absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-colors z-10"
+                                className={`absolute top-4 right-4 p-3 bg-black/70 hover:bg-black/90 rounded-lg transition-all duration-300 z-10 ${showFullscreenControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}
                                 title="Kapat"
                             >
                                 <X className="w-6 h-6 text-white" />
                             </button>
 
                             {/* Fullscreen Volume slider */}
-                            <div className="absolute bottom-8 right-8 z-10">
+                            <div className={`absolute bottom-8 right-8 z-10 transition-all duration-300 ${showFullscreenControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
                                 <StreamVolumeControl
                                     volume={currentVolume}
                                     onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId, v)}
@@ -796,7 +827,7 @@ export const ActiveCallOverlay: React.FC = () => {
 
 
                             {/* Label */}
-                            <div className="absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2">
+                            <div className={`absolute top-4 left-4 bg-black/70 rounded-lg px-4 py-2 transition-all duration-300 ${showFullscreenControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
                                 <p className="text-sm font-medium text-white">{label}</p>
                             </div>
                         </div>
