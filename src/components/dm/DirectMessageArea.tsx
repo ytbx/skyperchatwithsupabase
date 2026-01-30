@@ -40,6 +40,8 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
+  const prevMessagesLengthRef = useRef(0);
+  const isAtBottomRef = useRef(true);
 
   // Search functionality states
   const [showSearch, setShowSearch] = useState(false);
@@ -116,9 +118,22 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
     }
   }, [contactId, user?.id]);
 
+  const prevLastMessageIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const lastMessage = messages[messages.length - 1];
+    const isNewMessageAtBottom = lastMessage && lastMessage.id !== prevLastMessageIdRef.current;
+    const isSentByMe = lastMessage?.sender_id === user?.id;
+
+    if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
+      scrollToBottom();
+    }
+
+    if (lastMessage) {
+      prevLastMessageIdRef.current = lastMessage.id;
+    }
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages, user?.id]);
 
   // Search functionality
   const handleSearch = (query: string) => {
@@ -322,6 +337,11 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
+
+    const offset = 100;
+    const currentIsAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + offset;
+    isAtBottomRef.current = currentIsAtBottom;
+
     if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
       loadMoreMessages();
     }
@@ -580,10 +600,10 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-800">
-      {/* Header - Hide when call is active or connecting */}
-      {callStatus !== 'active' && callStatus !== 'connecting' && (
-        <div className="h-16 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4">
+    <div className="flex-1 flex flex-col bg-gray-800 relative">
+      {/* Header */}
+      {!(callStatus === 'active' || callStatus === 'connecting') && (
+        <div className="h-16 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center overflow-hidden">
               {contactProfileImageUrl ? (
@@ -634,7 +654,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
       {/* Search Bar */}
       {showSearch && (
-        <div className="bg-gray-800 border-b border-gray-700 p-4">
+        <div className="absolute top-16 left-0 right-0 bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 p-4 z-40 shadow-xl">
           <div className="relative" ref={searchContainerRef}>
             <div className="flex items-center bg-gray-700 rounded-lg px-4 py-3">
               <Search size={20} className="text-gray-400 mr-3" />

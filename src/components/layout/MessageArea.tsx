@@ -42,6 +42,8 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const { user, profile } = useAuth();
   const { isUserOnline } = useSupabaseRealtime();
   const { setActiveChannel } = useNotifications();
+  const prevMessagesLengthRef = useRef(0);
+  const isAtBottomRef = useRef(true);
 
   function formatTime(dateString: string) {
     const date = new Date(dateString);
@@ -154,9 +156,27 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     };
   }, [channelId, setActiveChannel]);
 
+  const prevLastMessageIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Only scroll to bottom if:
+    // 1. It's the first load
+    // 2. A new message was added to the BOTTOM AND user was already at bottom
+    // 3. User themselves sent a new message to the BOTTOM
+
+    const lastMessage = messages[messages.length - 1];
+    const isNewMessageAtBottom = lastMessage && lastMessage.id !== prevLastMessageIdRef.current;
+    const isSentByMe = lastMessage?.sender_id === user?.id;
+
+    if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
+      scrollToBottom();
+    }
+
+    if (lastMessage) {
+      prevLastMessageIdRef.current = lastMessage.id;
+    }
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages, user?.id]);
 
   async function loadChannelAndMessages() {
     if (!channelId) return;
@@ -306,6 +326,12 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
+
+    // Check if user is near bottom (within 100px)
+    const offset = 100;
+    const currentIsAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + offset;
+    isAtBottomRef.current = currentIsAtBottom;
+
     if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
       loadMoreMessages();
     }

@@ -636,7 +636,7 @@ export const ActiveCallOverlay: React.FC = () => {
         <>
             <div
                 ref={overlayRef}
-                className={`relative w-full bg-gray-900 z-10 flex flex-col flex-none transition-all duration-300 ease-out select-none ${isMaximized ? 'fixed inset-0 !h-full !z-[100]' : ''}`}
+                className={`absolute top-0 left-0 right-0 bg-gray-900/80 backdrop-blur-md z-30 flex flex-col transition-all duration-300 ease-out select-none border-b border-gray-700/50 ${isMaximized ? 'fixed inset-0 !h-full !z-[100]' : ''}`}
                 style={{ height: isMaximized ? '100%' : height }}
             >
                 {/* Header */}
@@ -784,14 +784,16 @@ export const ActiveCallOverlay: React.FC = () => {
                             </div>
 
                             {/* Volume slider */}
-                            <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <StreamVolumeControl
-                                    volume={streamInfo.id.includes('screen') ? getUserScreenVolume(contactId) : getUserVoiceVolume(contactId)}
-                                    onVolumeChange={(v) => handleVolumeChange(streamInfo.id, v)}
-                                    onMuteToggle={() => handleMuteToggle(streamInfo.id)}
-                                    isMuted={streamInfo.muted || isDeafened || isGlobalMuted || (streamInfo.id.includes('screen') ? getUserScreenMuted(contactId) : false)}
-                                />
-                            </div>
+                            {streamInfo.isRemote && (
+                                <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <StreamVolumeControl
+                                        volume={streamInfo.id.includes('screen') ? getUserScreenVolume(contactId) : getUserVoiceVolume(contactId)}
+                                        onVolumeChange={(v) => handleVolumeChange(streamInfo.id, v)}
+                                        onMuteToggle={() => handleMuteToggle(streamInfo.id)}
+                                        isMuted={streamInfo.muted || isDeafened || isGlobalMuted || (streamInfo.id.includes('screen') ? getUserScreenMuted(contactId) : false)}
+                                    />
+                                </div>
+                            )}
 
                             {/* Voice Activity Indicator */}
                             {streamInfo.isSpeaking && <div className="absolute inset-0 border-4 border-green-500 rounded-xl pointer-events-none z-20" />}

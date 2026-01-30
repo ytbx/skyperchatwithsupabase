@@ -479,14 +479,16 @@ export function VoiceChannelView({ channelId, channelName, participants, isDeafe
                                     </div>
 
                                     {/* Volume slider */}
-                                    <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <StreamVolumeControl
-                                            volume={currentVolume}
-                                            onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
-                                            onMuteToggle={() => handleMuteToggle(participant.user_id, false)}
-                                            isMuted={participant.user_id === user?.id || isMuted}
-                                        />
-                                    </div>
+                                    {participant.user_id !== user?.id && (
+                                        <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <StreamVolumeControl
+                                                volume={currentVolume}
+                                                onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
+                                                onMuteToggle={() => handleMuteToggle(participant.user_id, false)}
+                                                isMuted={participant.user_id === user?.id || isMuted}
+                                            />
+                                        </div>
+                                    )}
 
                                     {/* User info overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
@@ -606,14 +608,16 @@ export function VoiceChannelView({ channelId, channelName, participants, isDeafe
                                     </div>
 
                                     {/* Volume slider */}
-                                    <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <StreamVolumeControl
-                                            volume={currentVolume}
-                                            onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
-                                            onMuteToggle={() => handleMuteToggle(participant.user_id, true)}
-                                            isMuted={participant.user_id === user?.id || isMuted || isDeafened || isGlobalMuted}
-                                        />
-                                    </div>
+                                    {participant.user_id !== user?.id && (
+                                        <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <StreamVolumeControl
+                                                volume={currentVolume}
+                                                onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
+                                                onMuteToggle={() => handleMuteToggle(participant.user_id, true)}
+                                                isMuted={participant.user_id === user?.id || isMuted || isDeafened || isGlobalMuted}
+                                            />
+                                        </div>
+                                    )}
 
                                     {/* User info overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
@@ -703,15 +707,17 @@ export function VoiceChannelView({ channelId, channelName, participants, isDeafe
                                 </button>
 
                                 {/* Fullscreen Volume slider */}
-                                <div className={`absolute bottom-8 right-8 z-10 transition-all duration-300 ${showFullscreenControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
-                                    <StreamVolumeControl
-                                        volume={currentVolume}
-                                        onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId!, participantId, v)}
-                                        onMuteToggle={() => handleMuteToggle(participantId, !isCamera)}
-                                        isMuted={isMuted || isDeafened || isGlobalMuted}
-                                        className="scale-125"
-                                    />
-                                </div>
+                                {!isLocalUser && (
+                                    <div className={`absolute bottom-8 right-8 z-10 transition-all duration-300 ${showFullscreenControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+                                        <StreamVolumeControl
+                                            volume={currentVolume}
+                                            onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId!, participantId, v)}
+                                            onMuteToggle={() => handleMuteToggle(participantId, !isCamera)}
+                                            isMuted={isMuted || isDeafened || isGlobalMuted}
+                                            className="scale-125"
+                                        />
+                                    </div>
+                                )}
 
 
 

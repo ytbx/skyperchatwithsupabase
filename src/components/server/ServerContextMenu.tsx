@@ -1,28 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, BellOff, LogOut, Check } from 'lucide-react';
+import { Bell, BellOff, LogOut, Check, Trash2 } from 'lucide-react';
 import { Server } from '@/lib/types';
 
 interface ServerContextMenuProps {
     x: number;
     y: number;
+    userId: string;
     server: Server;
     isNotificationsMuted: boolean;
     onClose: () => void;
     onToggleNotifications: (serverId: string) => void;
     onLeaveServer: (server: Server) => void;
+    onDeleteServer: (server: Server) => void;
 }
 
 export function ServerContextMenu({
     x,
     y,
+    userId,
     server,
     isNotificationsMuted,
     onClose,
     onToggleNotifications,
-    onLeaveServer
+    onLeaveServer,
+    onDeleteServer
 }: ServerContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
-    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
+    const isOwner = server.owner_id === userId;
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -37,8 +42,8 @@ export function ServerContextMenu({
     useEffect(() => {
         function handleEscape(event: KeyboardEvent) {
             if (event.key === 'Escape') {
-                if (showLeaveConfirm) {
-                    setShowLeaveConfirm(false);
+                if (showConfirm) {
+                    setShowConfirm(false);
                 } else {
                     onClose();
                 }
@@ -46,27 +51,31 @@ export function ServerContextMenu({
         }
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [onClose, showLeaveConfirm]);
+    }, [onClose, showConfirm]);
 
     // Adjust position to not go off screen
     const adjustedPosition = {
-        top: Math.min(y, window.innerHeight - (showLeaveConfirm ? 200 : 150)),
+        top: Math.min(y, window.innerHeight - (showConfirm ? 200 : 150)),
         left: Math.min(x, window.innerWidth - 220)
     };
 
-    const handleLeaveClick = () => {
-        setShowLeaveConfirm(true);
+    const handleActionClick = () => {
+        setShowConfirm(true);
     };
 
-    const handleConfirmLeave = () => {
-        onLeaveServer(server);
+    const handleConfirmAction = () => {
+        if (isOwner) {
+            onDeleteServer(server);
+        } else {
+            onLeaveServer(server);
+        }
         onClose();
     };
 
     return (
         <div
             ref={menuRef}
-            className="fixed z-[100] w-52 bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            className="fixed z-[200] w-52 bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
             style={adjustedPosition}
         >
             {/* Header with server name */}
@@ -87,7 +96,7 @@ export function ServerContextMenu({
                 </div>
             </div>
 
-            {!showLeaveConfirm ? (
+            {!showConfirm ? (
                 <div className="py-1">
                     {/* Notification Toggle */}
                     <button
@@ -112,33 +121,33 @@ export function ServerContextMenu({
 
                     <div className="h-px bg-gray-700/50 my-1" />
 
-                    {/* Leave Server */}
+                    {/* Leave or Delete Server */}
                     <button
-                        onClick={handleLeaveClick}
+                        onClick={handleActionClick}
                         className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
                     >
-                        <LogOut size={16} />
-                        Sunucudan Ayrıl
+                        {isOwner ? <Trash2 size={16} /> : <LogOut size={16} />}
+                        {isOwner ? 'Sunucuyu Sil' : 'Sunucudan Ayrıl'}
                     </button>
                 </div>
             ) : (
-                /* Leave Confirmation */
+                /* confirmation */
                 <div className="p-3">
                     <p className="text-sm text-gray-300 mb-3">
-                        <span className="font-semibold text-white">{server.name}</span> sunucusundan ayrılmak istediğinize emin misiniz?
+                        <span className="font-semibold text-white">{server.name}</span> {isOwner ? 'sunucusunu silmek' : 'sunucusundan ayrılmak'} istediğinize emin misiniz? {isOwner && 'Bu işlem geri alınamaz.'}
                     </p>
                     <div className="flex gap-2">
                         <button
-                            onClick={() => setShowLeaveConfirm(false)}
+                            onClick={() => setShowConfirm(false)}
                             className="flex-1 px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
                         >
                             İptal
                         </button>
                         <button
-                            onClick={handleConfirmLeave}
+                            onClick={handleConfirmAction}
                             className="flex-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
                         >
-                            Ayrıl
+                            {isOwner ? 'Sil' : 'Ayrıl'}
                         </button>
                     </div>
                 </div>

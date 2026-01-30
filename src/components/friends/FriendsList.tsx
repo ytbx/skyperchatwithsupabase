@@ -179,15 +179,15 @@ export const FriendsList: React.FC<FriendsListProps> = ({
 
   return (
     <>
-      <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col">
+      <div className="w-72 h-full bg-gray-900 border-r border-gray-800 flex flex-col min-h-0">
         {/* Header */}
-        <div className="p-4 border-b border-gray-800">
+        <div className="p-4 border-b border-gray-800 flex-none">
           <h2 className="text-white font-semibold mb-4 flex items-center">
             <Users size={20} className="mr-2" />
             Arkadaşlar
           </h2>
 
-          {/* Tabs */}
+          {/* Tab buttons... */}
           <div className="flex space-x-1 bg-gray-800 rounded-lg p-1">
             <button
               onClick={() => setActiveTab('friends')}
@@ -225,7 +225,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
           {activeTab === 'friends' && (
             <>
               {/* Search */}
@@ -452,7 +452,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
 
                 {/* Search Results */}
                 {newFriendUsername.trim() && (
-                  <div className="max-h-60 overflow-y-auto">
+                  <div className="max-h-60 overflow-y-auto custom-scrollbar">
                     {searchingUsers ? (
                       <div className="text-center py-4">
                         <div className="animate-pulse text-gray-400 text-sm">Aranıyor...</div>
@@ -520,6 +520,22 @@ export const FriendsList: React.FC<FriendsListProps> = ({
 
         {/* User Connection Panel */}
         <UserConnectionPanel />
+
+        <style>{`
+          .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+          }
+          .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1f2937;
+            border-radius: 3px;
+          }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+          }
+        `}</style>
       </div>
 
       {/* Volume Context Menu */}
