@@ -156,7 +156,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     };
   }, [channelId, setActiveChannel]);
 
-  const prevLastMessageIdRef = useRef<string | null>(null);
+  const prevLastMessageIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Only scroll to bottom if:
