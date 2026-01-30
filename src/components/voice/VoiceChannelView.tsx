@@ -210,17 +210,32 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         const video = fullscreenVideoRef.current;
         const participantId = fullscreenVideoId?.split('-')[1];
 
-        if (video && stream) {
+        if (video && stream && participantId) {
             // Only update srcObject if it changed
             if (video.srcObject !== stream) {
                 video.srcObject = stream;
 
-                video.muted = true;
+                // Logic for audio playback in fullscreen:
+                // 1. Mute if it's local user
+                // 2. Mute if it's a camera (audio comes from GlobalAudio)
+                // 3. Unmute ONLY if it's remote screen share (audio comes from video element)
+                const isCamera = fullscreenVideoId?.startsWith('camera-');
+                const isLocal = participantId === user?.id;
+                const shouldUnmute = !isLocal && !isCamera;
+
+                video.muted = !shouldUnmute;
+
+                // Sync volume if unmuted
+                if (shouldUnmute) {
+                    const volume = getUserScreenVolume(participantId);
+                    const isUserMuted = getUserScreenMuted(participantId);
+                    video.volume = isUserMuted ? 0 : volume;
+                }
 
                 video.play().catch(e => console.error('Error playing fullscreen video:', e));
             }
         }
-    }, [fullscreenVideoId, getFullscreenStream]);
+    }, [fullscreenVideoId, getFullscreenStream, user?.id]);
 
     // Reset controls when entering fullscreen
     useEffect(() => {
@@ -243,8 +258,16 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         if (videoId.startsWith('screen-')) {
             setUserScreenVolume(userId, volume);
 
-            // Volume settings are handled by GlobalAudio for remote users
-            // and local user volume doesn't affect their own broadcast playback (which is now muted)
+            // Sync with video element volume (for Lip Sync)
+            const video = videoRefs.current.get(videoId);
+            if (video) {
+                video.volume = volume;
+            }
+
+            // Sync with fullscreen video if active
+            if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
+                fullscreenVideoRef.current.volume = volume;
+            }
         } else {
             setUserVoiceVolume(userId, volume);
         }
@@ -468,9 +491,21 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             ref={(el) => {
                                                 if (el) {
                                                     videoRefs.current.set(videoId, el);
-                                                    el.muted = true;
+
+                                                    // Only mute self
+                                                    const isSelf = participant.user_id === user?.id;
+                                                    el.muted = isSelf;
+
                                                     if (participant.screenStream && el.srcObject !== participant.screenStream) {
                                                         el.srcObject = participant.screenStream;
+
+                                                        // Set volume for remote users
+                                                        if (!isSelf) {
+                                                            const volume = getUserScreenVolume(participant.user_id);
+                                                            const isUserMuted = getUserScreenMuted(participant.user_id);
+                                                            el.volume = isUserMuted ? 0 : volume;
+                                                        }
+
                                                         el.play().catch(e => console.error('Error playing screen video from ref:', e));
                                                     }
                                                 } else {
@@ -479,7 +514,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                             }}
                                             autoPlay
                                             playsInline
-                                            muted={true} // Ensure muted always
+                                            muted={participant.user_id === user?.id} // Only mute self, play remote audio through video for lip-sync
                                             style={{
                                                 visibility: fullscreenVideoId === videoId ? 'hidden' : 'visible'
                                             }}
@@ -583,7 +618,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     ref={fullscreenVideoRef}
                                     autoPlay
                                     playsInline
-                                    muted={true}
+                                    muted={participantId === user?.id || isCamera} // Mute self or if camera (audio comes from GlobalAudio)
                                     className="w-full h-full object-contain"
                                 />
 

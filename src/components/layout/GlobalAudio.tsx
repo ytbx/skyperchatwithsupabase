@@ -96,7 +96,8 @@ export const GlobalAudio: React.FC = () => {
 
             manageAudio(participant.stream, voiceAudioRefs.current, 'VOICE', getEffectiveVoiceVolume);
             manageAudio(participant.soundpadStream, soundpadAudioRefs.current, 'SOUNDPAD', getEffectiveSoundpadVolume);
-            manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
+            // Screen audio is now handled by VoiceChannelView.tsx for lip-sync
+            // manageAudio(participant.screenStream, screenAudioRefs.current, 'SCREEN', getEffectiveScreenVolume);
         });
 
         // Cleanup on unmount

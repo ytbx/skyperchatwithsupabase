@@ -330,11 +330,11 @@ export const ActiveCallOverlay: React.FC = () => {
         }
     }, [screenStream, isScreenSharing, ignoredStreams]);
 
-    // Handle initial mute state
+    // Handle initial mute state - EXCLUDE remote-screen as it needs audio
     useEffect(() => {
         const audioElements = [
             { ref: remoteCameraVideoRef, id: 'remote-camera' },
-            { ref: remoteScreenVideoRef, id: 'remote-screen' },
+            // remote-screen is intentionally NOT muted - it needs audio for screen share
             { ref: localScreenVideoRef, id: 'local-screen' }
         ];
 
@@ -662,13 +662,22 @@ export const ActiveCallOverlay: React.FC = () => {
                                             if (el.srcObject !== streamInfo.stream) {
                                                 el.srcObject = streamInfo.stream;
                                             }
-                                            // CRITICAL: Always force mute local stream or if this stream is currently fullscreen
-                                            el.muted = true;
+                                            // Remote screen share should NOT be muted (for audio sync)
+                                            // All other streams should be muted in the grid
+                                            const isRemoteScreen = streamInfo.id === 'remote-screen';
+                                            el.muted = !isRemoteScreen;
+
+                                            // Set volume for remote screen
+                                            if (isRemoteScreen && contactId) {
+                                                const volume = getUserScreenVolume(contactId);
+                                                const isUserMuted = getUserScreenMuted(contactId);
+                                                el.volume = isUserMuted ? 0 : volume;
+                                            }
                                         }
                                     }}
                                     autoPlay
                                     playsInline
-                                    muted={true}
+                                    muted={streamInfo.id !== 'remote-screen'}
                                     style={{
                                         // Reduce visibility/interactivity of background video when in fullscreen to save resources and avoid audio
                                         visibility: fullscreenVideoId === streamInfo.id ? 'hidden' : 'visible'

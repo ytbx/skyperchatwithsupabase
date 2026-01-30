@@ -5,6 +5,7 @@ import { useCall } from '@/contexts/CallContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/lib/types';
+import { useUserAudio } from '@/contexts/UserAudioContext';
 
 interface VoiceConnectionOverlayProps {
     onMaximize: (type: 'voice' | 'call', id?: string | number) => void;
@@ -30,11 +31,13 @@ export function VoiceConnectionOverlay({ onMaximize }: VoiceConnectionOverlayPro
         isDeafened: isCallDeafened,
         toggleMic: toggleCallMic,
         toggleDeafen: toggleCallDeafen,
-        callStatus
+        callStatus,
+        remoteScreenStream
     } = useCall();
 
     const { user } = useAuth();
     const [remoteProfile, setRemoteProfile] = useState<Profile | null>(null);
+    const { getUserScreenVolume, getUserScreenMuted } = useUserAudio();
 
     // Fetch remote profile for direct calls
     useEffect(() => {
@@ -213,6 +216,63 @@ export function VoiceConnectionOverlay({ onMaximize }: VoiceConnectionOverlayPro
                     </button>
                 </div>
             </div>
+            {/* Background Audio Players for Screen Share (Hidden) */}
+            {isVoiceActive && !isVoiceDeafened && voiceParticipants.map(participant => {
+                // Don't play own audio or if no screen stream
+                if (!participant.screenStream || participant.user_id === user?.id) return null;
+
+                // Don't play if muted
+                if (getUserScreenMuted(participant.user_id)) return null;
+
+                const volume = getUserScreenVolume(participant.user_id);
+
+                return (
+                    <video
+                        key={`bg-audio-${participant.user_id}`}
+                        ref={el => {
+                            if (el && participant.screenStream && el.srcObject !== participant.screenStream) {
+                                el.srcObject = participant.screenStream;
+                                el.volume = volume;
+                                el.play().catch(e => console.error('Error playing background audio:', e));
+                            } else if (el && Math.abs(el.volume - volume) > 0.01) {
+                                el.volume = volume;
+                            }
+                        }}
+                        autoPlay
+                        playsInline
+                        muted={false}
+                        className="hidden"
+                    />
+                );
+            })}
+
+            {/* Background Audio for Direct Call Screen Share */}
+            {isCallActive && remoteScreenStream && !isCallDeafened && activeCall && (() => {
+                const remoteId = activeCall.caller_id === user?.id ? activeCall.callee_id : activeCall.caller_id;
+                // Don't play if muted
+                if (getUserScreenMuted(remoteId)) return null;
+
+                const volume = getUserScreenVolume(remoteId);
+
+                return (
+                    <video
+                        key={`bg-audio-call-${remoteId}`}
+                        ref={el => {
+                            if (el && remoteScreenStream && el.srcObject !== remoteScreenStream) {
+                                el.srcObject = remoteScreenStream;
+                                el.volume = volume;
+                                el.play().catch(e => console.error('Error playing direct call bg audio:', e));
+                            } else if (el && Math.abs(el.volume - volume) > 0.01) {
+                                el.volume = volume;
+                            }
+                        }}
+                        autoPlay
+                        playsInline
+                        muted={false}
+                        className="hidden"
+                    />
+                );
+            })()}
         </div>
     );
 }
