@@ -48,7 +48,7 @@ import { NoiseSuppressionProvider } from '@/contexts/NoiseSuppressionContext';
 
 function AppContent() {
     const { user, loading } = useAuth();
-    const { activeChannelId, participants, toggleScreenShare } = useVoiceChannel();
+    const { activeChannelId, participants, toggleScreenShare, isDeafened } = useVoiceChannel();
     const { activeCall, callStatus } = useCall();
     const [showSignUp, setShowSignUp] = useState(false);
 
@@ -249,6 +249,7 @@ function AppContent() {
                     channelId={activeChannelId}
                     channelName={activeChannelName}
                     participants={participants}
+                    isDeafened={isDeafened}
                     onStartScreenShare={toggleScreenShare}
                 />
             );

@@ -4,6 +4,7 @@ import { Volume2, VolumeX, Volume1 } from 'lucide-react';
 interface StreamVolumeControlProps {
     volume: number;
     onVolumeChange: (volume: number) => void;
+    onMuteToggle?: () => void; // NEW
     isMuted?: boolean;
     className?: string;
 }
@@ -11,13 +12,14 @@ interface StreamVolumeControlProps {
 export function StreamVolumeControl({
     volume,
     onVolumeChange,
+    onMuteToggle,
     isMuted = false,
     className = ""
 }: StreamVolumeControlProps) {
     const [isHovered, setIsHovered] = useState(false);
 
     const getIcon = () => {
-        if (isMuted || volume === 0) return <VolumeX className="w-5 h-5" />;
+        if (isMuted || volume === 0) return <VolumeX className="w-5 h-5 text-red-500" />; // Highlight muted with red
         if (volume < 0.5) return <Volume1 className="w-5 h-5" />;
         return <Volume2 className="w-5 h-5" />;
     };
@@ -62,9 +64,13 @@ export function StreamVolumeControl({
 
             {/* Icon Button */}
             <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onMuteToggle?.();
+                }}
                 className={`p-2 rounded-lg transition-all duration-200 ${isHovered
-                        ? 'bg-blue-600 text-white shadow-lg'
-                        : 'bg-black/40 text-white/80 hover:bg-black/60 hover:text-white'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : (isMuted || volume === 0) ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-black/40 text-white/80 hover:bg-black/60 hover:text-white'
                     }`}
             >
                 {getIcon()}

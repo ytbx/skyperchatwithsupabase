@@ -24,10 +24,11 @@ interface VoiceChannelViewProps {
     channelId: number;
     channelName: string;
     participants: VoiceParticipant[];
+    isDeafened: boolean;
     onStartScreenShare: () => void;
 }
 
-export function VoiceChannelView({ channelId, channelName, participants, onStartScreenShare }: VoiceChannelViewProps) {
+export function VoiceChannelView({ channelId, channelName, participants, isDeafened, onStartScreenShare }: VoiceChannelViewProps) {
     const { user } = useAuth();
     const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
@@ -41,7 +42,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
         getUserVoiceMuted,
         toggleUserVoiceMute,
         getEffectiveVoiceVolume,
-        getEffectiveScreenVolume
+        getEffectiveScreenVolume,
+        isGlobalMuted
     } = useUserAudio();
     const [ignoredStreams, setIgnoredStreams] = useState<Set<string>>(new Set());
     const [volumeContextMenu, setVolumeContextMenu] = useState<{ x: number; y: number; userId: string; username: string; profileImageUrl?: string; streamId: string } | null>(null);
@@ -184,7 +186,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             if (video && participant.screenStream && video.srcObject !== participant.screenStream && !ignoredStreams.has(videoId)) {
                 video.srcObject = participant.screenStream;
 
-                video.muted = true; // Always muted locally
+                const isLocal = participant.user_id === user?.id;
+                video.muted = isLocal; // Only mute local user's screen share video
                 video.play().catch(e => console.error('Error playing video:', e));
             }
         });
@@ -261,17 +264,83 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
             // Sync with video element volume (for Lip Sync)
             const video = videoRefs.current.get(videoId);
             if (video) {
-                video.volume = volume;
+                // Determine effective volume immediately
+                const isMuted = getUserScreenMuted(userId);
+                const finalVolume = (isDeafened || isGlobalMuted || isMuted) ? 0 : volume;
+                video.volume = finalVolume;
             }
 
             // Sync with fullscreen video if active
             if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
-                fullscreenVideoRef.current.volume = volume;
+                const isMuted = getUserScreenMuted(userId);
+                const finalVolume = (isDeafened || isGlobalMuted || isMuted) ? 0 : volume;
+                fullscreenVideoRef.current.volume = finalVolume;
             }
         } else {
             setUserVoiceVolume(userId, volume);
         }
-    }, [setUserScreenVolume, setUserVoiceVolume, fullscreenVideoId]);
+    }, [setUserScreenVolume, setUserVoiceVolume, fullscreenVideoId, isDeafened, isGlobalMuted, getUserScreenMuted]);
+
+    const handleMuteToggle = useCallback((userId: string, isScreen: boolean) => {
+        if (isScreen) {
+            toggleUserScreenMute(userId);
+        } else {
+            toggleUserVoiceMute(userId);
+        }
+    }, [toggleUserScreenMute, toggleUserVoiceMute]);
+
+    // NEW: Robust Volume & Mute Sync for all video elements
+    useEffect(() => {
+        console.log('[VoiceChannelView] Syncing video volumes - Deafened:', isDeafened, 'Global Muted:', isGlobalMuted);
+
+        videoRefs.current.forEach((video, videoId) => {
+            const isScreen = videoId.startsWith('screen-');
+            const userId = isScreen ? videoId.replace('screen-', '') : videoId.replace('camera-', '');
+
+            if (userId === user?.id) {
+                video.muted = true;
+                video.volume = 0;
+            } else {
+                video.muted = false; // Must be false to play track audio
+
+                let finalVolume = 0;
+                if (isScreen) {
+                    const volume = getUserScreenVolume(userId);
+                    const isUserMuted = getUserScreenMuted(userId);
+                    finalVolume = (isDeafened || isGlobalMuted || isUserMuted) ? 0 : volume;
+                }
+
+                if (video.volume !== finalVolume) {
+                    video.volume = finalVolume;
+                }
+
+                // Extra safety: ensure it's playing
+                if (video.paused && video.srcObject) {
+                    video.play().catch(() => { }); // Ignore errors if not ready
+                }
+            }
+        });
+
+        // Sync fullscreen video too
+        if (fullscreenVideoId && fullscreenVideoRef.current) {
+            const isScreen = fullscreenVideoId.startsWith('screen-');
+            const userId = isScreen ? fullscreenVideoId.replace('screen-', '') : fullscreenVideoId.replace('camera-', '');
+
+            if (userId !== user?.id) {
+                fullscreenVideoRef.current.muted = false;
+                let finalVolume = 0;
+                if (isScreen) {
+                    const volume = getUserScreenVolume(userId);
+                    const isUserMuted = getUserScreenMuted(userId);
+                    finalVolume = (isDeafened || isGlobalMuted || isUserMuted) ? 0 : volume;
+                }
+
+                if (fullscreenVideoRef.current.volume !== finalVolume) {
+                    fullscreenVideoRef.current.volume = finalVolume;
+                }
+            }
+        }
+    }, [participants, isDeafened, isGlobalMuted, getUserScreenVolume, getUserScreenMuted, user?.id, fullscreenVideoId]);
 
     const openFullscreen = (videoId: string) => {
         setFullscreenVideoId(videoId);
@@ -414,6 +483,7 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         <StreamVolumeControl
                                             volume={currentVolume}
                                             onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
+                                            onMuteToggle={() => handleMuteToggle(participant.user_id, false)}
                                             isMuted={participant.user_id === user?.id || isMuted}
                                         />
                                     </div>
@@ -540,7 +610,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                         <StreamVolumeControl
                                             volume={currentVolume}
                                             onVolumeChange={(v) => handleVolumeChange(videoId, participant.user_id, v)}
-                                            isMuted={participant.user_id === user?.id || isMuted}
+                                            onMuteToggle={() => handleMuteToggle(participant.user_id, true)}
+                                            isMuted={participant.user_id === user?.id || isMuted || isDeafened || isGlobalMuted}
                                         />
                                     </div>
 
@@ -636,7 +707,8 @@ export function VoiceChannelView({ channelId, channelName, participants, onStart
                                     <StreamVolumeControl
                                         volume={currentVolume}
                                         onVolumeChange={(v) => handleVolumeChange(fullscreenVideoId!, participantId, v)}
-                                        isMuted={isMuted}
+                                        onMuteToggle={() => handleMuteToggle(participantId, !isCamera)}
+                                        isMuted={isMuted || isDeafened || isGlobalMuted}
                                         className="scale-125"
                                     />
                                 </div>

@@ -45,7 +45,8 @@ export const ActiveCallOverlay: React.FC = () => {
         getUserVoiceVolume,
         setUserVoiceVolume,
         getUserVoiceMuted,
-        toggleUserVoiceMute
+        toggleUserVoiceMute,
+        isGlobalMuted
     } = useUserAudio();
     const [contactName, setContactName] = useState<string>('');
     const [contactProfileImageUrl, setContactProfileImageUrl] = useState<string | null>(null);
@@ -351,17 +352,74 @@ export const ActiveCallOverlay: React.FC = () => {
 
             // Sync with video element volume if it's the remote screen
             if (videoId === 'remote-screen' && remoteScreenVideoRef.current) {
-                remoteScreenVideoRef.current.volume = volume;
+                const isUserMuted = getUserScreenMuted(contactId);
+                const finalVolume = (isDeafened || isGlobalMuted || isUserMuted) ? 0 : volume;
+                remoteScreenVideoRef.current.volume = finalVolume;
             }
 
             // Sync with fullscreen video if active
             if (fullscreenVideoId === videoId && fullscreenVideoRef.current) {
-                fullscreenVideoRef.current.volume = volume;
+                const isUserMuted = getUserScreenMuted(contactId);
+                const finalVolume = (isDeafened || isGlobalMuted || isUserMuted) ? 0 : volume;
+                fullscreenVideoRef.current.volume = finalVolume;
             }
         } else {
             setUserVoiceVolume(contactId, volume);
         }
     };
+
+    const handleMuteToggle = (videoId: string) => {
+        if (videoId.includes('screen')) {
+            toggleUserScreenMute(contactId);
+        } else {
+            toggleUserVoiceMute(contactId);
+        }
+    };
+
+    // NEW: Robust Volume & Mute Sync for Direct Call video elements
+    useEffect(() => {
+        console.log('[ActiveCallOverlay] Syncing video volumes - Deafened:', isDeafened, 'Global Muted:', isGlobalMuted);
+
+        // 1. Handle Grid Remote Screen Video
+        if (remoteScreenVideoRef.current) {
+            remoteScreenVideoRef.current.muted = false; // Must be false for track audio
+            const volume = getUserScreenVolume(contactId);
+            const isUserMuted = getUserScreenMuted(contactId);
+            const finalVolume = (isDeafened || isGlobalMuted || isUserMuted) ? 0 : volume;
+
+            if (remoteScreenVideoRef.current.volume !== finalVolume) {
+                remoteScreenVideoRef.current.volume = finalVolume;
+            }
+
+            if (remoteScreenVideoRef.current.paused && remoteScreenStream) {
+                remoteScreenVideoRef.current.play().catch(() => { });
+            }
+        }
+
+        // 2. Handle Grid Local Screen Video (Always muted)
+        if (localScreenVideoRef.current) {
+            localScreenVideoRef.current.muted = true;
+            localScreenVideoRef.current.volume = 0;
+        }
+
+        // 3. Handle Fullscreen Video
+        if (fullscreenVideoId && fullscreenVideoRef.current) {
+            const isRemoteScreen = fullscreenVideoId === 'remote-screen';
+            if (isRemoteScreen) {
+                fullscreenVideoRef.current.muted = false;
+                const volume = getUserScreenVolume(contactId);
+                const isUserMuted = getUserScreenMuted(contactId);
+                const finalVolume = (isDeafened || isGlobalMuted || isUserMuted) ? 0 : volume;
+
+                if (fullscreenVideoRef.current.volume !== finalVolume) {
+                    fullscreenVideoRef.current.volume = finalVolume;
+                }
+            } else {
+                fullscreenVideoRef.current.muted = true;
+                fullscreenVideoRef.current.volume = 0;
+            }
+        }
+    }, [isDeafened, isGlobalMuted, getUserScreenVolume, getUserScreenMuted, contactId, fullscreenVideoId, remoteScreenStream]);
 
     const openFullscreen = (videoId: string) => {
         setFullscreenVideoId(videoId);
@@ -463,6 +521,7 @@ export const ActiveCallOverlay: React.FC = () => {
             isMicMuted: false,
             isDeafened: false,
             isSpeaking: false,
+            muted: false, // EXPLICITLY UNMUTED
             videoRef: remoteScreenVideoRef
         } : null,
         (isScreenSharing && !!screenStream) ? {
@@ -729,7 +788,8 @@ export const ActiveCallOverlay: React.FC = () => {
                                 <StreamVolumeControl
                                     volume={streamInfo.id.includes('screen') ? getUserScreenVolume(contactId) : getUserVoiceVolume(contactId)}
                                     onVolumeChange={(v) => handleVolumeChange(streamInfo.id, v)}
-                                    isMuted={streamInfo.muted || isDeafened || (streamInfo.id.includes('screen') ? getUserScreenMuted(contactId) : false)}
+                                    onMuteToggle={() => handleMuteToggle(streamInfo.id)}
+                                    isMuted={streamInfo.muted || isDeafened || isGlobalMuted || (streamInfo.id.includes('screen') ? getUserScreenMuted(contactId) : false)}
                                 />
                             </div>
 
@@ -795,7 +855,7 @@ export const ActiveCallOverlay: React.FC = () => {
                 }
 
                 const currentVolume = fullscreenVideoId.includes('screen') ? getUserScreenVolume(contactId) : getUserVoiceVolume(contactId);
-                const isMuted = fullscreenVideoId.startsWith('local-') || isDeafened || (fullscreenVideoId.includes('screen') ? getUserScreenMuted(contactId) : false);
+                const isMuted = fullscreenVideoId.startsWith('local-') || isDeafened || isGlobalMuted || (fullscreenVideoId.includes('screen') ? getUserScreenMuted(contactId) : false);
 
                 return (
                     <div
