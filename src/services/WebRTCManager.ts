@@ -541,7 +541,29 @@ export class WebRTCManager {
                 console.log('[WebRTCManager] Adding screen share video track');
                 const newSender = this.peerConnection.addTrack(videoTrack, screenStream);
 
-                // Removed bitrate limit logic to rely on WebRTC defaults
+                // Configure sender parameters for 1080p 60fps stability
+                // 1. Cap bitrate to 6Mbps to prevent network congestion (ping spikes)
+                // 2. Prioritize framerate over resolution (prevent stutter/freezing)
+                try {
+                    const params = newSender.getParameters();
+                    if (!params.encodings) params.encodings = [{}];
+
+                    // Set max bitrate to 6 Mbps
+                    params.encodings[0].maxBitrate = 6000000;
+                    params.encodings[0].priority = 'high';
+                    params.encodings[0].networkPriority = 'high';
+
+                    // degradationPreference: 'maintain-framerate'
+                    // This tells the browser: if bandwidth is low, drop resolution but KEEP 60FPS.
+                    // This prevents "freezing" or "stuttering" which is the user's main complaint.
+                    // Note: Cast to any because TS definitions might be outdated for this specific property
+                    (params as any).degradationPreference = 'maintain-framerate';
+
+                    await newSender.setParameters(params);
+                    console.log('[WebRTCManager] Configured screen share sender: 6Mbps, maintain-framerate');
+                } catch (e) {
+                    console.error('[WebRTCManager] Error configuring screen share sender:', e);
+                }
 
                 // Ensure transceiver direction is correct
                 const transceiver = this.peerConnection.getTransceivers().find(t => t.sender === newSender);
