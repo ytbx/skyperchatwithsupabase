@@ -931,8 +931,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
         // We use WebRTC default bitrate management now
         for (const [peerId, manager] of peerManagers.current.entries()) {
-            // Passing undefined for bitrate ensures WebRTC default behavior
-            await manager.startScreenShare(screenStream);
+            // Passing quality ensures correct bitrate and degradation preference
+            await manager.startScreenShare(screenStream, quality);
             const offer = await manager.createOffer();
             await sendSignal(peerId, 'offer', offer);
         }

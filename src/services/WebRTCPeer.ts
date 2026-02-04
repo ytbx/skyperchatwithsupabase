@@ -533,7 +533,7 @@ export class WebRTCPeer {
     /**
      * Start screen sharing
      */
-    async startScreenShare(screenStream: MediaStream) {
+    async startScreenShare(screenStream: MediaStream, quality: 'standard' | 'fullhd' = 'standard') {
         if (!this.pc) throw new Error('Peer connection not initialized');
         console.log('[WebRTCPeer] Starting screen share');
 
@@ -548,20 +548,26 @@ export class WebRTCPeer {
 
             // Configure sender parameters for 1080p 60fps stability
             try {
+                // Set content hint for better text/detail compression
+                if (videoTrack.contentHint !== undefined) {
+                    videoTrack.contentHint = 'text';
+                }
+
                 const params = this.screenSender.getParameters();
                 if (!params.encodings) params.encodings = [{}];
 
-                // Set max bitrate to 6 Mbps
-                params.encodings[0].maxBitrate = 6000000;
+                // Dynamic bitrate based on quality
+                const targetBitrate = quality === 'fullhd' ? 8000000 : 4000000;
+                params.encodings[0].maxBitrate = targetBitrate;
                 params.encodings[0].priority = 'high';
                 params.encodings[0].networkPriority = 'high';
 
-                // degradationPreference: 'maintain-framerate'
-                // Prioritize smoothness over resolution
-                (params as any).degradationPreference = 'maintain-framerate';
+                // degradationPreference: 'balanced'
+                // This is better than 'maintain-framerate' for network stability (prevents ping spikes)
+                (params as any).degradationPreference = 'balanced';
 
                 await this.screenSender.setParameters(params);
-                console.log('[WebRTCPeer] Configured screen share sender: 6Mbps, maintain-framerate');
+                console.log(`[WebRTCPeer] Configured screen share sender: ${targetBitrate / 1000000}Mbps, balanced mode`);
             } catch (e) {
                 console.error('[WebRTCPeer] Error configuring screen share sender:', e);
             }

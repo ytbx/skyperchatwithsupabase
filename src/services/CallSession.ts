@@ -582,7 +582,7 @@ export class CallSession {
         console.log('[CallSession] Starting screen share with quality:', quality);
 
         // We use WebRTC default bitrate management now
-        await this.peer.startScreenShare(stream);
+        await this.peer.startScreenShare(stream, quality);
 
         // Send signal first so remote is ready for tracks
         await this.signaling.sendScreenShareStarted();

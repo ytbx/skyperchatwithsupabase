@@ -516,7 +516,7 @@ export class WebRTCManager {
     /**
      * Start screen sharing
      */
-    async startScreenShare(screenStream: MediaStream): Promise<MediaStream> {
+    async startScreenShare(screenStream: MediaStream, quality: 'standard' | 'fullhd' = 'standard'): Promise<MediaStream> {
         console.log('[WebRTCManager] Starting screen share');
 
         try {
@@ -542,25 +542,27 @@ export class WebRTCManager {
                 const newSender = this.peerConnection.addTrack(videoTrack, screenStream);
 
                 // Configure sender parameters for 1080p 60fps stability
-                // 1. Cap bitrate to 6Mbps to prevent network congestion (ping spikes)
-                // 2. Prioritize framerate over resolution (prevent stutter/freezing)
                 try {
+                    // Set content hint for better text/detail compression
+                    if (videoTrack.contentHint !== undefined) {
+                        videoTrack.contentHint = 'text';
+                    }
+
                     const params = newSender.getParameters();
                     if (!params.encodings) params.encodings = [{}];
 
-                    // Set max bitrate to 6 Mbps
-                    params.encodings[0].maxBitrate = 6000000;
+                    // Dynamic bitrate based on quality
+                    const targetBitrate = quality === 'fullhd' ? 8000000 : 4000000;
+                    params.encodings[0].maxBitrate = targetBitrate;
                     params.encodings[0].priority = 'high';
                     params.encodings[0].networkPriority = 'high';
 
-                    // degradationPreference: 'maintain-framerate'
-                    // This tells the browser: if bandwidth is low, drop resolution but KEEP 60FPS.
-                    // This prevents "freezing" or "stuttering" which is the user's main complaint.
-                    // Note: Cast to any because TS definitions might be outdated for this specific property
-                    (params as any).degradationPreference = 'maintain-framerate';
+                    // degradationPreference: 'balanced'
+                    // This is better than 'maintain-framerate' for network stability (prevents ping spikes)
+                    (params as any).degradationPreference = 'balanced';
 
                     await newSender.setParameters(params);
-                    console.log('[WebRTCManager] Configured screen share sender: 6Mbps, maintain-framerate');
+                    console.log(`[WebRTCManager] Configured screen share sender: ${targetBitrate / 1000000}Mbps, balanced mode`);
                 } catch (e) {
                     console.error('[WebRTCManager] Error configuring screen share sender:', e);
                 }
