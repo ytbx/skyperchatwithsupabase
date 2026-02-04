@@ -545,7 +545,7 @@ export class WebRTCManager {
                 try {
                     // Set content hint for better text/detail compression
                     if (videoTrack.contentHint !== undefined) {
-                        videoTrack.contentHint = 'text';
+                        videoTrack.contentHint = 'motion';
                     }
 
                     const params = newSender.getParameters();
@@ -557,9 +557,9 @@ export class WebRTCManager {
                     params.encodings[0].priority = 'high';
                     params.encodings[0].networkPriority = 'high';
 
-                    // degradationPreference: 'balanced'
-                    // This is better than 'maintain-framerate' for network stability (prevents ping spikes)
-                    (params as any).degradationPreference = 'balanced';
+                    // degradationPreference: 'maintain-framerate'
+                    // Prioritize 60fps smoothness over individual frame resolution
+                    (params as any).degradationPreference = 'maintain-framerate';
 
                     await newSender.setParameters(params);
                     console.log(`[WebRTCManager] Configured screen share sender: ${targetBitrate / 1000000}Mbps, balanced mode`);
