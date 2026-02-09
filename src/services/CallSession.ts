@@ -137,13 +137,13 @@ export class CallSession {
                             this.connectionFailedTimer = null;
                         }
                     } else if (state === 'failed') {
-                        // Connection lost - provide a 10s grace period before ending
-                        console.warn('[CallSession] Connection failed - starting 10s grace period');
+                        // Connection lost - provide a 5m grace period before ending
+                        console.warn('[CallSession] Connection failed - starting 5m grace period');
                         if (!this.connectionFailedTimer) {
                             this.connectionFailedTimer = setTimeout(() => {
                                 console.error('[CallSession] Connection recovery timed out - ending call');
                                 this.handleRemoteEnd('remote_ended'); // Or local end
-                            }, 10000);
+                            }, 300000); // 5m grace period
                         }
                     } else if (state === 'disconnected') {
                         console.warn('[CallSession] Connection disconnected - waiting for reconnect');

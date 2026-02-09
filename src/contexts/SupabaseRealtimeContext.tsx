@@ -8,13 +8,13 @@ import { useVoiceChannel } from './VoiceChannelContext';
 interface PresenceUser {
     user_id: string;
     online_at: string;
-    status?: 'online' | 'idle';
+    status?: 'online' | 'away' | 'idle';
 }
 
-type UserStatus = 'online' | 'idle' | 'offline';
+type UserStatus = 'online' | 'away' | 'idle' | 'offline';
 
 interface SupabaseRealtimeContextType {
-    isIdle: boolean;
+    isAway: boolean;
     onlineUsers: Set<string>;
     isUserOnline: (userId: string) => boolean;
     getUserStatus: (userId: string) => UserStatus;
@@ -29,9 +29,11 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
     const [userStatuses, setUserStatuses] = useState<Map<string, UserStatus>>(new Map());
     const [presenceChannel, setPresenceChannel] = useState<RealtimeChannel | null>(null);
-    const [isIdle, setIsIdle] = useState(false);
+    const [isAway, setIsAway] = useState(false);
     const disconnectionTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const awayTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const healthCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Keep refs to current state to access in channel callback without re-subscribing
     const cleanupRefs = useRef({ activeCall, activeChannelId, endCall, leaveChannel });
@@ -72,10 +74,12 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     presences.forEach((presence) => {
                         if (presence.user_id) {
                             online.add(presence.user_id);
-                            // Highest status wins (online > idle)
+                            // Highest status wins (online > away > idle)
                             const current = statuses.get(presence.user_id);
-                            if (presence.status === 'online' || !current) {
-                                statuses.set(presence.user_id, presence.status || 'online');
+                            const newStatus = (presence.status || 'online') as UserStatus;
+
+                            if (newStatus === 'online' || !current || (current === 'idle' && newStatus === 'away')) {
+                                statuses.set(presence.user_id, newStatus);
                             }
                         }
                     });
@@ -128,15 +132,15 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     await channel.track({
                         user_id: user.id,
                         online_at: new Date().toISOString(),
-                        status: 'online', // Initial status
+                        status: isAway ? 'away' : 'online',
                     });
 
-                    console.log('[SupabaseRealtime] User presence tracked');
+                    console.log('[SupabaseRealtime] User presence tracked as', isAway ? 'away' : 'online');
                 }
 
                 // Handle disconnection with a grace period
                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-                    console.warn(`[SupabaseRealtime] Connection issue detected: ${status}. Waiting 15s before ending calls.`);
+                    console.warn(`[SupabaseRealtime] Connection issue detected: ${status}. Waiting 5m before ending sessions.`);
 
                     if (!disconnectionTimerRef.current) {
                         disconnectionTimerRef.current = setTimeout(() => {
@@ -152,12 +156,35 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                                 leaveChannel();
                             }
                             disconnectionTimerRef.current = null;
-                        }, 15000); // 15s grace period
+                        }, 300000); // 5m grace period
                     }
                 }
             });
 
         setPresenceChannel(channel);
+
+        // Periodic Connection Health Check (Every 30s)
+        healthCheckIntervalRef.current = setInterval(() => {
+            // @ts-ignore
+            if (channel && (channel.state === 'closed' || channel.state === 'errored')) {
+                console.log('[SupabaseRealtime] Health check: Channel not active, re-subscribing...');
+                channel.subscribe();
+            }
+        }, 30000);
+
+        // Periodic Tracking Keep-Alive (Every 2 minutes)
+        // Prevents stale presence cleanup by Supabase servers
+        keepAliveIntervalRef.current = setInterval(async () => {
+            // @ts-ignore
+            if (channel && channel.state === 'joined') {
+                console.log('[SupabaseRealtime] Keep-alive: Re-tracking presence...');
+                await channel.track({
+                    user_id: user.id,
+                    online_at: new Date().toISOString(),
+                    status: isAway ? 'away' : 'online',
+                }).catch(err => console.error('[SupabaseRealtime] Keep-alive track failed:', err));
+            }
+        }, 120000);
 
         // Subscribe to messages in channels the user is a member of
         const messagesChannel = supabase
@@ -218,11 +245,13 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
 
             // Clear timers
             clearInterval(heartbeatInterval);
+            if (healthCheckIntervalRef.current) clearInterval(healthCheckIntervalRef.current);
+            if (keepAliveIntervalRef.current) clearInterval(keepAliveIntervalRef.current);
             if (disconnectionTimerRef.current) {
                 clearTimeout(disconnectionTimerRef.current);
             }
-            if (idleTimerRef.current) {
-                clearTimeout(idleTimerRef.current);
+            if (awayTimerRef.current) {
+                clearTimeout(awayTimerRef.current);
             }
 
             // Untrack presence
@@ -235,19 +264,25 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             friendRequestsChannel.unsubscribe();
             window.removeEventListener('beforeunload', sendHeartbeat);
         };
-    }, [user?.id]); // REMOVED isIdle from here to prevent full channel re-subscription
+    }, [user?.id]);
 
     // Handle status updates separately to avoid re-subscribing the entire channel
     useEffect(() => {
         if (!presenceChannel || !user) return;
 
-        console.log('[SupabaseRealtime] Status changed, updating presence tracking:', isIdle ? 'idle' : 'online');
+        // @ts-ignore
+        if (presenceChannel.state !== 'joined') {
+            console.log('[SupabaseRealtime] Status changed but channel not joined, skipping track');
+            return;
+        }
+
+        console.log('[SupabaseRealtime] Status changed, updating presence tracking:', isAway ? 'away' : 'online');
         presenceChannel.track({
             user_id: user.id,
             online_at: new Date().toISOString(),
-            status: isIdle ? 'idle' : 'online',
+            status: isAway ? 'away' : 'online',
         });
-    }, [isIdle, presenceChannel, user]);
+    }, [isAway, presenceChannel, user]);
 
     // Strengthen connection: Refresh on visibility change (recovers from tab backgrounding/sleep)
     useEffect(() => {
@@ -266,34 +301,34 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [presenceChannel]);
 
-    // Idle detection logic
+    // Away detection logic
     useEffect(() => {
         if (!user || !presenceChannel) return;
 
-        const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+        const AWAY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
-        const resetIdleTimer = () => {
-            if (isIdle) {
+        const resetAwayTimer = () => {
+            if (isAway) {
                 console.log('[SupabaseRealtime] User active again');
-                setIsIdle(false);
+                setIsAway(false);
             }
-            if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-            idleTimerRef.current = setTimeout(() => {
-                console.log('[SupabaseRealtime] User is now idle');
-                setIsIdle(true);
-            }, IDLE_TIMEOUT);
+            if (awayTimerRef.current) clearTimeout(awayTimerRef.current);
+            awayTimerRef.current = setTimeout(() => {
+                console.log('[SupabaseRealtime] User is now away');
+                setIsAway(true);
+            }, AWAY_TIMEOUT);
         };
 
         const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-        events.forEach(event => window.addEventListener(event, resetIdleTimer));
+        events.forEach(event => window.addEventListener(event, resetAwayTimer));
 
-        resetIdleTimer();
+        resetAwayTimer();
 
         return () => {
-            events.forEach(event => window.removeEventListener(event, resetIdleTimer));
-            if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+            events.forEach(event => window.removeEventListener(event, resetAwayTimer));
+            if (awayTimerRef.current) clearTimeout(awayTimerRef.current);
         };
-    }, [user, presenceChannel, isIdle]);
+    }, [user, presenceChannel, isAway]);
 
     const isUserOnline = useCallback((userId: string): boolean => {
         return onlineUsers.has(userId);
@@ -305,7 +340,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     }, [onlineUsers, userStatuses]);
 
     const value: SupabaseRealtimeContextType = {
-        isIdle,
+        isAway,
         onlineUsers,
         isUserOnline,
         getUserStatus,

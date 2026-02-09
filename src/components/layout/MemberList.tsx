@@ -262,7 +262,7 @@ export function MemberList({ serverId }: MemberListProps) {
                                 )}
                               </div>
                               {/* Online/Idle Status Indicator */}
-                              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${getUserStatus(member.id) === 'idle' ? 'bg-blue-500' : 'bg-green-500'} rounded-full border-2 border-gray-800`}></div>
+                              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${['away', 'idle'].includes(getUserStatus(member.id)) ? 'bg-blue-500' : 'bg-green-500'} rounded-full border-2 border-gray-800`}></div>
                             </div>
 
                             {/* Member Info */}

@@ -250,7 +250,7 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
                     </div>
                     {/* Online/Idle indicator */}
                     {isUserOnline(conversation.contactId) && (
-                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getUserStatus(conversation.contactId) === 'idle' ? 'bg-blue-500' : 'bg-green-500'} border-2 border-gray-900 rounded-full`}></div>
+                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${['away', 'idle'].includes(getUserStatus(conversation.contactId)) ? 'bg-blue-500' : 'bg-green-500'} border-2 border-gray-900 rounded-full`}></div>
                     )}
                   </div>
 

@@ -162,8 +162,8 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'online': return 'bg-green-500';
+      case 'away':
       case 'idle': return 'bg-blue-500';
-      case 'away': return 'bg-yellow-500';
       case 'busy': return 'bg-red-500';
       default: return 'bg-gray-500';
     }
@@ -172,8 +172,8 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   const getStatusText = (status: string) => {
     switch (status) {
       case 'online': return 'Çevrimiçi';
-      case 'idle': return 'Boşta';
-      case 'away': return 'Uzakta';
+      case 'away':
+      case 'idle': return 'Uzakta';
       case 'busy': return 'Meşgul';
       default: return 'Çevrimdışı';
     }
@@ -295,7 +295,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                             <h3 className="text-white font-medium text-sm truncate">
                               {friend.username}
                             </h3>
-                            <p className={`text-xs truncate ${isUserOnline(friend.id) ? (getUserStatus(friend.id) === 'idle' ? 'text-blue-400' : 'text-green-400') : 'text-gray-400'
+                            <p className={`text-xs truncate ${isUserOnline(friend.id) ? (['away', 'idle'].includes(getUserStatus(friend.id)) ? 'text-blue-400' : 'text-green-400') : 'text-gray-400'
                               }`}>
                               {getStatusText(getUserStatus(friend.id))}
                             </p>
