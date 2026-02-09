@@ -113,6 +113,11 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
     loadChannelAndMessages();
 
+    // Reset scroll refs for new channel
+    prevLastMessageIdRef.current = null;
+    isAtBottomRef.current = true;
+    setShowScrollButton(false);
+
     // Subscribe to new messages
     const subscription = supabase
       .channel(`messages_${channelId}`)
@@ -144,6 +149,23 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     };
   }, [channelId]);
 
+  // Handle auto-scroll on content resize (images, etc.)
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (isAtBottomRef.current) {
+        scrollToBottom('auto');
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [channelId]);
+
   // Set active channel to prevent notifications for it
   useEffect(() => {
     if (channelId) {
@@ -170,7 +192,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     const isSentByMe = lastMessage?.sender_id === user?.id;
 
     if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
-      scrollToBottom();
+      scrollToBottom(prevLastMessageIdRef.current === null ? 'auto' : 'smooth');
       setShowScrollButton(false);
     } else if (isNewMessageAtBottom && !isAtBottomRef.current) {
       setShowScrollButton(true);
@@ -260,7 +282,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
       setMessages(messagesWithSenders);
       // Wait for DOM to update then scroll to bottom
-      setTimeout(scrollToBottom, 50);
+      setTimeout(() => scrollToBottom('auto'), 50);
     }
   }
 
@@ -338,6 +360,12 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
     if (currentIsAtBottom) {
       setShowScrollButton(false);
+    } else {
+      // Show button if scrolled up more than 400px
+      const isScrolledUp = target.scrollHeight - target.scrollTop > target.clientHeight + 400;
+      if (isScrolledUp) {
+        setShowScrollButton(true);
+      }
     }
 
     if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
@@ -345,8 +373,8 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     }
   };
 
-  function scrollToBottom() {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   }
 
   async function handleSendMessage(e: React.FormEvent) {
@@ -709,8 +737,12 @@ export function MessageArea({ channelId }: MessageAreaProps) {
               }}
               className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-primary-400/30 backdrop-blur-md bg-opacity-90"
             >
-              <Plus className="w-4 h-4 rotate-45 transform translate-y-0.5" />
-              <span>Yeni mesajlar var - En aşağı git</span>
+              <Plus className={`w-4 h-4 ${prevLastMessageIdRef.current !== messages[messages.length - 1]?.id ? 'rotate-45' : 'rotate-90'} transform translate-y-0.5`} />
+              <span>
+                {prevLastMessageIdRef.current !== (messages[messages.length - 1]?.id || null)
+                  ? 'Yeni mesajlar var - En aşağı git'
+                  : 'En aşağı git'}
+              </span>
             </button>
           </div>
         </div>

@@ -37,8 +37,7 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: Att
                             onClick={() => setLightboxOpen(true)}
                         />
                     )}
-                    <div className="flex items-center justify-between mt-1 text-xs text-gray-400">
-                        <span className="truncate">{fileName}</span>
+                    <div className="flex items-center justify-end mt-1 text-xs text-gray-400">
                         <button
                             onClick={handleDownload}
                             className="ml-2 hover:text-primary-500 transition-colors"

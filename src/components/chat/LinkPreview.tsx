@@ -13,10 +13,27 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
         let isMounted = true;
         const loadMetadata = async () => {
             setLoading(true);
-            const data = await fetchLinkMetadata(url);
-            if (isMounted) {
-                setMetadata(data);
-                setLoading(false);
+            try {
+                // Add a 5 second timeout to prevent getting stuck
+                const timeoutPromise = new Promise<null>((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout')), 5000)
+                );
+
+                const data = await Promise.race([
+                    fetchLinkMetadata(url),
+                    timeoutPromise
+                ]);
+
+                if (isMounted) {
+                    setMetadata(data as LinkMetadata | null);
+                    setLoading(false);
+                }
+            } catch (error) {
+                console.log('[LinkPreview] Fetch error or timeout:', error);
+                if (isMounted) {
+                    setMetadata(null);
+                    setLoading(false);
+                }
             }
         };
 
