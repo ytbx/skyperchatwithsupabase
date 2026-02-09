@@ -14,12 +14,6 @@ importers:
       '@jitsi/rnnoise-wasm':
         specifier: ^0.2.1
         version: 0.2.1
-      '@livekit/components-react':
-        specifier: ^2.9.19
-        version: 2.9.19(livekit-client@2.17.1(@types/dom-mediacapture-record@1.0.22))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(tslib@2.8.1)
-      '@livekit/components-styles':
-        specifier: ^1.2.0
-        version: 1.2.0
       '@radix-ui/react-accordion':
         specifier: ^1.2.2
         version: 1.2.12(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -704,30 +698,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@livekit/components-core@0.12.12':
-    resolution: {integrity: sha512-DQ+lOAMPvum37Ta4lQLETxQe7ZxhivI78ZfE4nnWP0AcnwNByNR2vVLp9VGvw577HmvgHEkbjBbGBJBSZEBEZA==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      livekit-client: ^2.15.14
-      tslib: ^2.6.2
-
-  '@livekit/components-react@2.9.19':
-    resolution: {integrity: sha512-VEa4SsiwCHreuIdjxVPrqoWY+Ezq36fHc6swawDXcROPZMCPOeAovaxw83yZqqCKDpzT6oWoeBFDMbxbMytqRw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@livekit/krisp-noise-filter': ^0.2.12 || ^0.3.0
-      livekit-client: ^2.16.0
-      react: '>=18'
-      react-dom: '>=18'
-      tslib: ^2.6.2
-    peerDependenciesMeta:
-      '@livekit/krisp-noise-filter':
-        optional: true
-
-  '@livekit/components-styles@1.2.0':
-    resolution: {integrity: sha512-74/rt0lDh6aHmOPmWAeDE9C4OrNW9RIdmhX/YRbovQBVNGNVWojRjl3FgQZ5LPFXO6l1maKB4JhXcBFENVxVvw==}
-    engines: {node: '>=18'}
 
   '@livekit/mutex@1.1.1':
     resolution: {integrity: sha512-EsshAucklmpuUAfkABPxJNhzj9v2sG7JuzFDL4ML1oJQSV14sqrpTYnsaOudMAw9yOaW53NU3QQTlUQoRs4czw==}
@@ -2997,9 +2967,6 @@ packages:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
     engines: {node: '>=10'}
 
-  lodash.debounce@4.0.8:
-    resolution: {integrity: sha512-FT1yDzDYEoYWhnSGnpE/4Kj1fLZkDFyqRb7fNt6FdYOSxlUWAtp42Eh6Wb0rGIv/m9Bgo7x4GhQbm5Ys4SG5ow==}
-
   lodash.escaperegexp@4.1.2:
     resolution: {integrity: sha512-TM9YBvyC84ZxE3rgfefxUWiQKLilstD6k7PTGt6wfbtXF8ixIJLOL3VYyV/z+ZiPLsVxAsKAFVwWlWeb2Y8Yyw==}
 
@@ -3016,10 +2983,6 @@ packages:
   log-symbols@4.1.0:
     resolution: {integrity: sha512-8XPvpAA8uyhfteu8pIvQxpJZ7SYYdpUivZpGy6sFsBuKRY/7rQGavedeB8aK+Zkyq6upMFVL/9AW6vOYzfRyLg==}
     engines: {node: '>=10'}
-
-  loglevel@1.9.1:
-    resolution: {integrity: sha512-hP3I3kCrDIMuRwAwHltphhDM1r8i55H33GgqjXbrisuJhF4kRhW1dNuxsRklp4bXl8DSdLaNLuiL4A/LWRfxvg==}
-    engines: {node: '>= 0.6.0'}
 
   loglevel@1.9.2:
     resolution: {integrity: sha512-HgMmCqIJSAKqo68l0rS2AanEWfkxaZ5wNiEFb5ggm08lDs9Xl2KxBlX3PTcaD2chBM1gXAYf491/M2Rv8Jwayg==}
@@ -3932,12 +3895,6 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  usehooks-ts@3.1.1:
-    resolution: {integrity: sha512-I4diPp9Cq6ieSUH2wu+fDAVQO43xwtulo+fKEidHUwZPnYImbtkTjzIJYcDcJqxgmX31GVqNFURodvcgHcW0pA==}
-    engines: {node: '>=16.15.0'}
-    peerDependencies:
-      react: ^16.8.0  || ^17 || ^18 || ^19 || ^19.0.0-rc
-
   utf8-byte-length@1.0.5:
     resolution: {integrity: sha512-Xn0w3MtiQ6zoz2vFyUVruaCL53O/DwUvkEeOvj+uulMm0BkUGYWmBYVyElqZaSLhY6ZD0ulfU3aBra2aVT4xfA==}
 
@@ -4548,28 +4505,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@livekit/components-core@0.12.12(livekit-client@2.17.1(@types/dom-mediacapture-record@1.0.22))(tslib@2.8.1)':
-    dependencies:
-      '@floating-ui/dom': 1.7.4
-      livekit-client: 2.17.1(@types/dom-mediacapture-record@1.0.22)
-      loglevel: 1.9.1
-      rxjs: 7.8.2
-      tslib: 2.8.1
-
-  '@livekit/components-react@2.9.19(livekit-client@2.17.1(@types/dom-mediacapture-record@1.0.22))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(tslib@2.8.1)':
-    dependencies:
-      '@livekit/components-core': 0.12.12(livekit-client@2.17.1(@types/dom-mediacapture-record@1.0.22))(tslib@2.8.1)
-      clsx: 2.1.1
-      events: 3.3.0
-      jose: 6.1.3
-      livekit-client: 2.17.1(@types/dom-mediacapture-record@1.0.22)
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-      tslib: 2.8.1
-      usehooks-ts: 3.1.1(react@18.3.1)
-
-  '@livekit/components-styles@1.2.0': {}
 
   '@livekit/mutex@1.1.1': {}
 
@@ -7098,8 +7033,6 @@ snapshots:
     dependencies:
       p-locate: 5.0.0
 
-  lodash.debounce@4.0.8: {}
-
   lodash.escaperegexp@4.1.2: {}
 
   lodash.isequal@4.5.0: {}
@@ -7112,8 +7045,6 @@ snapshots:
     dependencies:
       chalk: 4.1.2
       is-unicode-supported: 0.1.0
-
-  loglevel@1.9.1: {}
 
   loglevel@1.9.2: {}
 
@@ -8033,11 +7964,6 @@ snapshots:
 
   use-sync-external-store@1.6.0(react@18.3.1):
     dependencies:
-      react: 18.3.1
-
-  usehooks-ts@3.1.1(react@18.3.1):
-    dependencies:
-      lodash.debounce: 4.0.8
       react: 18.3.1
 
   utf8-byte-length@1.0.5: {}
