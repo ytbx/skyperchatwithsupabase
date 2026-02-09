@@ -360,9 +360,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
             if (sessionRef.current) {
                 await sessionRef.current.end();
+            } else {
+                // If no session exists, the callback won't trigger, so play it here
+                playCallEnded();
             }
-
-            playCallEnded();
 
             if (activeCallRef.current) {
                 // Delete the call record
@@ -387,6 +388,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         try {
             console.log('[CallContext] Initiating call to:', contactName);
+
+            // SIMULTANEOUS CALL BUG FIX:
+            // Check if there is already an incoming call from this user
+            if (incomingCallRef.current && incomingCallRef.current.caller_id === contactId) {
+                console.log('[CallContext] Incoming call from target user already exists, accepting that instead');
+                await acceptCall(incomingCallRef.current);
+                return;
+            }
+
             setCallStatus('ringing_outgoing');
             setIsCameraOff(callType === 'voice');
 
@@ -829,6 +839,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
                             console.log('[CallContext] Receiving incoming call while busy:', call);
                             setIncomingCall(call);
                             // Do NOT change callStatus or activeCall
+
+                            // SIMULTANEOUS CALL BUG FIX: 
+                            // If we were trying to call them (ringing_outgoing) and they called us at the same time:
+                            if (callStatusRef.current === 'ringing_outgoing' && activeCallRef.current.callee_id === call.caller_id) {
+                                console.log('[CallContext] Simultaneous call collision detected!');
+
+                                // Lower ID wins strategy
+                                if (user.id < call.caller_id) {
+                                    console.log('[CallContext] Our ID is lower, continuing our outgoing call. Targeted user should accept ours.');
+                                    // We "won", we keep waiting for them to accept our call. 
+                                    // They will receive our INSERT and their code will determine they "lost" and accept ours.
+                                } else {
+                                    console.log('[CallContext] Our ID is higher, cancelling our outgoing call and accepting theirs.');
+                                    // We "lost", cancel ours and accept theirs
+                                    if (sessionRef.current) {
+                                        sessionRef.current.end().catch(console.error);
+                                    }
+                                    // Delete our outgoing call record
+                                    supabase.from('direct_calls').delete().eq('id', activeCallRef.current.id).then();
+
+                                    // Now accept their call
+                                    acceptCall(call);
+                                }
+                            }
                         } else {
                             setActiveCall(call);
                             setCallStatus('ringing_incoming');
@@ -910,7 +944,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                console.log(`[CallContext] Call subscription status: ${status}`);
+                if (status === 'CHANNEL_ERROR') {
+                    console.error('[CallContext] Call channel error, attempt to reconnect might be needed');
+                }
+                if (status === 'TIMED_OUT') {
+                    console.warn('[CallContext] Call channel timed out');
+                }
+            });
 
         return () => {
             console.log('[CallContext] Cleaning up call subscriptions');

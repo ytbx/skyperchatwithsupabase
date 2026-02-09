@@ -22,7 +22,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   /* eslint-disable @typescript-eslint/no-unused-vars */
   /* eslint-disable react-hooks/exhaustive-deps */
   const { user } = useAuth();
-  const { isUserOnline } = useSupabaseRealtime();
+  const { isUserOnline, getUserStatus } = useSupabaseRealtime();
   const { friends, friendRequests, sentRequests, loading, acceptFriendRequest, declineFriendRequest, removeFriend, sendFriendRequest, cancelFriendRequest } = useFriend();
 
   const [activeTab, setActiveTab] = useState<'friends' | 'pending' | 'add'>('friends');
@@ -162,6 +162,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'online': return 'bg-green-500';
+      case 'idle': return 'bg-blue-500';
       case 'away': return 'bg-yellow-500';
       case 'busy': return 'bg-red-500';
       default: return 'bg-gray-500';
@@ -171,6 +172,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   const getStatusText = (status: string) => {
     switch (status) {
       case 'online': return 'Çevrimiçi';
+      case 'idle': return 'Boşta';
       case 'away': return 'Uzakta';
       case 'busy': return 'Meşgul';
       default: return 'Çevrimdışı';
@@ -283,8 +285,8 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                                 </span>
                               )}
                             </div>
-                            {/* Online status indicator */}
-                            <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${isUserOnline(friend.id) ? 'bg-green-500' : 'bg-gray-500'
+                            {/* Online/Idle status indicator */}
+                            <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-900 ${getStatusColor(getUserStatus(friend.id))
                               }`} />
                           </div>
 
@@ -293,9 +295,9 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                             <h3 className="text-white font-medium text-sm truncate">
                               {friend.username}
                             </h3>
-                            <p className={`text-xs truncate ${isUserOnline(friend.id) ? 'text-green-400' : 'text-gray-400'
+                            <p className={`text-xs truncate ${isUserOnline(friend.id) ? (getUserStatus(friend.id) === 'idle' ? 'text-blue-400' : 'text-green-400') : 'text-gray-400'
                               }`}>
-                              {isUserOnline(friend.id) ? 'Çevrimiçi' : 'Çevrimdışı'}
+                              {getStatusText(getUserStatus(friend.id))}
                             </p>
                           </div>
 

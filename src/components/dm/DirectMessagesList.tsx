@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Profile } from '../../lib/types';
+import { useSupabaseRealtime } from '../../contexts/SupabaseRealtimeContext';
 import { Search, Plus, MessageCircle, Phone, Video, MoreVertical, Hash, UserPlus } from 'lucide-react';
 
 interface DirectMessage {
@@ -34,6 +35,7 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
   selectedContactId
 }) => {
   const { user } = useAuth();
+  const { isUserOnline, getUserStatus } = useSupabaseRealtime();
   const [conversations, setConversations] = useState<DMConversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -246,9 +248,9 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
                         {conversation.contactName.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    {/* Online indicator */}
-                    {conversation.isOnline && (
-                      <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-gray-900 rounded-full"></div>
+                    {/* Online/Idle indicator */}
+                    {isUserOnline(conversation.contactId) && (
+                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getUserStatus(conversation.contactId) === 'idle' ? 'bg-blue-500' : 'bg-green-500'} border-2 border-gray-900 rounded-full`}></div>
                     )}
                   </div>
 

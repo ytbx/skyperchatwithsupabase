@@ -546,28 +546,23 @@ export class WebRTCPeer {
             // Store the sender so we can remove exactly this one later
             this.screenSender = this.pc.addTrack(videoTrack, screenStream);
 
-            // Configure sender parameters for 1080p 60fps stability
+            // Configure sender parameters for smooth 1080p 60fps
             try {
-                // Set content hint for better text/detail compression
+                // Set content hint for better compression of screen content
                 if (videoTrack.contentHint !== undefined) {
-                    videoTrack.contentHint = 'motion';
+                    videoTrack.contentHint = quality === 'fullhd' ? 'detail' : 'motion';
                 }
 
+                // Let WebRTC handle bitrate automatically for optimal quality
+                // We only set priority hints to ensure screen share gets bandwidth priority
                 const params = this.screenSender.getParameters();
                 if (!params.encodings) params.encodings = [{}];
 
-                // Dynamic bitrate based on quality
-                const targetBitrate = quality === 'fullhd' ? 8000000 : 4000000;
-                params.encodings[0].maxBitrate = targetBitrate;
                 params.encodings[0].priority = 'high';
                 params.encodings[0].networkPriority = 'high';
 
-                // degradationPreference: 'maintain-framerate'
-                // Prioritize smoothness over resolution
-                (params as any).degradationPreference = 'maintain-framerate';
-
                 await this.screenSender.setParameters(params);
-                console.log(`[WebRTCPeer] Configured screen share sender: ${targetBitrate / 1000000}Mbps, balanced mode`);
+                console.log(`[WebRTCPeer] Screen share configured with default WebRTC bitrate, priority: high`);
             } catch (e) {
                 console.error('[WebRTCPeer] Error configuring screen share sender:', e);
             }

@@ -5,7 +5,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { useCall } from '../../contexts/CallContext';
 import { useSupabaseRealtime } from '../../contexts/SupabaseRealtimeContext';
 import { DirectMessage } from '../../lib/types';
-import { Send, Paperclip, Smile, MoreVertical, Hash, User, Search, X, Clock, Hash as ChannelIcon, Users, Phone, Video, Trash2 } from 'lucide-react';
+import { Send, Paperclip, Smile, MoreVertical, Hash, User, Search, X, Clock, Hash as ChannelIcon, Users, Phone, Video, Trash2, Plus } from 'lucide-react';
 import { ActiveCallOverlay } from '../call/ActiveCallOverlay';
 import { FileUploadService } from '@/services/FileUploadService';
 import { FilePreview } from '@/components/common/FilePreview';
@@ -42,6 +42,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const messageInputRef = useRef<HTMLInputElement>(null);
   const prevMessagesLengthRef = useRef(0);
   const isAtBottomRef = useRef(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   // Search functionality states
   const [showSearch, setShowSearch] = useState(false);
@@ -127,6 +128,9 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
     if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
       scrollToBottom();
+      setShowScrollButton(false);
+    } else if (isNewMessageAtBottom && !isAtBottomRef.current) {
+      setShowScrollButton(true);
     }
 
     if (lastMessage) {
@@ -341,6 +345,10 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
     const offset = 100;
     const currentIsAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + offset;
     isAtBottomRef.current = currentIsAtBottom;
+
+    if (currentIsAtBottom) {
+      setShowScrollButton(false);
+    }
 
     if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
       loadMoreMessages();
@@ -909,6 +917,24 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
           </>
         )}
       </div>
+
+      {/* New Message Notification Button */}
+      {showScrollButton && (
+        <div className="relative h-0">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 transition-all duration-300 animate-fade-in">
+            <button
+              onClick={() => {
+                scrollToBottom();
+                setShowScrollButton(false);
+              }}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-blue-400/30 backdrop-blur-md bg-opacity-90"
+            >
+              <Plus className="w-4 h-4 rotate-45 transform translate-y-0.5" />
+              <span>Yeni mesajlar var - En aşağı git</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Message Input */}
       <div className="p-4 border-t border-gray-700">

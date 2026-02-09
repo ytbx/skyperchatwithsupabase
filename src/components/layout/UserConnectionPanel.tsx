@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useVoiceChannel } from '@/contexts/VoiceChannelContext';
 import { useCall } from '@/contexts/CallContext';
 import { SoundPanelPopup } from '@/components/soundboard/SoundPanelPopup';
+import { useSupabaseRealtime } from '@/contexts/SupabaseRealtimeContext';
 import { supabase } from '@/lib/supabase';
 
 export const UserConnectionPanel: React.FC = () => {
@@ -35,6 +36,10 @@ export const UserConnectionPanel: React.FC = () => {
         toggleCamera: toggleCallCamera,
         playSoundboardAudio: playCallSoundboard
     } = useCall();
+
+    const {
+        isIdle
+    } = useSupabaseRealtime();
 
     const [showSoundPanel, setShowSoundPanel] = useState(false);
 
@@ -208,14 +213,14 @@ export const UserConnectionPanel: React.FC = () => {
                             </span>
                         )}
                     </div>
-                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-[3px] border-gray-900" />
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${isIdle ? 'bg-blue-500' : 'bg-green-500'} border-[3px] border-gray-900`} />
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold text-white truncate">
                         {profile?.username || 'Kullanıcı'}
                     </div>
                     <div className="text-xs text-gray-400">
-                        {isCallActive ? 'Görüşmede' : isVoiceActive ? 'Sesli Kanalda' : 'Çevrimiçi'}
+                        {isCallActive ? 'Görüşmede' : isVoiceActive ? 'Sesli Kanalda' : (isIdle ? 'Boşta' : 'Çevrimiçi')}
                     </div>
                 </div>
                 <button

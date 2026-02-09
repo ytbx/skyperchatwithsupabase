@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseUrl } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { useCall } from './CallContext';
-import { WebRTCManager } from '@/services/WebRTCManager';
 import { Profile } from '@/lib/types';
 import { ScreenSharePickerModal } from '@/components/modals/ScreenSharePickerModal';
 import { ScreenShareQualityModal } from '@/components/modals/ScreenShareQualityModal';
@@ -13,6 +12,26 @@ import { useNoiseSuppression } from './NoiseSuppressionContext';
 import { noiseSuppressionService } from '@/services/NoiseSuppression';
 import { useAudioNotifications } from '@/hooks/useAudioNotifications';
 
+// LiveKit imports
+import {
+    Room,
+    RoomEvent,
+    LocalParticipant,
+    RemoteParticipant,
+    Track,
+    LocalTrackPublication,
+    RemoteTrackPublication,
+    ConnectionState,
+    Participant,
+    TrackPublication,
+    createLocalAudioTrack,
+    createLocalVideoTrack,
+    LocalTrack,
+    VideoPresets,
+} from 'livekit-client';
+
+// LiveKit WebSocket URL
+const LIVEKIT_WS_URL = import.meta.env.VITE_LIVEKIT_URL || 'wss://ovox2-0yrakl4s.livekit.cloud';
 
 interface VoiceParticipant {
     user_id: string;
@@ -21,7 +40,6 @@ interface VoiceParticipant {
     is_deafened: boolean;
     is_video_enabled: boolean;
     is_screen_sharing: boolean;
-    peerConnection?: RTCPeerConnection;
     stream?: MediaStream;           // Voice/mic stream
     soundpadStream?: MediaStream;   // Separate soundpad stream
     screenStream?: MediaStream;
@@ -58,30 +76,24 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
     const [isDeafened, setIsDeafened] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isCameraEnabled, setIsCameraEnabled] = useState(false);
-    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
     const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
     const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
+
+    const { isEnabled: isNoiseSuppressionEnabled } = useNoiseSuppression();
     const { playStreamStarted, playStreamStopped, playMicOpen, playMicClosed } = useAudioNotifications();
 
-    // Map of userId -> WebRTCManager
-    const peerManagers = useRef<Map<string, WebRTCManager>>(new Map());
-    const peerMetadata = useRef<Map<string, { joined_at: string }>>(new Map());
-    const localStreamRef = useRef<MediaStream | null>(null);
-    const rawLocalStreamRef = useRef<MediaStream | null>(null);
+    // LiveKit Room reference
+    const roomRef = useRef<Room | null>(null);
+    const activeChannelIdRef = useRef<number | null>(null);
 
-    const screenStreamRef = useRef<MediaStream | null>(null);
-    const cameraStreamRef = useRef<MediaStream | null>(null);
+    // Soundboard audio
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const soundpadDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+
+    // Native audio capture (Electron)
     const nativeAudioProcessorRef = useRef<PCMAudioProcessor | null>(null);
     const nativeAudioUnsubscribeRef = useRef<(() => void) | null>(null);
     const activeNativeAudioPidRef = useRef<string | null>(null);
-
-    const activeChannelIdRef = useRef<number | null>(null);
-
-    // Soundboard audio - SEPARATE TRACK for independent volume control
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const soundpadDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-    const soundpadStreamRef = useRef<MediaStream | null>(null);  // Persistent soundpad stream
 
     useEffect(() => {
         activeChannelIdRef.current = activeChannelId;
@@ -95,14 +107,12 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             const prevState = prevStreamStatesRef.current.get(p.user_id);
 
             if (prevState) {
-                // Check screen sharing
                 if (p.is_screen_sharing && !prevState.screen) {
                     playStreamStarted();
                 } else if (!p.is_screen_sharing && prevState.screen) {
                     playStreamStopped();
                 }
 
-                // Check camera (video)
                 if (p.is_video_enabled && !prevState.video) {
                     playStreamStarted();
                 } else if (!p.is_video_enabled && prevState.video) {
@@ -110,14 +120,12 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 }
             }
 
-            // Update ref
             prevStreamStatesRef.current.set(p.user_id, {
                 screen: !!p.is_screen_sharing,
                 video: !!p.is_video_enabled
             });
         });
 
-        // Cleanup removed participants from ref
         const currentIds = new Set(participants.map(p => p.user_id));
         for (const userId of Array.from(prevStreamStatesRef.current.keys())) {
             if (!currentIds.has(userId)) {
@@ -138,25 +146,120 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         audio.play().catch(e => console.error('Error playing leave sound:', e));
     }, []);
 
-    const sendSignal = async (toUserId: string, type: string, payload: any) => {
-        if (!user || !activeChannelIdRef.current) return;
+    // Get LiveKit token from Supabase Edge Function
+    const getLiveKitToken = async (channelId: number): Promise<{ token: string; wsUrl: string; roomName: string }> => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
 
-        await supabase.from('webrtc_signals').insert({
-            channel_id: activeChannelIdRef.current,
-            from_user_id: user.id,
-            to_user_id: toUserId,
-            signal_type: type,
-            payload
+        const response = await fetch(`${supabaseUrl}/functions/v1/livekit-token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ channelId }),
         });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to get LiveKit token');
+        }
+
+        return response.json();
     };
 
-    // Cleanup peer connections without stopping local media
-    const cleanupPeerConnections = useCallback(() => {
-        peerManagers.current.forEach(manager => manager.cleanup());
-        peerManagers.current.clear();
-        peerMetadata.current.clear();
-        setParticipants([]);
-    }, []);
+    // Update participants from LiveKit room
+    const updateParticipantsFromRoom = useCallback(() => {
+        const room = roomRef.current;
+        if (!room) return;
+
+        const allParticipants: VoiceParticipant[] = [];
+
+        // Add local participant
+        const localParticipant = room.localParticipant;
+        if (localParticipant && user && profile) {
+            const metadata = localParticipant.metadata ? JSON.parse(localParticipant.metadata) : {};
+
+            let localAudioStream: MediaStream | undefined;
+            let localCameraStream: MediaStream | undefined;
+            let localScreenStream: MediaStream | undefined;
+
+            localParticipant.trackPublications.forEach((pub) => {
+                if (pub.track) {
+                    if (pub.source === Track.Source.Microphone && pub.track.kind === 'audio') {
+                        localAudioStream = new MediaStream([pub.track.mediaStreamTrack]);
+                    } else if (pub.source === Track.Source.Camera && pub.track.kind === 'video') {
+                        localCameraStream = new MediaStream([pub.track.mediaStreamTrack]);
+                    } else if (pub.source === Track.Source.ScreenShare) {
+                        if (!localScreenStream) localScreenStream = new MediaStream();
+                        localScreenStream.addTrack(pub.track.mediaStreamTrack);
+                    } else if (pub.source === Track.Source.ScreenShareAudio) {
+                        if (!localScreenStream) localScreenStream = new MediaStream();
+                        localScreenStream.addTrack(pub.track.mediaStreamTrack);
+                    }
+                }
+            });
+
+            allParticipants.push({
+                user_id: user.id,
+                profile: profile,
+                is_muted: !localParticipant.isMicrophoneEnabled,
+                is_deafened: isDeafened,
+                is_video_enabled: localParticipant.isCameraEnabled,
+                is_screen_sharing: localParticipant.isScreenShareEnabled,
+                stream: localAudioStream,
+                cameraStream: localCameraStream,
+                screenStream: localScreenStream,
+            });
+        }
+
+        // Add remote participants
+        room.remoteParticipants.forEach((participant) => {
+            const metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
+
+            let audioStream: MediaStream | undefined;
+            let cameraStream: MediaStream | undefined;
+            let screenStream: MediaStream | undefined;
+
+            participant.trackPublications.forEach((pub) => {
+                if (pub.track && pub.isSubscribed) {
+                    if (pub.source === Track.Source.Microphone && pub.track.kind === 'audio') {
+                        audioStream = new MediaStream([pub.track.mediaStreamTrack]);
+                    } else if (pub.source === Track.Source.Camera && pub.track.kind === 'video') {
+                        cameraStream = new MediaStream([pub.track.mediaStreamTrack]);
+                    } else if (pub.source === Track.Source.ScreenShare) {
+                        if (!screenStream) screenStream = new MediaStream();
+                        screenStream.addTrack(pub.track.mediaStreamTrack);
+                    } else if (pub.source === Track.Source.ScreenShareAudio) {
+                        if (!screenStream) screenStream = new MediaStream();
+                        screenStream.addTrack(pub.track.mediaStreamTrack);
+                    }
+                }
+            });
+
+            allParticipants.push({
+                user_id: participant.identity,
+                profile: {
+                    id: participant.identity,
+                    username: metadata.username || 'Unknown',
+                    display_name: metadata.displayName || metadata.username || 'Unknown',
+                    avatar_url: metadata.avatarUrl || null,
+                    email: '',
+                    profile_image_url: metadata.avatarUrl || null,
+                    created_at: new Date().toISOString(),
+                } as Profile,
+                is_muted: !participant.isMicrophoneEnabled,
+                is_deafened: false,
+                is_video_enabled: participant.isCameraEnabled,
+                is_screen_sharing: participant.isScreenShareEnabled,
+                stream: audioStream,
+                cameraStream: cameraStream,
+                screenStream: screenStream,
+            });
+        });
+
+        setParticipants(allParticipants);
+    }, [user, profile, isDeafened]);
 
     // Leave channel
     const leaveChannel = useCallback(async () => {
@@ -165,70 +268,10 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         console.log('[VoiceChannelContext] Leaving channel...');
         playLeaveSound();
 
-        // First, stop screen share if active (this will signal peers)
-        if (isScreenSharing && screenStreamRef.current) {
-            console.log('[VoiceChannelContext] Stopping screen share before leaving...');
-            screenStreamRef.current.getTracks().forEach(track => track.stop());
-            screenStreamRef.current = null;
-
-            // Notify peers about screen share stop
-            for (const [peerId, manager] of peerManagers.current.entries()) {
-                try {
-                    await manager.stopScreenShare();
-                    const offer = await manager.createOffer();
-                    await supabase.from('webrtc_signals').insert({
-                        channel_id: activeChannelIdRef.current,
-                        from_user_id: user.id,
-                        to_user_id: peerId,
-                        signal_type: 'offer',
-                        payload: offer
-                    });
-                } catch (e) {
-                    console.log('[VoiceChannelContext] Error stopping screen share for peer:', e);
-                }
-            }
-
-            if (activeChannelIdRef.current) {
-                await supabase
-                    .from('voice_channel_users')
-                    .update({ is_screen_sharing: false })
-                    .eq('channel_id', activeChannelIdRef.current)
-                    .eq('user_id', user.id);
-            }
-        }
-
-        // Then, stop camera if active
-        if (isCameraEnabled && cameraStreamRef.current) {
-            console.log('[VoiceChannelContext] Stopping camera before leaving...');
-            cameraStreamRef.current.getTracks().forEach(track => track.stop());
-            cameraStreamRef.current = null;
-
-            if (activeChannelIdRef.current) {
-                await supabase
-                    .from('voice_channel_users')
-                    .update({ is_video_enabled: false })
-                    .eq('channel_id', activeChannelIdRef.current)
-                    .eq('user_id', user.id);
-            }
-        }
-
-        // Stop local audio stream
-        if (rawLocalStreamRef.current) {
-            rawLocalStreamRef.current.getTracks().forEach(track => track.stop());
-            rawLocalStreamRef.current = null;
-        }
-
-        localStreamRef.current = null;
-        setLocalStream(null);
-
-        cleanupPeerConnections();
-
-        if (activeChannelIdRef.current && isConnected) {
-            await supabase
-                .from('voice_channel_users')
-                .delete()
-                .eq('channel_id', activeChannelIdRef.current)
-                .eq('user_id', user.id);
+        // Disconnect from LiveKit room
+        if (roomRef.current) {
+            roomRef.current.disconnect();
+            roomRef.current = null;
         }
 
         // Stop native audio capture
@@ -238,18 +281,27 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
         if (nativeAudioProcessorRef.current) {
             if (activeNativeAudioPidRef.current) {
-                window.electron.nativeAudio.stopCapture(activeNativeAudioPidRef.current);
+                window.electron?.nativeAudio?.stopCapture(activeNativeAudioPidRef.current);
                 activeNativeAudioPidRef.current = null;
             }
             nativeAudioProcessorRef.current = null;
+        }
+
+        // Update database
+        if (activeChannelIdRef.current) {
+            await supabase
+                .from('voice_channel_users')
+                .delete()
+                .eq('channel_id', activeChannelIdRef.current)
+                .eq('user_id', user.id);
         }
 
         setIsConnected(false);
         setActiveChannelId(null);
         setIsScreenSharing(false);
         setIsCameraEnabled(false);
-        // We keep mute/deafen state as user preference
-    }, [user, isConnected, isScreenSharing, isCameraEnabled, cleanupPeerConnections]);
+        setParticipants([]);
+    }, [user, playLeaveSound]);
 
     // Join channel
     const joinChannel = useCallback(async (channelId: number) => {
@@ -257,18 +309,17 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
         console.log('[VoiceChannelContext] Request to join channel:', channelId);
 
-        // Cooperative cleanup: trigger cleanup of stale users before joining
+        // Cooperative cleanup
         try {
             await supabase.rpc('cleanup_stale_users');
         } catch (e) {
             console.error('[VoiceChannelContext] Error during cooperative cleanup:', e);
         }
 
-        // 1. Handle existing connections
+        // Handle existing connections
         if (activeCall) {
             console.log('[VoiceChannelContext] Active direct call detected. Ending it...');
             await endCall();
-            // Give a small buffer for cleanup
             await new Promise(resolve => setTimeout(resolve, 500));
         }
 
@@ -279,58 +330,97 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
             }
             console.log('[VoiceChannelContext] Already in another channel. Leaving...');
             await leaveChannel();
-            // Give a small buffer for cleanup
             await new Promise(resolve => setTimeout(resolve, 500));
         }
 
         try {
             setActiveChannelId(channelId);
 
-            // 2. Get local media (microphone)
-            const rawStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
+            // Get LiveKit token
+            console.log('[VoiceChannelContext] Getting LiveKit token...');
+            const { token, wsUrl, roomName } = await getLiveKitToken(channelId);
+            console.log('[VoiceChannelContext] Got token for room:', roomName);
 
-                    autoGainControl: true
+            // Create and configure Room
+            const room = new Room({
+                adaptiveStream: true,
+                dynacast: true,
+                videoCaptureDefaults: {
+                    resolution: VideoPresets.h720.resolution,
                 },
-                video: false
-            });
-            rawLocalStreamRef.current = rawStream;
-
-            let finalStream = rawStream;
-            if (isNoiseSuppressionEnabled) {
-                console.log('[VoiceChannelContext] Applying noise suppression to join stream');
-                try {
-                    finalStream = await noiseSuppressionService.processStream(rawStream);
-                } catch (err) {
-                    console.error('[VoiceChannelContext] Noise suppression failed, using raw stream:', err);
-                }
-            }
-
-            setLocalStream(finalStream);
-            localStreamRef.current = finalStream;
-
-            // Apply mute state
-            finalStream.getAudioTracks().forEach(track => {
-                track.enabled = !isMuted;
+                audioCaptureDefaults: {
+                    echoCancellation: true,
+                    autoGainControl: true,
+                    noiseSuppression: isNoiseSuppressionEnabled,
+                },
             });
 
-            // 3. Create persistent soundpad stream for separate audio track
-            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-                audioContextRef.current = new AudioContext();
-            }
-            const ctx = audioContextRef.current;
-            if (ctx.state === 'suspended') {
-                await ctx.resume();
-            }
+            roomRef.current = room;
 
-            // Create a persistent destination for soundpad audio
-            soundpadDestinationRef.current = ctx.createMediaStreamDestination();
-            soundpadStreamRef.current = soundpadDestinationRef.current.stream;
-            console.log('[VoiceChannelContext] Created separate soundpad stream');
+            // Set up room event handlers
+            room.on(RoomEvent.Connected, () => {
+                console.log('[VoiceChannelContext] Connected to LiveKit room');
+                setIsConnected(true);
+                playJoinSound();
+                updateParticipantsFromRoom();
+            });
 
-            // 3. Add user to voice_channel_users (Use upsert to handle unique constraint)
-            const { error } = await supabase
+            room.on(RoomEvent.Disconnected, () => {
+                console.log('[VoiceChannelContext] Disconnected from LiveKit room');
+                setIsConnected(false);
+            });
+
+            room.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
+                console.log('[VoiceChannelContext] Participant joined:', participant.identity);
+                playJoinSound();
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+                console.log('[VoiceChannelContext] Participant left:', participant.identity);
+                playLeaveSound();
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                console.log('[VoiceChannelContext] Track subscribed:', track.kind, 'from', participant.identity);
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                console.log('[VoiceChannelContext] Track unsubscribed:', track.kind, 'from', participant.identity);
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.TrackMuted, (publication, participant) => {
+                console.log('[VoiceChannelContext] Track muted:', publication.source, 'from', participant.identity);
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+                console.log('[VoiceChannelContext] Track unmuted:', publication.source, 'from', participant.identity);
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
+                console.log('[VoiceChannelContext] Local track published:', publication.source);
+                updateParticipantsFromRoom();
+            });
+
+            room.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
+                console.log('[VoiceChannelContext] Local track unpublished:', publication.source);
+                updateParticipantsFromRoom();
+            });
+
+            // Connect to room
+            console.log('[VoiceChannelContext] Connecting to LiveKit room...');
+            await room.connect(wsUrl || LIVEKIT_WS_URL, token);
+
+            // Enable microphone
+            await room.localParticipant.setMicrophoneEnabled(!isMuted);
+
+            // Update database
+            await supabase
                 .from('voice_channel_users')
                 .upsert({
                     channel_id: channelId,
@@ -340,515 +430,50 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     joined_at: new Date().toISOString()
                 }, { onConflict: 'user_id' });
 
-            if (error) throw error;
-
-            setIsConnected(true);
-            playJoinSound();
-
-            // 4. Fetch existing participants
-            const { data: existingUsers } = await supabase
-                .from('voice_channel_users')
-                .select('*, profile:profiles(*)')
-                .eq('channel_id', channelId)
-                .neq('user_id', user.id);
-
-            if (existingUsers) {
-                // Initialize connections with existing users
-                existingUsers.forEach(participant => {
-                    initiateConnection(participant.user_id, channelId);
-                });
+            // Setup soundpad stream
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new AudioContext();
             }
+            const ctx = audioContextRef.current;
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+            soundpadDestinationRef.current = ctx.createMediaStreamDestination();
 
         } catch (error) {
             console.error('[VoiceChannelContext] Error joining voice channel:', error);
             await leaveChannel();
         }
-    }, [activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel, callStatus]);
-
-    // Initialize WebRTC connection with a peer
-    const initiateConnection = async (peerId: string, channelId: number) => {
-        if (peerManagers.current.has(peerId)) return;
-
-        const manager = new WebRTCManager();
-        peerManagers.current.set(peerId, manager);
-
-        // Setup peer connection with soundpad callback
-        manager.createPeerConnection(
-            (remoteStream) => {
-                console.log('[VoiceChannelContext] Received VOICE stream from', peerId);
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === peerId ? { ...p, stream: remoteStream } : p
-                ));
-            },
-            (candidate) => {
-                // We need to pass channelId because activeChannelId state might not be updated in this closure if called immediately
-                if (user) {
-                    supabase.from('webrtc_signals').insert({
-                        channel_id: channelId,
-                        from_user_id: user.id,
-                        to_user_id: peerId,
-                        signal_type: 'ice-candidate',
-                        payload: candidate
-                    }).then();
-                }
-            },
-            undefined,
-            undefined,
-            (screenStream) => {
-                console.log('[VoiceChannelContext] Received screen share from', peerId);
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === peerId ? { ...p, screenStream: screenStream } : p
-                ));
-            },
-            (cameraStream) => {
-                console.log('[VoiceChannelContext] Received camera from', peerId);
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === peerId ? { ...p, cameraStream: cameraStream } : p
-                ));
-            },
-            // NEW: Soundpad callback - separate stream
-            (soundpadStream) => {
-                console.log('[VoiceChannelContext] Received SOUNDPAD stream from', peerId);
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === peerId ? { ...p, soundpadStream: soundpadStream } : p
-                ));
-            }
-        );
-
-        // Add voice (mic) stream first
-        if (localStreamRef.current) {
-            manager.addLocalStream(localStreamRef.current);
-        }
-
-        // Add soundpad stream second (separate track)
-        if (soundpadStreamRef.current) {
-            console.log('[VoiceChannelContext] Adding soundpad stream to peer:', peerId);
-            manager.addSoundpadStream(soundpadStreamRef.current);
-        }
-
-        // If already screen sharing, add screen share to this new peer
-        if (screenStreamRef.current) {
-            console.log('[VoiceChannelContext] Adding existing screen share to new peer:', peerId);
-            await manager.startScreenShare(screenStreamRef.current);
-        }
-
-        // If already camera enabled, add camera to this new peer
-        if (cameraStreamRef.current) {
-            console.log('[VoiceChannelContext] Adding existing camera to new peer:', peerId);
-            const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
-            manager.addVideoTrack(videoTrack, cameraStreamRef.current);
-        }
-
-        // Create offer
-        const offer = await manager.createOffer();
-        if (user) {
-            await supabase.from('webrtc_signals').insert({
-                channel_id: channelId,
-                from_user_id: user.id,
-                to_user_id: peerId,
-                signal_type: 'offer',
-                payload: offer
-            });
-        }
-    };
-
-    // Handle incoming signals
-    const handleSignal = async (payload: any) => {
-        const { from_user_id, signal_type, payload: signalPayload, channel_id } = payload;
-
-        // CRITICAL FIX: Ignore signals that don't belong to the active channel
-        // Use ref to avoid stale closure issues
-        if (!activeChannelIdRef.current || channel_id !== activeChannelIdRef.current) {
-            // console.log('[VoiceChannelContext] Ignoring signal for different channel/context:', channel_id, 'Active:', activeChannelIdRef.current);
-            return;
-        }
-
-        let manager = peerManagers.current.get(from_user_id);
-
-        if (!manager) {
-            manager = new WebRTCManager();
-            peerManagers.current.set(from_user_id, manager);
-
-            manager.createPeerConnection(
-                (remoteStream) => {
-                    console.log('[VoiceChannelContext] Received VOICE stream from', from_user_id);
-                    setParticipants(prev => prev.map(p =>
-                        p.user_id === from_user_id ? { ...p, stream: remoteStream } : p
-                    ));
-                },
-                (candidate) => {
-                    sendSignal(from_user_id, 'ice-candidate', candidate);
-                },
-                undefined,
-                undefined,
-                (screenStream) => {
-                    console.log('[VoiceChannelContext] Received screen share from', from_user_id);
-                    setParticipants(prev => prev.map(p =>
-                        p.user_id === from_user_id ? { ...p, screenStream: screenStream } : p
-                    ));
-                },
-                (cameraStream) => {
-                    console.log('[VoiceChannelContext] Received camera from', from_user_id);
-                    setParticipants(prev => prev.map(p =>
-                        p.user_id === from_user_id ? { ...p, cameraStream: cameraStream } : p
-                    ));
-                },
-                // NEW: Soundpad callback
-                (soundpadStream) => {
-                    console.log('[VoiceChannelContext] Received SOUNDPAD stream from', from_user_id);
-                    setParticipants(prev => prev.map(p =>
-                        p.user_id === from_user_id ? { ...p, soundpadStream: soundpadStream } : p
-                    ));
-                }
-            );
-
-            // Add voice (mic) stream first
-            if (localStreamRef.current) {
-                manager.addLocalStream(localStreamRef.current);
-            }
-
-            // Add soundpad stream second (separate track)
-            if (soundpadStreamRef.current) {
-                console.log('[VoiceChannelContext] Adding soundpad stream to peer from signal:', from_user_id);
-                manager.addSoundpadStream(soundpadStreamRef.current);
-            }
-
-            if (screenStreamRef.current) {
-                await manager.startScreenShare(screenStreamRef.current);
-            }
-
-            if (cameraStreamRef.current) {
-                const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
-                manager.addVideoTrack(videoTrack, cameraStreamRef.current);
-            }
-        }
-
-        if (signal_type === 'offer') {
-            await manager.setRemoteDescription(signalPayload);
-            const answer = await manager.createAnswer();
-            await sendSignal(from_user_id, 'answer', answer);
-        } else if (signal_type === 'answer') {
-            await manager.setRemoteDescription(signalPayload);
-        } else if (signal_type === 'ice-candidate') {
-            await manager.addICECandidate(signalPayload);
-        }
-    };
-
-    const fetchParticipants = async (channelId: number) => {
-        const { data } = await supabase
-            .from('voice_channel_users')
-            .select('*, profile:profiles(*)')
-            .eq('channel_id', channelId)
-            .order('joined_at', { ascending: true });
-
-        if (data) {
-            console.log('[VoiceChannelContext] Fetched participants:', data.length);
-
-            // Cleanup stale peer connections
-            const currentParticipantIds = new Set(data.map((p: any) => p.user_id));
-
-            // 1. Cleanup removed users
-            for (const [peerId, manager] of peerManagers.current.entries()) {
-                if (!currentParticipantIds.has(peerId)) {
-                    console.log('[VoiceChannelContext] User no longer in channel, cleaning up peer connection:', peerId);
-                    try {
-                        manager.cleanup();
-                    } catch (e) {
-                        console.error('[VoiceChannelContext] Error cleaning up peer manager:', e);
-                    }
-                    peerManagers.current.delete(peerId);
-                    peerMetadata.current.delete(peerId);
-                }
-            }
-
-            // 2. Cleanup rejoined users (new session)
-            data.forEach((p: any) => {
-                const meta = peerMetadata.current.get(p.user_id);
-                // If we have metadata and the joined_at timestamp changed, it's a new session
-                // We must cleanup the old connection to allow a new one
-                if (meta && meta.joined_at !== p.joined_at) {
-                    console.log('[VoiceChannelContext] User session changed (rejoin), cleaning up old manager:', p.user_id);
-                    if (peerManagers.current.has(p.user_id)) {
-                        try {
-                            peerManagers.current.get(p.user_id)?.cleanup();
-                        } catch (e) {
-                            console.error('[VoiceChannelContext] Error cleaning up peer manager on rejoin:', e);
-                        }
-                        peerManagers.current.delete(p.user_id);
-                    }
-                }
-                // Update metadata
-                peerMetadata.current.set(p.user_id, { joined_at: p.joined_at });
-            });
-
-            setParticipants(prev => {
-                // Merge existing streams with new data
-                return data.map((p: any) => {
-                    const existing = prev.find(prevP => prevP.user_id === p.user_id);
-                    // If this is the local user, use the local stream
-                    const stream = p.user_id === user?.id ? localStreamRef.current : existing?.stream;
-                    return {
-                        ...p,
-                        stream: stream,
-                        screenStream: existing?.screenStream,
-                        cameraStream: existing?.cameraStream,
-                        soundpadStream: existing?.soundpadStream
-                    };
-                });
-            });
-        }
-    };
-
-    // Subscription for channel participants (depends on activeChannelId)
-    useEffect(() => {
-        if (!user || !activeChannelId) return;
-
-        console.log('[VoiceChannelContext] Subscribing to channel updates:', activeChannelId);
-
-        const channelSub = supabase.channel(`voice_${activeChannelId}`)
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'voice_channel_users',
-                filter: `channel_id=eq.${activeChannelId}`
-            }, (payload) => {
-                // Handle sound effects for other users
-                if (payload.eventType === 'INSERT') {
-                    // Only play if it's not the local user (already played in joinChannel)
-                    if (payload.new && payload.new.user_id !== user.id) {
-                        playJoinSound();
-                    }
-                } else if (payload.eventType === 'DELETE') {
-                    // Only play if it's not the local user (already played in leaveChannel)
-                    // Note: payload.old might not have user_id if not in RLS identity, but we can assume
-                    // if we are still connected and receive a delete, it's someone else.
-                    if (payload.old && payload.old.user_id !== user.id) {
-                        playLeaveSound();
-                    } else if (payload.old && !payload.old.user_id) {
-                        // Fallback if user_id is missing in old payload (depends on table replica identity)
-                        // If we are still strictly connected and it's a delete event on this channel, 
-                        // it's likely someone else leaving.
-                        playLeaveSound();
-                    }
-                }
-
-                // Handle participant list updates
-                fetchParticipants(activeChannelId);
-            })
-            .subscribe();
-
-        fetchParticipants(activeChannelId);
-
-        return () => {
-            console.log('[VoiceChannelContext] Unsubscribing from channel updates');
-            channelSub.unsubscribe();
-        };
-    }, [activeChannelId, user?.id]);
-
-    // Subscription for signals and user movement (STABLE - depends only on user)
-    useEffect(() => {
-        if (!user) return;
-
-        console.log('[VoiceChannelContext] Setting up stable signal subscription for user:', user.id);
-
-        // Subscription for signals (always active)
-        const signalSub = supabase.channel(`signals_${user.id}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'webrtc_signals',
-                filter: `to_user_id=eq.${user.id}`
-            }, (payload) => {
-                handleSignal(payload.new);
-            })
-            .subscribe();
-
-        // Subscription for user movement (remote moves)
-        const userSub = supabase.channel(`user_voice_${user.id}`)
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'voice_channel_users',
-                filter: `user_id=eq.${user.id}`
-            }, async (payload) => {
-                const newChannelId = payload.new.channel_id;
-                const oldChannelId = payload.old.channel_id;
-
-                // Use ref for current active channel to check if we need to update
-                if (newChannelId !== activeChannelIdRef.current) {
-                    console.log('[VoiceChannelContext] Remote move detected:', oldChannelId, '->', newChannelId);
-
-                    // Cleanup old connections
-                    cleanupPeerConnections();
-
-                    // Update state
-                    setActiveChannelId(newChannelId);
-                    setIsConnected(true);
-
-                    // Connect to new channel peers
-                    const { data: existingUsers } = await supabase
-                        .from('voice_channel_users')
-                        .select('*, profile:profiles(*)')
-                        .eq('channel_id', newChannelId)
-                        .neq('user_id', user.id);
-
-                    if (existingUsers) {
-                        existingUsers.forEach(participant => {
-                            initiateConnection(participant.user_id, newChannelId);
-                        });
-                    }
-                }
-            })
-            .subscribe();
-
-        return () => {
-            console.log('[VoiceChannelContext] Cleaning up signal subscriptions');
-            signalSub.unsubscribe();
-            userSub.unsubscribe();
-        };
-    }, [user?.id, cleanupPeerConnections]);
+    }, [activeCall, endCall, user, profile, isMuted, isDeafened, leaveChannel, isNoiseSuppressionEnabled, playJoinSound, playLeaveSound, updateParticipantsFromRoom]);
 
     // Reactive Device Switching
     const { audioInputDeviceId, videoInputDeviceId } = useDeviceSettings();
 
-    // Handle microphone change
+    // Handle microphone device change
     useEffect(() => {
-        if (isConnected) {
-            console.log('[VoiceChannelContext] Microphone change detected, acquiring new stream');
+        if (isConnected && roomRef.current) {
+            const room = roomRef.current;
+            console.log('[VoiceChannelContext] Microphone change detected');
 
-            const updateMicrophone = async () => {
-                try {
-                    // 1. Stop old raw tracks
-                    if (rawLocalStreamRef.current) {
-                        rawLocalStreamRef.current.getTracks().forEach(t => t.stop());
-                    }
-
-
-                    // 2. Get new raw stream
-                    const rawStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            deviceId: audioInputDeviceId && audioInputDeviceId !== 'default' ? { exact: audioInputDeviceId } : undefined,
-                            echoCancellation: true,
-
-                            autoGainControl: true
-                        },
-                        video: false
-                    });
-                    rawLocalStreamRef.current = rawStream;
-
-                    let finalStream = rawStream;
-                    if (isNoiseSuppressionEnabled) {
-                        console.log('[VoiceChannelContext] Applying noise suppression to updated microphone stream');
-                        try {
-                            finalStream = await noiseSuppressionService.processStream(rawStream);
-                        } catch (err) {
-                            console.error('[VoiceChannelContext] Noise suppression failed during mic update:', err);
-                        }
-                    }
-
-                    // 4. Update local state
-                    setLocalStream(finalStream);
-                    localStreamRef.current = finalStream;
-
-                    // 5. Replace track for all active peer managers
-                    const newTrack = finalStream.getAudioTracks()[0];
-                    if (newTrack) {
-                        newTrack.enabled = !isMuted; // Apply current mute state
-                        for (const [peerId, manager] of peerManagers.current.entries()) {
-                            try {
-                                await manager.replaceAudioTrack(newTrack);
-                                console.log(`[VoiceChannelContext] ✓ Replaced audio track for peer: ${peerId}`);
-                            } catch (e) {
-                                console.error(`[VoiceChannelContext] Error replacing audio track for peer ${peerId}:`, e);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.error('[VoiceChannelContext] Failed to change microphone:', e);
-                }
-            };
-
-            updateMicrophone();
+            room.switchActiveDevice('audioinput', audioInputDeviceId || 'default').catch(e => {
+                console.error('[VoiceChannelContext] Failed to switch microphone:', e);
+            });
         }
     }, [audioInputDeviceId, isConnected]);
 
-    // Handle noise suppression toggle while connected
+    // Handle camera device change
     useEffect(() => {
-        if (isConnected) {
-            console.log('[VoiceChannelContext] Noise suppression toggled, updating stream');
-            const updateMicrophone = async () => {
-                try {
-                    // Reuse the existing raw stream if possible
-                    if (!rawLocalStreamRef.current) return;
+        if (isConnected && isCameraEnabled && roomRef.current) {
+            const room = roomRef.current;
+            console.log('[VoiceChannelContext] Camera change detected');
 
-                    const rawStream = rawLocalStreamRef.current;
-                    let finalStream = rawStream;
-
-                    if (isNoiseSuppressionEnabled) {
-                        console.log('[VoiceChannelContext] Enabling suppression for current stream');
-                        finalStream = await noiseSuppressionService.processStream(rawStream);
-                    } else {
-                        console.log('[VoiceChannelContext] Disabling suppression for current stream');
-                        // Cleanup previous processed stream if exists
-                        if (localStreamRef.current && (localStreamRef.current as any).stopSuppression) {
-                            (localStreamRef.current as any).stopSuppression();
-                        }
-                    }
-
-                    setLocalStream(finalStream);
-                    localStreamRef.current = finalStream;
-
-                    const newTrack = finalStream.getAudioTracks()[0];
-                    if (newTrack) {
-                        newTrack.enabled = !isMuted;
-                        for (const manager of peerManagers.current.values()) {
-                            await manager.replaceAudioTrack(newTrack);
-                        }
-                    }
-                } catch (e) {
-                    console.error('[VoiceChannelContext] Failed to toggle noise suppression logic:', e);
-                }
-            };
-            updateMicrophone();
-        }
-    }, [isNoiseSuppressionEnabled, isConnected]);
-
-    // Handle camera change
-    useEffect(() => {
-        if (isConnected && isCameraEnabled) {
-            console.log('[VoiceChannelContext] Camera change detected, replacing track for all peers');
-
-            const replaceTrackOnPeers = async () => {
-                let updatedStream: MediaStream | null = null;
-                for (const [peerId, manager] of peerManagers.current.entries()) {
-                    try {
-                        const s = await manager.replaceVideoTrack(videoInputDeviceId);
-                        if (s) updatedStream = s;
-                        console.log(`[VoiceChannelContext] ✓ Replaced video track for peer: ${peerId}`);
-                    } catch (e) {
-                        console.error(`[VoiceChannelContext] Error replacing video track for peer ${peerId}:`, e);
-                    }
-                }
-
-                if (updatedStream) {
-                    setLocalStream(new MediaStream(updatedStream.getTracks()));
-                }
-            };
-
-            replaceTrackOnPeers();
+            room.switchActiveDevice('videoinput', videoInputDeviceId || 'default').catch(e => {
+                console.error('[VoiceChannelContext] Failed to switch camera:', e);
+            });
         }
     }, [videoInputDeviceId, isConnected, isCameraEnabled]);
 
-    // Update local user's stream in participants when localStream changes
-    useEffect(() => {
-        if (localStream && user && activeChannelId) {
-            setParticipants(prev => prev.map(p =>
-                p.user_id === user.id ? { ...p, stream: localStream } : p
-            ));
-        }
-    }, [localStream, user, activeChannelId]);
-
-    // Track previous mute state to avoid playing sound on initial mount/join
+    // Track previous mute state
     const prevMuteRef = useRef(isMuted);
 
     // Handle mute toggle
@@ -862,32 +487,30 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
         prevMuteRef.current = isMuted;
 
-        // 1. Mute local stream (fallback/UI)
-        if (localStreamRef.current) {
-            localStreamRef.current.getAudioTracks().forEach(track => {
-                track.enabled = !isMuted;
+        if (roomRef.current && isConnected) {
+            roomRef.current.localParticipant.setMicrophoneEnabled(!isMuted).catch(e => {
+                console.error('[VoiceChannelContext] Failed to toggle mute:', e);
             });
-        }
 
-        // 2. Propagate to ALL active peer connections (Robust Fix)
-        peerManagers.current.forEach(manager => {
-            manager.toggleMicrophone(isMuted);
-        });
-
-        if (activeChannelId && user && isConnected) {
-            supabase
-                .from('voice_channel_users')
-                .update({ is_muted: isMuted })
-                .eq('channel_id', activeChannelId)
-                .eq('user_id', user.id)
-                .then(({ error }) => {
-                    if (error) console.error('Error updating mute state:', error);
-                });
+            // Update database
+            if (activeChannelId && user) {
+                supabase
+                    .from('voice_channel_users')
+                    .update({ is_muted: isMuted })
+                    .eq('channel_id', activeChannelId)
+                    .eq('user_id', user.id)
+                    .then(({ error }) => {
+                        if (error) console.error('Error updating mute state:', error);
+                    });
+            }
         }
-    }, [isMuted, activeChannelId, user?.id, isConnected]);
+    }, [isMuted, activeChannelId, user?.id, isConnected, playMicClosed, playMicOpen]);
 
     // Handle deafen toggle
     useEffect(() => {
+        // Deafen mutes incoming audio by setting remote track volume to 0
+        // Handled in audio rendering components
+
         if (activeChannelId && user && isConnected) {
             supabase
                 .from('voice_channel_users')
@@ -900,73 +523,23 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isDeafened, activeChannelId, user?.id, isConnected]);
 
-    // Handle incoming audio mute when deafened (Headphone Mute)
-    useEffect(() => {
-        participants.forEach(p => {
-            // Skip local user to prevent muting own microphone
-            if (p.user_id === user?.id) return;
-
-            // Mute/Unmute main voice stream
-            if (p.stream) {
-                p.stream.getAudioTracks().forEach(track => {
-                    track.enabled = !isDeafened;
-                });
-            }
-            // Mute/Unmute soundpad stream
-            if (p.soundpadStream) {
-                p.soundpadStream.getAudioTracks().forEach(track => {
-                    track.enabled = !isDeafened;
-                });
-            }
-        });
-    }, [isDeafened, participants, user?.id]);
-
-    // Start screen share with a specific stream
-    const startScreenShareWithStream = async (screenStream: MediaStream, quality: 'standard' | 'fullhd' = 'standard') => {
-        screenStreamRef.current = screenStream;
-
-        screenStream.getVideoTracks()[0].onended = () => {
-            toggleScreenShare();
-        };
-
-        // We use WebRTC default bitrate management now
-        for (const [peerId, manager] of peerManagers.current.entries()) {
-            // Passing quality ensures correct bitrate and degradation preference
-            await manager.startScreenShare(screenStream, quality);
-            const offer = await manager.createOffer();
-            await sendSignal(peerId, 'offer', offer);
-        }
-
-        await supabase
-            .from('voice_channel_users')
-            .update({ is_screen_sharing: true })
-            .eq('channel_id', activeChannelId!)
-            .eq('user_id', user!.id);
-
-        setParticipants(prev => prev.map(p =>
-            p.user_id === user!.id ? { ...p, screenStream: screenStream } : p
-        ));
-
-        setIsScreenSharing(true);
-    };
-
     // Toggle screen share
     const toggleScreenShare = useCallback(async () => {
-        if (!user || !activeChannelId || !isConnected) return;
+        if (!user || !activeChannelId || !isConnected || !roomRef.current) return;
 
         try {
             if (isScreenSharing) {
                 // Stop screen sharing
-                if (screenStreamRef.current) {
-                    screenStreamRef.current.getTracks().forEach(track => track.stop());
-                    screenStreamRef.current = null;
-                }
+                await roomRef.current.localParticipant.setScreenShareEnabled(false);
 
-                // Stop screen share for all peers and trigger renegotiation
-                for (const [peerId, manager] of peerManagers.current.entries()) {
-                    await manager.stopScreenShare();
-                    const offer = await manager.createOffer();
-                    await sendSignal(peerId, 'offer', offer);
+                // Stop native audio capture
+                if (nativeAudioUnsubscribeRef.current) {
+                    nativeAudioUnsubscribeRef.current();
+                    nativeAudioUnsubscribeRef.current = null;
+                }
+                if (activeNativeAudioPidRef.current && window.electron?.nativeAudio) {
+                    window.electron.nativeAudio.stopCapture(activeNativeAudioPidRef.current);
+                    activeNativeAudioPidRef.current = null;
                 }
 
                 await supabase
@@ -974,10 +547,6 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     .update({ is_screen_sharing: false })
                     .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
-
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === user.id ? { ...p, screenStream: undefined } : p
-                ));
 
                 setIsScreenSharing(false);
             } else {
@@ -987,7 +556,6 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 if (isElectron) {
                     setIsScreenShareModalOpen(true);
                 } else {
-                    // Web implementation - show quality picker first
                     setIsQualityModalOpen(true);
                 }
             }
@@ -996,37 +564,41 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isScreenSharing, user, activeChannelId, isConnected]);
 
-    // Handle web quality selection
+    // Handle web quality selection for screen share
     const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
         setIsQualityModalOpen(false);
-        try {
-            // Type assertion needed because suppressLocalAudioPlayback is not in standard TS definitions yet
-            const constraints = {
-                video: {
-                    width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
-                    height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                    frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
-                },
-                audio: true, // Allow system audio sharing
-                selfBrowserSurface: 'exclude' as any,
-                surfaceSwitching: 'include' as any,
-                systemAudio: 'include' as any
-            };
 
-            const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
-            await startScreenShareWithStream(screenStream, quality);
+        if (!roomRef.current) return;
+
+        try {
+            await roomRef.current.localParticipant.setScreenShareEnabled(true, {
+                audio: true,
+            });
+
+            await supabase
+                .from('voice_channel_users')
+                .update({ is_screen_sharing: true })
+                .eq('channel_id', activeChannelId!)
+                .eq('user_id', user!.id);
+
+            setIsScreenSharing(true);
         } catch (error) {
             console.error('[VoiceChannelContext] Error starting web screen share:', error);
         }
     };
 
-    // Handle screen share selection from modal
+    // Handle Electron screen share selection
     const handleScreenShareSelect = async (sourceId: string, quality: 'standard' | 'fullhd', shareAudio: boolean) => {
         setIsScreenShareModalOpen(false);
+
+        if (!roomRef.current || !user) return;
+
         try {
-            console.log('[VoiceChannelContext] getUserMedia request - sourceId:', sourceId, 'quality:', quality, 'shareAudio:', shareAudio);
+            console.log('[VoiceChannelContext] Starting Electron screen share:', sourceId, quality, shareAudio);
+
+            // Get video stream from Electron
             const videoStream = await (navigator.mediaDevices as any).getUserMedia({
-                audio: false, // We will handle audio via native capture if enabled
+                audio: false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
@@ -1038,11 +610,16 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 }
             });
 
-            let finalStream = videoStream;
+            const videoTrack = videoStream.getVideoTracks()[0];
 
-            // Handle Native Audio for Electron
-            if (shareAudio && typeof window !== 'undefined' && window.electron) {
-                console.log('[VoiceChannelContext] Starting native audio capture...');
+            // Publish the screen share track
+            await roomRef.current.localParticipant.publishTrack(videoTrack, {
+                source: Track.Source.ScreenShare,
+                name: 'screen',
+            });
+
+            // Handle native audio capture for Electron
+            if (shareAudio && window.electron?.nativeAudio) {
                 try {
                     let targetPid: string | null = null;
                     let captureMode: 'include' | 'exclude' = 'exclude';
@@ -1064,7 +641,7 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     if (started) {
                         activeNativeAudioPidRef.current = targetPid;
                         nativeAudioProcessorRef.current = new PCMAudioProcessor();
-                        nativeAudioUnsubscribeRef.current = window.electron.nativeAudio.onAudioData((chunk) => {
+                        nativeAudioUnsubscribeRef.current = window.electron.nativeAudio.onAudioData((chunk: any) => {
                             if (nativeAudioProcessorRef.current) {
                                 nativeAudioProcessorRef.current.processChunk(chunk);
                             }
@@ -1074,8 +651,10 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                         const audioTrack = audioStream.getAudioTracks()[0];
 
                         if (audioTrack) {
-                            console.log('[VoiceChannelContext] Adding native audio track (Mode:', captureMode, ')');
-                            finalStream = new MediaStream([...videoStream.getVideoTracks(), audioTrack]);
+                            await roomRef.current!.localParticipant.publishTrack(audioTrack, {
+                                source: Track.Source.ScreenShareAudio,
+                                name: 'screen-audio',
+                            });
                         }
                     }
                 } catch (err) {
@@ -1083,23 +662,25 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                 }
             }
 
-            console.log('[VoiceChannelContext] Got screen stream:', finalStream.id);
-            await startScreenShareWithStream(finalStream, quality);
+            await supabase
+                .from('voice_channel_users')
+                .update({ is_screen_sharing: true })
+                .eq('channel_id', activeChannelId!)
+                .eq('user_id', user.id);
+
+            setIsScreenSharing(true);
         } catch (e) {
-            console.error('Error getting electron screen stream:', e);
+            console.error('Error starting Electron screen share:', e);
         }
     };
 
     // Toggle camera
     const toggleCamera = useCallback(async () => {
-        if (!user || !activeChannelId || !isConnected) return;
+        if (!user || !activeChannelId || !isConnected || !roomRef.current) return;
 
         try {
             if (isCameraEnabled) {
-                if (cameraStreamRef.current) {
-                    cameraStreamRef.current.getTracks().forEach(track => track.stop());
-                    cameraStreamRef.current = null;
-                }
+                await roomRef.current.localParticipant.setCameraEnabled(false);
 
                 await supabase
                     .from('voice_channel_users')
@@ -1107,35 +688,15 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                     .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
 
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === user.id ? { ...p, cameraStream: undefined } : p
-                ));
-
                 setIsCameraEnabled(false);
             } else {
-                const cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: false
-                });
-
-                cameraStreamRef.current = cameraStream;
-
-                for (const [peerId, manager] of peerManagers.current.entries()) {
-                    const videoTrack = cameraStream.getVideoTracks()[0];
-                    manager.addVideoTrack(videoTrack, cameraStream);
-                    const offer = await manager.createOffer();
-                    await sendSignal(peerId, 'offer', offer);
-                }
+                await roomRef.current.localParticipant.setCameraEnabled(true);
 
                 await supabase
                     .from('voice_channel_users')
                     .update({ is_video_enabled: true })
                     .eq('channel_id', activeChannelId)
                     .eq('user_id', user.id);
-
-                setParticipants(prev => prev.map(p =>
-                    p.user_id === user.id ? { ...p, cameraStream: cameraStream } : p
-                ));
 
                 setIsCameraEnabled(true);
             }
@@ -1144,11 +705,8 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [isCameraEnabled, user, activeChannelId, isConnected]);
 
-    // Auto-leave channel when active call starts (Status is active or connecting)
+    // Auto-leave channel when active call starts
     useEffect(() => {
-        // We leave the voice channel ONLY if the call is actually connecting or active.
-        // We do NOT leave if it is just ringing (incoming or outgoing).
-        // This allows the user to decide whether to accept/initiated call without losing context immediately.
         const shouldLeave = activeCall && activeChannelId && (callStatus === 'active' || callStatus === 'connecting');
 
         if (shouldLeave) {
@@ -1157,51 +715,28 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         }
     }, [activeCall, activeChannelId, callStatus, leaveChannel]);
 
-
-    // Play soundboard audio - plays locally AND to separate soundpad track
+    // Play soundboard audio
     const playSoundboardAudio = useCallback((audioBuffer: AudioBuffer) => {
         console.log('[VoiceChannelContext] Playing soundboard audio, duration:', audioBuffer.duration, 's');
-        console.log('[VoiceChannelContext] Connected:', isConnected, 'Peer count:', peerManagers.current.size);
 
-        // Create or get audio context
         if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
             audioContextRef.current = new AudioContext();
         }
         const ctx = audioContextRef.current;
 
-        // Resume context if suspended (browser autoplay policy)
         if (ctx.state === 'suspended') {
             ctx.resume();
         }
 
-        // Play locally through speakers
+        // Play locally
         const localSource = ctx.createBufferSource();
         localSource.buffer = audioBuffer;
         localSource.connect(ctx.destination);
         localSource.start();
 
-        // Send to soundpad destination (separate track)
-        if (soundpadDestinationRef.current) {
-            console.log('[VoiceChannelContext] Sending soundboard to SEPARATE soundpad track');
-
-            // Create buffer source for WebRTC transmission
-            const remoteSource = ctx.createBufferSource();
-            remoteSource.buffer = audioBuffer;
-
-            // Create gain node for volume boost
-            const soundGain = ctx.createGain();
-            soundGain.gain.value = 1.5; // Slightly boost soundboard volume
-
-            // Connect: source -> gain -> soundpad destination
-            remoteSource.connect(soundGain);
-            soundGain.connect(soundpadDestinationRef.current);
-            remoteSource.start();
-
-            console.log('[VoiceChannelContext] ✓ Soundboard audio routed to soundpad track');
-        } else {
-            console.log('[VoiceChannelContext] No soundpad destination, playing locally only');
-        }
-    }, [isConnected]);
+        // TODO: Publish soundpad audio to LiveKit room if needed
+        // This would require creating a separate audio track for soundpad
+    }, []);
 
     const value: VoiceChannelContextType = {
         activeChannelId,
