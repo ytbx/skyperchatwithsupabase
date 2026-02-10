@@ -101,8 +101,8 @@ export class CallSession {
             // Create WebRTC peer
             this.peer = new WebRTCPeer({
                 onRemoteStream: (stream) => {
-                    console.log('[CallSession] Remote stream received');
-                    this.callbacks.onRemoteStream(new MediaStream(stream.getTracks()));
+                    console.log('[CallSession] Remote stream received, tracks:', stream.getTracks().length);
+                    this.callbacks.onRemoteStream(stream);
                     // Fallback: if we have remote stream, we should be active
                     if (this.state === 'connecting' || this.state === 'starting' || this.state === 'ringing') {
                         console.log('[CallSession] Remote stream received - setting state to active');
@@ -111,11 +111,11 @@ export class CallSession {
                 },
                 onRemoteSoundpad: (stream) => {
                     console.log('[CallSession] Remote soundpad received');
-                    this.callbacks.onRemoteSoundpad(new MediaStream(stream.getTracks()));
+                    this.callbacks.onRemoteSoundpad(stream);
                 },
                 onRemoteVideo: (stream) => {
                     console.log('[CallSession] Remote video stream received');
-                    this.callbacks.onRemoteScreenStream(new MediaStream(stream.getTracks()));
+                    this.callbacks.onRemoteScreenStream(stream);
                 },
                 onIceCandidate: async (candidate) => {
                     if (this.signaling) {

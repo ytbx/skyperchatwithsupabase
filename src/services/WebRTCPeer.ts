@@ -23,14 +23,12 @@ export class WebRTCPeer {
     private screenSender: RTCRtpSender | null = null;
     private screenAudioSender: RTCRtpSender | null = null;
 
-    private remoteStreamId: string | null = null;
+    // Track remote main audio stream ID to differentiate from soundpad
+    private remoteMainAudioStreamId: string | null = null;
 
     // ICE candidate queue - crucial for handling race conditions
     private pendingCandidates: RTCIceCandidateInit[] = [];
     private hasRemoteDescription = false;
-
-    // Track audio count to differentiate voice from soundpad
-    private audioTrackCount = 0;
 
     // Flag to expect next video track as screen share
     private expectScreenShare = false;
@@ -152,7 +150,7 @@ export class WebRTCPeer {
         if (track.kind === 'audio') {
             console.log('[WebRTCPeer] Processing audio track:', track.label, 'Stream ID:', stream.id);
 
-            // Check if this stream has a video track (Screen Share)
+            // Check if this stream is associated with a video track (likely Screen Share)
             const hasVideo = stream.getVideoTracks().length > 0;
 
             if (hasVideo) {
@@ -169,14 +167,18 @@ export class WebRTCPeer {
 
                 this.callbacks.onRemoteVideo(this.remoteScreenStream);
             } else {
-                this.audioTrackCount++;
-                console.log('[WebRTCPeer] Audio track #', this.audioTrackCount);
+                // Audio without video: Main Voice OR Soundpad
 
-                if (this.audioTrackCount === 1) {
-                    // First audio stream -> Main Voice/Camera Stream
+                // If it's the first audio stream we see without video, treat it as remoteMainAudioStreamId
+                if (!this.remoteMainAudioStreamId) {
+                    this.remoteMainAudioStreamId = stream.id;
+                    console.log('[WebRTCPeer] Registered Main Audio Stream ID:', stream.id);
+                }
+
+                if (stream.id === this.remoteMainAudioStreamId) {
+                    // Main Voice/Camera Stream
                     if (!this.remoteStream) {
                         this.remoteStream = new MediaStream();
-                        this.remoteStreamId = stream.id;
                     }
 
                     if (!this.remoteStream.getTracks().find(t => t.id === track.id)) {
@@ -184,9 +186,9 @@ export class WebRTCPeer {
                     }
 
                     this.callbacks.onRemoteStream(this.remoteStream);
-                    console.log('[WebRTCPeer] ✓ Voice track added');
+                    console.log('[WebRTCPeer] ✓ Voice track added to Main Stream');
                 } else {
-                    // Subsequent audio without video -> Soundpad
+                    // Different stream ID -> Soundpad
                     if (!this.remoteSoundpadStream) {
                         this.remoteSoundpadStream = new MediaStream();
                     }
@@ -196,11 +198,10 @@ export class WebRTCPeer {
                     }
 
                     this.callbacks.onRemoteSoundpad(this.remoteSoundpadStream);
-                    console.log('[WebRTCPeer] ✓ Soundpad track added');
+                    console.log('[WebRTCPeer] ✓ Soundpad track added to Soundpad Stream');
                 }
             }
         } else if (track.kind === 'video') {
-
             let isCamera = false;
 
             // Priority 1: Are we expecting a screen share?
@@ -214,12 +215,18 @@ export class WebRTCPeer {
                 console.log('[WebRTCPeer] Track label contains "screen" -> Treating as Screen Share');
                 isCamera = false;
             }
-            // Priority 3: Stream ID matching
-            else if (this.remoteStreamId && stream.id === this.remoteStreamId) {
+            // Priority 3: Stream ID matching with Main Audio
+            else if (this.remoteMainAudioStreamId && stream.id === this.remoteMainAudioStreamId) {
                 isCamera = true;
             } else {
+                // Fallback: If we have no main audio stream ID yet, let's adopt this stream as main
+                if (!this.remoteMainAudioStreamId) {
+                    console.log('[WebRTCPeer] No main audio ID yet, adopting this video stream ID as main');
+                    this.remoteMainAudioStreamId = stream.id;
+                    isCamera = true;
+                }
                 // Fallback: If default remoteStream has NO video tracks, assume this IS the camera.
-                if (this.remoteStream && this.remoteStream.getVideoTracks().length === 0) {
+                else if (this.remoteStream && this.remoteStream.getVideoTracks().length === 0) {
                     console.log('[WebRTCPeer] Stream ID mismatch but Main Stream has no video -> Adopting as Camera');
                     isCamera = true;
                 }
@@ -229,7 +236,7 @@ export class WebRTCPeer {
                 console.log('[WebRTCPeer] Assigning as Primary (Camera) Video');
                 if (!this.remoteStream) {
                     this.remoteStream = new MediaStream();
-                    this.remoteStreamId = stream.id;
+                    this.remoteMainAudioStreamId = stream.id;
                 }
 
                 if (!this.remoteStream.getTracks().find(t => t.id === track.id)) {
@@ -733,11 +740,9 @@ export class WebRTCPeer {
         }
 
         // Clear state
-        this.remoteStream = null;
-        this.remoteSoundpadStream = null;
+        this.remoteMainAudioStreamId = null;
         this.pendingCandidates = [];
         this.hasRemoteDescription = false;
-        this.audioTrackCount = 0;
 
         console.log('[WebRTCPeer] ✓ Cleanup complete');
     }
