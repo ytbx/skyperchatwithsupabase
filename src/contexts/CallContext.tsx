@@ -781,6 +781,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
                         if (audioTrack) {
                             console.log('[CallContext] Adding native audio track to stream');
+                            // Set content hint for better quality/sync
+                            if ('contentHint' in audioTrack) {
+                                (audioTrack as any).contentHint = 'music';
+                            }
                             finalStream = new MediaStream([...videoStream.getVideoTracks(), audioTrack]);
                         }
                     }

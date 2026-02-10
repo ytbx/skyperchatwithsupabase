@@ -43,6 +43,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const prevMessagesLengthRef = useRef(0);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   // Search functionality states
   const [showSearch, setShowSearch] = useState(false);
@@ -80,6 +81,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
       prevLastMessageIdRef.current = null;
       isAtBottomRef.current = true;
       setShowScrollButton(false);
+      setHasNewMessages(false);
 
       // Setup realtime subscription for both incoming and outgoing messages
       const subscription = supabase
@@ -151,8 +153,10 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
     if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
       scrollToBottom(prevLastMessageIdRef.current === null ? 'auto' : 'smooth');
       setShowScrollButton(false);
+      setHasNewMessages(false);
     } else if (isNewMessageAtBottom && !isAtBottomRef.current) {
       setShowScrollButton(true);
+      setHasNewMessages(true);
     }
 
     if (lastMessage) {
@@ -370,6 +374,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
     if (currentIsAtBottom) {
       setShowScrollButton(false);
+      setHasNewMessages(false);
     } else {
       // Show button if scrolled up more than 400px
       const isScrolledUp = target.scrollHeight - target.scrollTop > target.clientHeight + 400;
@@ -396,6 +401,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
+    setHasNewMessages(false);
   };
 
   const sendMessage = async () => {
@@ -946,23 +952,24 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
         )}
       </div>
 
-      {/* New Message Notification Button */}
       {showScrollButton && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 transition-all duration-300 animate-fade-in">
-          <button
-            onClick={() => {
-              scrollToBottom();
-              setShowScrollButton(false);
-            }}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-blue-400/30 backdrop-blur-md bg-opacity-90"
-          >
-            <Plus className={`w-4 h-4 ${prevLastMessageIdRef.current !== messages[messages.length - 1]?.id ? 'rotate-45' : 'rotate-90'} transform translate-y-0.5`} />
-            <span>
-              {prevLastMessageIdRef.current !== (messages[messages.length - 1]?.id || null)
-                ? 'Yeni mesajlar var - En aşağı git'
-                : 'En aşağı git'}
-            </span>
-          </button>
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 w-max overflow-visible">
+          <div className="transition-all duration-300 animate-fade-in flex justify-center">
+            <button
+              onClick={() => {
+                scrollToBottom();
+                setShowScrollButton(false);
+              }}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-blue-400/30 backdrop-blur-md bg-opacity-90 whitespace-nowrap"
+            >
+              <Plus className={`w-4 h-4 ${hasNewMessages ? 'rotate-45' : 'rotate-90'} transform translate-y-0.5`} />
+              <span>
+                {hasNewMessages
+                  ? 'Yeni mesajlar var - En aşağı git'
+                  : 'En aşağı git'}
+              </span>
+            </button>
+          </div>
         </div>
       )}
 

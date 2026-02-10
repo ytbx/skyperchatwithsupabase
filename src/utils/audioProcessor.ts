@@ -5,7 +5,10 @@ export class PCMAudioProcessor {
     private scheduledSources: Set<AudioBufferSourceNode> = new Set();
 
     constructor() {
-        this.audioContext = new AudioContext({ sampleRate: 48000 });
+        this.audioContext = new AudioContext({
+            sampleRate: 48000,
+            latencyHint: 'interactive'
+        });
         this.destination = this.audioContext.createMediaStreamDestination();
         this.nextStartTime = this.audioContext.currentTime;
     }
@@ -38,9 +41,9 @@ export class PCMAudioProcessor {
 
         // SYNC FIX: 
         // We want to keep audio slightly behind or exactly at "live" to match video latency.
-        // If nextStartTime is too far in the future (buffer buildup > 60ms), 
+        // If nextStartTime is too far in the future (buffer buildup > 40ms), 
         // it means audio is accumulating too much delay.
-        const MAX_BUFFER_OFFSET = 0.06; // 60ms - tighter for better sync
+        const MAX_BUFFER_OFFSET = 0.04; // 40ms - even tighter for better sync
         const currentTime = this.audioContext.currentTime;
         const drift = this.nextStartTime - currentTime;
 
@@ -56,12 +59,12 @@ export class PCMAudioProcessor {
             this.scheduledSources.clear();
 
             // 2. Reset nextStartTime to jump to the present (plus a tiny safety buffer)
-            this.nextStartTime = currentTime + 0.01; // 10ms safety buffer
+            this.nextStartTime = currentTime + 0.005; // 5ms safety buffer (reduced from 10ms)
         }
 
         // If nextStartTime is in the past (buffer underflow), reset to now
         if (this.nextStartTime < currentTime) {
-            this.nextStartTime = currentTime + 0.005; // 5ms lead
+            this.nextStartTime = currentTime + 0.002; // 2ms lead (reduced from 5ms)
         }
 
         // Create source and connect to destination

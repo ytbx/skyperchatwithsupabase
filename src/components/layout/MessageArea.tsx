@@ -45,6 +45,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
   const prevMessagesLengthRef = useRef(0);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   function formatTime(dateString: string) {
     const date = new Date(dateString);
@@ -117,6 +118,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     prevLastMessageIdRef.current = null;
     isAtBottomRef.current = true;
     setShowScrollButton(false);
+    setHasNewMessages(false);
 
     // Subscribe to new messages
     const subscription = supabase
@@ -194,8 +196,10 @@ export function MessageArea({ channelId }: MessageAreaProps) {
     if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
       scrollToBottom(prevLastMessageIdRef.current === null ? 'auto' : 'smooth');
       setShowScrollButton(false);
+      setHasNewMessages(false);
     } else if (isNewMessageAtBottom && !isAtBottomRef.current) {
       setShowScrollButton(true);
+      setHasNewMessages(true);
     }
 
     if (lastMessage) {
@@ -360,6 +364,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
     if (currentIsAtBottom) {
       setShowScrollButton(false);
+      setHasNewMessages(false);
     } else {
       // Show button if scrolled up more than 400px
       const isScrolledUp = target.scrollHeight - target.scrollTop > target.clientHeight + 400;
@@ -375,6 +380,7 @@ export function MessageArea({ channelId }: MessageAreaProps) {
 
   function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
     messagesEndRef.current?.scrollIntoView({ behavior });
+    setHasNewMessages(false);
   }
 
   async function handleSendMessage(e: React.FormEvent) {
@@ -726,24 +732,25 @@ export function MessageArea({ channelId }: MessageAreaProps) {
         )}
       </div>
 
-      {/* New Message Notification Button */}
       {showScrollButton && (
         <div className="relative h-0">
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 transition-all duration-300 animate-fade-in">
-            <button
-              onClick={() => {
-                scrollToBottom();
-                setShowScrollButton(false);
-              }}
-              className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-primary-400/30 backdrop-blur-md bg-opacity-90"
-            >
-              <Plus className={`w-4 h-4 ${prevLastMessageIdRef.current !== messages[messages.length - 1]?.id ? 'rotate-45' : 'rotate-90'} transform translate-y-0.5`} />
-              <span>
-                {prevLastMessageIdRef.current !== (messages[messages.length - 1]?.id || null)
-                  ? 'Yeni mesajlar var - En aşağı git'
-                  : 'En aşağı git'}
-              </span>
-            </button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-max overflow-visible">
+            <div className="transition-all duration-300 animate-fade-in flex justify-center">
+              <button
+                onClick={() => {
+                  scrollToBottom();
+                  setShowScrollButton(false);
+                }}
+                className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-primary-400/30 backdrop-blur-md bg-opacity-90 whitespace-nowrap"
+              >
+                <Plus className={`w-4 h-4 ${hasNewMessages ? 'rotate-45' : 'rotate-90'} transform translate-y-0.5`} />
+                <span>
+                  {hasNewMessages
+                    ? 'Yeni mesajlar var - En aşağı git'
+                    : 'En aşağı git'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

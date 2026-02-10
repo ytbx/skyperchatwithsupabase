@@ -384,6 +384,14 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
 
             room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
                 console.log('[VoiceChannelContext] Track subscribed:', track.kind, 'from', participant.identity);
+
+                // Discord Refinement: Apply playoutDelayHint to stabilize jitter buffer
+                if (track.receiver && 'playoutDelayHint' in track.receiver) {
+                    // 0.1s (100ms) provides a good balance between stability and latency
+                    (track.receiver as any).playoutDelayHint = 0.1;
+                    console.log(`[VoiceChannelContext] Applied playoutDelayHint (0.1s) to ${track.kind} receiver from ${participant.identity}`);
+                }
+
                 updateParticipantsFromRoom();
             });
 
@@ -651,6 +659,11 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                         const audioTrack = audioStream.getAudioTracks()[0];
 
                         if (audioTrack) {
+                            // Set content hint for better quality/sync
+                            if ('contentHint' in audioTrack) {
+                                (audioTrack as any).contentHint = 'music';
+                            }
+
                             await roomRef.current!.localParticipant.publishTrack(audioTrack, {
                                 source: Track.Source.ScreenShareAudio,
                                 name: 'screen-audio',

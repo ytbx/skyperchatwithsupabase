@@ -21,6 +21,7 @@ export class WebRTCPeer {
 
     private cameraSender: RTCRtpSender | null = null;
     private screenSender: RTCRtpSender | null = null;
+    private screenAudioSender: RTCRtpSender | null = null;
 
     private remoteStreamId: string | null = null;
 
@@ -64,9 +65,15 @@ export class WebRTCPeer {
             }
         };
 
-        // Handle remote tracks
         this.pc.ontrack = (event) => {
             console.log('[WebRTCPeer] Remote track received:', event.track.kind, event.track.label);
+
+            // Discord Refinement: Apply playoutDelayHint to stabilize jitter buffer
+            if (event.receiver && 'playoutDelayHint' in event.receiver) {
+                // 0.1s (100ms) provides a good balance between stability and latency
+                (event.receiver as any).playoutDelayHint = 0.1;
+                console.log(`[WebRTCPeer] Applied playoutDelayHint (0.1s) to ${event.track.kind} receiver`);
+            }
 
             // Monitor track removal on the stream
             event.streams.forEach(stream => {
@@ -580,7 +587,21 @@ export class WebRTCPeer {
         const audioTrack = screenStream.getAudioTracks()[0];
         if (audioTrack) {
             console.log('[WebRTCPeer] Adding screen share audio track');
-            this.pc.addTrack(audioTrack, screenStream);
+            this.screenAudioSender = this.pc.addTrack(audioTrack, screenStream);
+
+            // Configure audio sender parameters
+            try {
+                const params = this.screenAudioSender.getParameters();
+                if (!params.encodings) params.encodings = [{}];
+
+                params.encodings[0].priority = 'high';
+                params.encodings[0].networkPriority = 'high';
+
+                await this.screenAudioSender.setParameters(params);
+                console.log(`[WebRTCPeer] Screen share audio configured with high priority`);
+            } catch (e) {
+                console.error('[WebRTCPeer] Error configuring screen share audio sender:', e);
+            }
         }
     }
 
@@ -607,9 +628,16 @@ export class WebRTCPeer {
                 console.warn('[WebRTCPeer] Error removing screen sender:', e);
             }
             this.screenSender = null;
-        } else {
-            console.warn('[WebRTCPeer] No screen sender found to remove');
-            // Fallback: don't randomly remove video tracks anymore to prevent removing camera
+        }
+
+        if (this.screenAudioSender) {
+            try {
+                this.pc.removeTrack(this.screenAudioSender);
+                console.log('[WebRTCPeer] Screen audio sender removed');
+            } catch (e) {
+                console.warn('[WebRTCPeer] Error removing screen audio sender:', e);
+            }
+            this.screenAudioSender = null;
         }
 
         // Note: Camera track is separate and untouched because we used distinct senders.
