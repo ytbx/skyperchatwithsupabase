@@ -8,13 +8,12 @@ import { useVoiceChannel } from './VoiceChannelContext';
 interface PresenceUser {
     user_id: string;
     online_at: string;
-    status?: 'online' | 'idle';
+    status?: 'online';
 }
 
-type UserStatus = 'online' | 'idle' | 'offline';
+type UserStatus = 'online' | 'offline';
 
 interface SupabaseRealtimeContextType {
-    isIdle: boolean;
     onlineUsers: Set<string>;
     isUserOnline: (userId: string) => boolean;
     getUserStatus: (userId: string) => UserStatus;
@@ -29,9 +28,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
     const [userStatuses, setUserStatuses] = useState<Map<string, UserStatus>>(new Map());
     const [presenceChannel, setPresenceChannel] = useState<RealtimeChannel | null>(null);
-    const [isIdle, setIsIdle] = useState(false);
     const disconnectionTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Keep refs to current state to access in channel callback without re-subscribing
     const cleanupRefs = useRef({ activeCall, activeChannelId, endCall, leaveChannel });
@@ -72,11 +69,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     presences.forEach((presence) => {
                         if (presence.user_id) {
                             online.add(presence.user_id);
-                            // Highest status wins (online > idle)
-                            const current = statuses.get(presence.user_id);
-                            if (presence.status === 'online' || !current) {
-                                statuses.set(presence.user_id, presence.status || 'online');
-                            }
+                            statuses.set(presence.user_id, 'online');
                         }
                     });
                 });
@@ -128,7 +121,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     await channel.track({
                         user_id: user.id,
                         online_at: new Date().toISOString(),
-                        status: 'online', // Initial status
+                        status: 'online',
                     });
 
                     console.log('[SupabaseRealtime] User presence tracked');
@@ -207,8 +200,8 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         // Send initial heartbeat
         sendHeartbeat();
 
-        // Set up heartbeat interval (every 45 seconds for better presence accuracy)
-        const heartbeatInterval = setInterval(sendHeartbeat, 45000);
+        // Set up heartbeat interval (every 60 seconds as requested)
+        const heartbeatInterval = setInterval(sendHeartbeat, 60000);
 
         // Only add listener, don't call immediately
         window.addEventListener('beforeunload', sendHeartbeat);
@@ -221,9 +214,6 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             if (disconnectionTimerRef.current) {
                 clearTimeout(disconnectionTimerRef.current);
             }
-            if (idleTimerRef.current) {
-                clearTimeout(idleTimerRef.current);
-            }
 
             // Untrack presence
             if (channel) {
@@ -235,19 +225,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             friendRequestsChannel.unsubscribe();
             window.removeEventListener('beforeunload', sendHeartbeat);
         };
-    }, [user?.id]); // REMOVED isIdle from here to prevent full channel re-subscription
-
-    // Handle status updates separately to avoid re-subscribing the entire channel
-    useEffect(() => {
-        if (!presenceChannel || !user) return;
-
-        console.log('[SupabaseRealtime] Status changed, updating presence tracking:', isIdle ? 'idle' : 'online');
-        presenceChannel.track({
-            user_id: user.id,
-            online_at: new Date().toISOString(),
-            status: isIdle ? 'idle' : 'online',
-        });
-    }, [isIdle, presenceChannel, user]);
+    }, [user?.id]);
 
     // Strengthen connection: Refresh on visibility change (recovers from tab backgrounding/sleep)
     useEffect(() => {
@@ -266,35 +244,6 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [presenceChannel]);
 
-    // Idle detection logic
-    useEffect(() => {
-        if (!user || !presenceChannel) return;
-
-        const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
-
-        const resetIdleTimer = () => {
-            if (isIdle) {
-                console.log('[SupabaseRealtime] User active again');
-                setIsIdle(false);
-            }
-            if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-            idleTimerRef.current = setTimeout(() => {
-                console.log('[SupabaseRealtime] User is now idle');
-                setIsIdle(true);
-            }, IDLE_TIMEOUT);
-        };
-
-        const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-        events.forEach(event => window.addEventListener(event, resetIdleTimer));
-
-        resetIdleTimer();
-
-        return () => {
-            events.forEach(event => window.removeEventListener(event, resetIdleTimer));
-            if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-        };
-    }, [user, presenceChannel, isIdle]);
-
     const isUserOnline = useCallback((userId: string): boolean => {
         return onlineUsers.has(userId);
     }, [onlineUsers]);
@@ -305,7 +254,6 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     }, [onlineUsers, userStatuses]);
 
     const value: SupabaseRealtimeContextType = {
-        isIdle,
         onlineUsers,
         isUserOnline,
         getUserStatus,
@@ -317,6 +265,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         </SupabaseRealtimeContext.Provider>
     );
 }
+
 
 export function useSupabaseRealtime() {
     const context = useContext(SupabaseRealtimeContext);
