@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 export default defineConfig({
-  base: process.env.NETLIFY === 'true' ? '/' : './',
+  base: '',
   plugins: [
     react()
   ],
@@ -29,6 +29,9 @@ export default defineConfig({
     }
   },
   build: {
+    outDir: 'dist',
+    assetsDir: '.',
+    emptyOutDir: true,
     commonjsOptions: {
       include: [/simple-peer/, /node_modules/],
       transformMixedEsModules: true
