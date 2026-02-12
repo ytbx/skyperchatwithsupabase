@@ -40,7 +40,7 @@ export class PCMAudioProcessor {
         // We want to keep audio slightly behind or exactly at "live" to match video latency.
         // If nextStartTime is too far in the future (buffer buildup > 60ms), 
         // it means audio is accumulating too much delay.
-        const MAX_BUFFER_OFFSET = 0.06; // 60ms - tighter for better sync
+        const MAX_BUFFER_OFFSET = 0.035; // 35ms - even tighter for better sync
         const currentTime = this.audioContext.currentTime;
         const drift = this.nextStartTime - currentTime;
 
@@ -56,12 +56,12 @@ export class PCMAudioProcessor {
             this.scheduledSources.clear();
 
             // 2. Reset nextStartTime to jump to the present (plus a tiny safety buffer)
-            this.nextStartTime = currentTime + 0.01; // 10ms safety buffer
+            this.nextStartTime = currentTime + 0.005; // 5ms safety buffer
         }
 
         // If nextStartTime is in the past (buffer underflow), reset to now
         if (this.nextStartTime < currentTime) {
-            this.nextStartTime = currentTime + 0.005; // 5ms lead
+            this.nextStartTime = currentTime + 0.002; // 2ms lead
         }
 
         // Create source and connect to destination
