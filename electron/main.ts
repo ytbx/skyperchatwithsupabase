@@ -150,7 +150,7 @@ function createUpdateWindow() {
     if (isDev) {
         updateWindow.loadFile(path.join(__dirname, '..', 'public', 'update.html'));
     } else {
-        updateWindow.loadFile(path.join(__dirname, '..', 'dist', 'update.html'));
+        updateWindow.loadFile(path.join(app.getAppPath(), 'dist', 'update.html'));
     }
 
     updateWindow.on('closed', () => {
@@ -404,7 +404,8 @@ function createWindow() {
         mainWindow.webContents.openDevTools();
     } else {
         // Load from app.asar - dist is at the root level
-        mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+        const indexPath = path.join(app.getAppPath(), 'dist', 'index.html');
+        mainWindow.loadFile(indexPath);
     }
 
     mainWindow.on('closed', () => {
