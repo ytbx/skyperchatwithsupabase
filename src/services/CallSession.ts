@@ -63,6 +63,9 @@ export class CallSession {
     private lastProcessedOfferSdp: string | null = null;
 
     private connectionFailedTimer: any = null;
+    private offerRetryTimer: any = null;
+    private offerRetryCount = 0;
+    private static readonly MAX_OFFER_RETRIES = 3;
 
     constructor(
         callId: string,
@@ -197,6 +200,7 @@ export class CallSession {
                     this.setState('ringing');
                 }
                 await this.sendOffer();
+                this.startOfferRetryTimer();
             } else {
                 // Callee waits for offer (will be processed in handleSignal)
                 // Only set connecting if we haven't already moved to active via historical signals
@@ -380,7 +384,42 @@ export class CallSession {
 
         const offer = await this.peer.createOffer();
         await this.signaling.sendOffer(offer);
-        console.log('[CallSession] ✓ Offer sent');
+        console.log('[CallSession] ✓ Offer sent (Count:', this.offerRetryCount + 1, ')');
+    }
+
+    /**
+     * Start a timer to retry sending offer if not connected
+     */
+    private startOfferRetryTimer(): void {
+        this.stopOfferRetryTimer();
+
+        this.offerRetryTimer = setInterval(async () => {
+            if (this.state === 'active' || this.state === 'ended' || this.state === 'ending') {
+                this.stopOfferRetryTimer();
+                return;
+            }
+
+            if (this.offerRetryCount >= CallSession.MAX_OFFER_RETRIES) {
+                console.warn('[CallSession] Max offer retries reached');
+                this.stopOfferRetryTimer();
+                return;
+            }
+
+            console.log('[CallSession] Offer retry timer fired - re-sending offer');
+            this.offerRetryCount++;
+            try {
+                await this.sendOffer();
+            } catch (e) {
+                console.error('[CallSession] Error during offer retry:', e);
+            }
+        }, 5000); // Retry every 5 seconds
+    }
+
+    private stopOfferRetryTimer(): void {
+        if (this.offerRetryTimer) {
+            clearInterval(this.offerRetryTimer);
+            this.offerRetryTimer = null;
+        }
     }
 
     /**
@@ -700,6 +739,8 @@ export class CallSession {
         this.isProcessingOffer = false;
         this.pendingOffer = null;
         this.lastProcessedOfferSdp = null;
+        this.stopOfferRetryTimer();
+        this.offerRetryCount = 0;
 
         console.log('[CallSession] ✓ Cleanup complete');
 

@@ -62,26 +62,6 @@ export class SignalingChannel {
 
         this.handler = handler;
 
-        // First, process any historical signals that were sent before we subscribed
-        console.log('[SignalingChannel] Fetching historical signals');
-        const { data: historicalSignals, error: fetchError } = await supabase
-            .from('webrtc_signals')
-            .select('*')
-            .eq('call_id', this.callId)
-            .eq('to_user_id', this.userId)
-            .eq('from_user_id', this.peerId)
-            .order('created_at', { ascending: true });
-
-        if (!fetchError && historicalSignals) {
-            console.log('[SignalingChannel] Processing', historicalSignals.length, 'historical signals');
-            for (const signal of historicalSignals) {
-                if (!this.processedIds.has(signal.id)) {
-                    this.processedIds.add(signal.id);
-                    await this.handler(signal as CallSignal);
-                }
-            }
-        }
-
         // Create unique channel for this call
         const channelName = `call_signals_${this.callId}_${this.userId}_${Date.now()}`;
         this.channel = supabase.channel(channelName);
@@ -103,7 +83,7 @@ export class SignalingChannel {
                 if (signal.to_user_id === this.userId &&
                     signal.from_user_id === this.peerId &&
                     !this.processedIds.has(signal.id)) {
-                    console.log('[SignalingChannel] Received signal:', signal.signal_type);
+                    console.log('[SignalingChannel] Received signal via Realtime:', signal.signal_type);
                     this.processedIds.add(signal.id);
                     await this.handler?.(signal);
                 }
@@ -129,9 +109,29 @@ export class SignalingChannel {
                     console.error(`[SignalingChannel] Subscription error: ${status}`);
                     reject(new Error(`Channel subscription failed: ${status}`));
                 }
-
             });
         });
+
+        // NOW process any historical signals that were sent before we subscribed or during subscription
+        console.log('[SignalingChannel] Fetching historical signals after subscription');
+        const { data: historicalSignals, error: fetchError } = await supabase
+            .from('webrtc_signals')
+            .select('*')
+            .eq('call_id', this.callId)
+            .eq('to_user_id', this.userId)
+            .eq('from_user_id', this.peerId)
+            .order('created_at', { ascending: true });
+
+        if (!fetchError && historicalSignals) {
+            console.log('[SignalingChannel] Processing', historicalSignals.length, 'historical signals');
+            for (const signal of historicalSignals) {
+                if (!this.processedIds.has(signal.id)) {
+                    console.log('[SignalingChannel] Received signal via History:', signal.signal_type);
+                    this.processedIds.add(signal.id);
+                    await this.handler(signal as CallSignal);
+                }
+            }
+        }
     }
 
     /**
