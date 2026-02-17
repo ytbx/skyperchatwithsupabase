@@ -16,8 +16,8 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
     const urls = Array.from(new Set(content.match(urlRegex) || []));
 
     return (
-        <div className="flex flex-col">
-            <div className="whitespace-pre-wrap break-words text-[15px] leading-[1.375rem]">
+        <div className="flex flex-col min-w-0">
+            <div className="whitespace-pre-wrap break-words break-all text-[15px] leading-[1.375rem]">
                 {parts.map((part, index) => {
                     if (part.match(urlRegex)) {
                         return (
@@ -28,7 +28,7 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
                                 rel="noopener noreferrer"
                                 className="text-[#00a8fc] hover:underline transition-colors"
                             >
-                                {part}
+                                {part.length > 100 ? `${part.substring(0, 100)}...` : part}
                             </a>
                         );
                     }
@@ -37,10 +37,15 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
             </div>
 
             {urls.length > 0 && (
-                <div className="flex flex-col gap-1">
-                    {urls.map((url, index) => (
+                <div className="flex flex-col gap-1 mt-1">
+                    {urls.slice(0, 3).map((url, index) => (
                         <LinkPreview key={`${url}-${index}`} url={url} />
                     ))}
+                    {urls.length > 3 && (
+                        <div className="text-xs text-gray-500 italic pl-1">
+                            + {urls.length - 3} bağlantı daha...
+                        </div>
+                    )}
                 </div>
             )}
         </div>
