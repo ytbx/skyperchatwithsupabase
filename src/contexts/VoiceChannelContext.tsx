@@ -571,9 +571,15 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
         if (!roomRef.current) return;
 
         try {
-            await roomRef.current.localParticipant.setScreenShareEnabled(true, {
+            // Set capture options based on selected quality
+            const options = {
                 audio: true,
-            });
+                resolution: quality === 'fullhd' ? VideoPresets.h1080.resolution : VideoPresets.h720.resolution,
+                frameRate: quality === 'fullhd' ? 60 : 30,
+            };
+
+            console.log('[VoiceChannelContext] Starting web screen share with options:', options);
+            await roomRef.current.localParticipant.setScreenShareEnabled(true, options);
 
             await supabase
                 .from('voice_channel_users')

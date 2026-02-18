@@ -700,7 +700,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
                 video: {
                     width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                    frameRate: quality === 'standard' ? { ideal: 30 } : { ideal: 60 }
+                    frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
                 },
                 audio: true, // Allow system audio sharing
                 selfBrowserSurface: 'exclude' as any,
