@@ -40,7 +40,11 @@ contextBridge.exposeInMainWorld('electron', {
         }
     },
     updateBadge: (count: number) => ipcRenderer.send('update-badge', count),
-    updateBadgeOverlay: (dataUrl: string | null) => ipcRenderer.send('update-badge-overlay', dataUrl)
+    updateBadgeOverlay: (dataUrl: string | null) => ipcRenderer.send('update-badge-overlay', dataUrl),
+    autostart: {
+        get: () => ipcRenderer.invoke('get-autostart'),
+        set: (value: boolean) => ipcRenderer.invoke('set-autostart', value)
+    }
 })
 
 // Expose update events for update window

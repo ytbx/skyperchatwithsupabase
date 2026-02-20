@@ -13,9 +13,26 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { profile, signOut, refreshProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'voice-video' | 'sounds'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'voice-video' | 'sounds' | 'app-settings'>('profile');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isAutostartEnabled, setIsAutostartEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useState(() => {
+    // Initial fetch of autostart status
+    if (window.electron?.autostart) {
+      window.electron.autostart.get().then(setIsAutostartEnabled);
+    }
+  });
+
+  const toggleAutostart = async () => {
+    if (window.electron?.autostart) {
+      const newValue = !isAutostartEnabled;
+      const result = await window.electron.autostart.set(newValue);
+      setIsAutostartEnabled(result);
+      toast.success(`Otomatik başlatma ${result ? 'açıldı' : 'kapatıldı'}`);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -97,6 +114,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             >
               <Music className="w-4 h-4" />
               Ses Paneli
+            </button>
+            <button
+              onClick={() => setActiveTab('app-settings' as any)}
+              className={`w-full px-3 py-2 text-left rounded transition-colors flex items-center gap-2 ${activeTab as any === 'app-settings'
+                ? 'bg-primary-500/10 text-primary-500'
+                : 'text-gray-200 hover:bg-gray-700'
+                }`}
+            >
+              <Video className="w-4 h-4" />
+              Uygulama Ayarları
             </button>
           </div>
 
@@ -230,6 +257,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
             {activeTab === 'sounds' && (
               <SoundPanel maxHeight="none" />
+            )}
+
+            {(activeTab as any) === 'app-settings' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-2">Windows Ayarları</h3>
+                  <p className="text-neutral-400 mb-4">
+                    Uygulamanın Windows açılışındaki davranışlarını buradan yönetebilirsiniz.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-800 rounded-lg border border-gray-600">
+                  <div>
+                    <h4 className="text-white font-medium">Sistem Açılışında Başlat</h4>
+                    <p className="text-sm text-gray-400">Bilgisayarınız açıldığında Ovox otomatik olarak başlar.</p>
+                  </div>
+                  <button
+                    onClick={toggleAutostart}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isAutostartEnabled ? 'bg-primary-500' : 'bg-gray-600'
+                      }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isAutostartEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                    />
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

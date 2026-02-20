@@ -6,9 +6,10 @@ interface GifPlayerProps {
     alt: string;
     className?: string;
     onClick?: () => void;
+    onLoad?: () => void;
 }
 
-export const GifPlayer: React.FC<GifPlayerProps> = ({ src, alt, className, onClick }) => {
+export const GifPlayer: React.FC<GifPlayerProps> = ({ src, alt, className, onClick, onLoad }) => {
     const [isHovering, setIsHovering] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
     const [hasError, setHasError] = useState(false);
@@ -30,6 +31,9 @@ export const GifPlayer: React.FC<GifPlayerProps> = ({ src, alt, className, onCli
                     canvas.height = img.height;
                     ctx.drawImage(img, 0, 0);
                 }
+            }
+            if (onLoad) {
+                onLoad();
             }
         };
 

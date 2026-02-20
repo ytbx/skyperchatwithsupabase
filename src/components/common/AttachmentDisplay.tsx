@@ -8,9 +8,10 @@ interface AttachmentDisplayProps {
     fileName: string;
     fileType?: string | null;
     fileSize?: number | null;
+    onLoad?: () => void;
 }
 
-export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: AttachmentDisplayProps) {
+export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize, onLoad }: AttachmentDisplayProps) {
     const [lightboxOpen, setLightboxOpen] = useState(false);
     const isImage = fileType?.startsWith('image/');
 
@@ -28,6 +29,7 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: Att
                             alt={fileName}
                             className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px]"
                             onClick={() => setLightboxOpen(true)}
+                            onLoad={onLoad}
                         />
                     ) : (
                         <img
@@ -35,6 +37,7 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize }: Att
                             alt={fileName}
                             className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity max-h-[300px] object-cover"
                             onClick={() => setLightboxOpen(true)}
+                            onLoad={onLoad}
                         />
                     )}
                     <div className="flex items-center justify-between mt-1 text-xs text-gray-400">

@@ -47,6 +47,10 @@ declare global {
                 getWindowPid: (hwnd: string) => Promise<string | null>;
                 onAudioData: (callback: (chunk: Uint8Array) => void) => () => void;
             };
+            autostart: {
+                get: () => Promise<boolean>;
+                set: (value: boolean) => Promise<boolean>;
+            };
         };
         electronUpdater?: {
             onProgress: (callback: (percent: number, status?: string) => void) => void;

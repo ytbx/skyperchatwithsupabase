@@ -43,6 +43,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
   const prevMessagesLengthRef = useRef(0);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   // Search functionality states
   const [showSearch, setShowSearch] = useState(false);
@@ -129,8 +130,10 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
     if (prevLastMessageIdRef.current === null || (isNewMessageAtBottom && (isAtBottomRef.current || isSentByMe))) {
       scrollToBottom();
       setShowScrollButton(false);
+      setHasNewMessages(false);
     } else if (isNewMessageAtBottom && !isAtBottomRef.current) {
       setShowScrollButton(true);
+      setHasNewMessages(true);
     }
 
     if (lastMessage) {
@@ -348,6 +351,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
 
     if (currentIsAtBottom) {
       setShowScrollButton(false);
+      setHasNewMessages(false);
     }
 
     if (target.scrollTop === 0 && hasMore && !isLoadingMore) {
@@ -881,6 +885,11 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
                                   fileName={message.file_name || 'file'}
                                   fileType={message.file_type}
                                   fileSize={message.file_size}
+                                  onLoad={() => {
+                                    if (isAtBottomRef.current) {
+                                      scrollToBottom();
+                                    }
+                                  }}
                                 />
                               )}
                               {message.message && (
@@ -930,7 +939,7 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
               className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 text-sm font-medium transition-transform hover:scale-105 active:scale-95 border border-blue-400/30 backdrop-blur-md bg-opacity-90"
             >
               <Plus className="w-4 h-4 rotate-45 transform translate-y-0.5" />
-              <span>Yeni mesajlar var - En aşağı git</span>
+              <span>{hasNewMessages ? 'Yeni mesajınız var' : 'En aşağı kaydır'}</span>
             </button>
           </div>
         </div>

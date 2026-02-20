@@ -399,6 +399,19 @@ function createWindow() {
         return true;
     });
 
+    // Autostart IPC handlers
+    ipcMain.handle('get-autostart', () => {
+        return app.getLoginItemSettings().openAtLogin;
+    });
+
+    ipcMain.handle('set-autostart', (_event, openAtLogin: boolean) => {
+        app.setLoginItemSettings({
+            openAtLogin,
+            path: app.getPath('exe')
+        });
+        return app.getLoginItemSettings().openAtLogin;
+    });
+
     if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
         mainWindow.webContents.openDevTools();
