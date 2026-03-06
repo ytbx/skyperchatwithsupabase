@@ -27,7 +27,8 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     const { activeCall, endCall } = useCall();
     const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
-    const [userStatuses, setUserStatuses] = useState<Map<string, UserStatus>>(new Map());
+    const [presenceStatuses, setPresenceStatuses] = useState<Map<string, UserStatus>>(new Map());
+    const [dbStatuses, setDbStatuses] = useState<Map<string, UserStatus>>(new Map());
     const [presenceChannel, setPresenceChannel] = useState<RealtimeChannel | null>(null);
     const [isIdle, setIsIdle] = useState(false);
     const disconnectionTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -83,7 +84,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
 
                 console.log('[SupabaseRealtime] Presence sync - Online users:', online.size);
                 setOnlineUsers(online);
-                setUserStatuses(statuses);
+                setPresenceStatuses(statuses);
             })
             .on('presence', { event: 'join' }, ({ key, newPresences }) => {
                 console.log('[SupabaseRealtime] User joined:', key, newPresences);
@@ -159,6 +160,44 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
 
         setPresenceChannel(channel);
 
+        // Fetch initial statuses from DB as a baseline - ONLY FOR FRIENDS to save resources
+        const fetchInitialStatuses = async () => {
+            try {
+                // Get friend IDs first
+                const { data: friendships } = await supabase
+                    .from('friends')
+                    .select('requester_id, requested_id')
+                    .eq('status', 'accepted')
+                    .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
+
+                const friendIds = new Set<string>();
+                friendIds.add(user.id); // Also fetch our own status
+
+                friendships?.forEach(f => {
+                    friendIds.add(f.requester_id === user.id ? f.requested_id : f.requester_id);
+                });
+
+                if (friendIds.size > 0) {
+                    const { data, error } = await supabase
+                        .from('profiles')
+                        .select('id, status')
+                        .in('id', Array.from(friendIds));
+
+                    if (data && !error) {
+                        const initialDbStatuses = new Map<string, UserStatus>();
+                        data.forEach(p => {
+                            if (p.status) initialDbStatuses.set(p.id, p.status as UserStatus);
+                        });
+                        setDbStatuses(initialDbStatuses);
+                        console.log(`[SupabaseRealtime] Initial statuses fetched for ${friendIds.size} relevant users`);
+                    }
+                }
+            } catch (err) {
+                console.error('[SupabaseRealtime] Error fetching initial statuses:', err);
+            }
+        };
+        fetchInitialStatuses();
+
         // Subscribe to messages in channels the user is a member of
         const messagesChannel = supabase
             .channel('messages-changes')
@@ -171,6 +210,30 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                 },
                 (payload) => {
                     console.log('[SupabaseRealtime] Message change:', payload);
+                }
+            )
+            .subscribe();
+
+        // Subscribe to profiles for database-backed status fallback
+        const profilesChannel = supabase
+            .channel('profiles-status-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'profiles'
+                },
+                (payload) => {
+                    const newProfile = payload.new as any;
+                    if (newProfile.id && newProfile.status) {
+                        console.log(`[SupabaseRealtime] DB Status update for ${newProfile.id}: ${newProfile.status}`);
+                        setDbStatuses(prev => {
+                            const updated = new Map(prev);
+                            updated.set(newProfile.id, newProfile.status as UserStatus);
+                            return updated;
+                        });
+                    }
                 }
             )
             .subscribe();
@@ -232,6 +295,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             }
 
             messagesChannel.unsubscribe();
+            profilesChannel.unsubscribe();
             friendRequestsChannel.unsubscribe();
             window.removeEventListener('beforeunload', sendHeartbeat);
         };
@@ -296,13 +360,24 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     }, [user, presenceChannel, isIdle]);
 
     const isUserOnline = useCallback((userId: string): boolean => {
-        return onlineUsers.has(userId);
-    }, [onlineUsers]);
+        // User is online if they are in Presence OR if their DB status is not 'offline'
+        const isPresenceOnline = onlineUsers.has(userId);
+        const dbStatus = dbStatuses.get(userId);
+        const isDbOnline = dbStatus && dbStatus !== 'offline';
+
+        return !!isPresenceOnline || !!isDbOnline;
+    }, [onlineUsers, dbStatuses]);
 
     const getUserStatus = useCallback((userId: string): UserStatus => {
-        if (!onlineUsers.has(userId)) return 'offline';
-        return userStatuses.get(userId) || 'online';
-    }, [onlineUsers, userStatuses]);
+        // Presence status takes priority, then DB status, default to 'offline'
+        const presenceStatus = presenceStatuses.get(userId);
+        if (presenceStatus) return presenceStatus;
+
+        const dbStatus = dbStatuses.get(userId);
+        if (dbStatus) return dbStatus;
+
+        return 'offline';
+    }, [presenceStatuses, dbStatuses]);
 
     const value: SupabaseRealtimeContextType = {
         isIdle,
