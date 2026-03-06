@@ -111,6 +111,16 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     });
                     return updated;
                 });
+                setPresenceStatuses((prev) => {
+                    const updated = new Map(prev);
+                    leftPresences.forEach((presence) => {
+                        const presenceData = presence as unknown as PresenceUser;
+                        if (presenceData.user_id) {
+                            updated.delete(presenceData.user_id);
+                        }
+                    });
+                    return updated;
+                });
             })
             .subscribe(async (status) => {
                 console.log('[SupabaseRealtime] Subscription status change:', status);
@@ -267,14 +277,27 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             }
         };
 
+        const goOffline = async () => {
+            if (user?.id) {
+                try {
+                    console.log('[SupabaseRealtime] Setting user offline');
+                    // Use a synchronous-ish way if possible for beforeunload, 
+                    // but for regular cleanup this is fine.
+                    await supabase.rpc('set_user_offline', { uid: user.id });
+                } catch (error) {
+                    console.error('[SupabaseRealtime] Error setting offline:', error);
+                }
+            }
+        };
+
         // Send initial heartbeat
         sendHeartbeat();
 
         // Set up heartbeat interval (every 45 seconds for better presence accuracy)
         const heartbeatInterval = setInterval(sendHeartbeat, 45000);
 
-        // Only add listener, don't call immediately
-        window.addEventListener('beforeunload', sendHeartbeat);
+        // Explicitly set offline when leaving
+        window.addEventListener('beforeunload', goOffline);
 
         return () => {
             console.log('[SupabaseRealtime] Cleaning up subscriptions');
@@ -297,7 +320,10 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             messagesChannel.unsubscribe();
             profilesChannel.unsubscribe();
             friendRequestsChannel.unsubscribe();
-            window.removeEventListener('beforeunload', sendHeartbeat);
+            window.removeEventListener('beforeunload', goOffline);
+
+            // Try to set offline on cleanup too
+            goOffline();
         };
     }, [user?.id]); // REMOVED isIdle from here to prevent full channel re-subscription
 
