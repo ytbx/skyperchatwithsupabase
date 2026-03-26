@@ -555,38 +555,39 @@ export class WebRTCPeer {
             // Store the sender so we can remove exactly this one later
             this.screenSender = this.pc.addTrack(videoTrack, screenStream);
 
-            // Configure sender parameters for smooth high-quality sharing
+            // Configure sender parameters for smooth high-quality video streaming
             try {
-                // Set content hint for better compression of screen content
-                // 'detail' ensures text remains sharp
+                // 'motion' content hint optimizes for video/animation fluidity
+                // (vs 'detail' which prioritizes text sharpness but drops FPS)
                 if (videoTrack.contentHint !== undefined) {
-                    videoTrack.contentHint = 'detail';
+                    videoTrack.contentHint = 'motion';
                 }
 
                 const params = this.screenSender.getParameters();
                 if (!params.encodings) params.encodings = [{}];
 
-                // Set bitrate limits to prevent network congestion (ping spikes)
-                // 1080p 60fps needs ~6-8Mbps, 720p 30fps needs ~2-3Mbps
+                // Bitrate limits to prevent network congestion while keeping quality high
+                // These match standard WebRTC recommendations for screen sharing
                 if (quality === 'fullhd') {
-                    params.encodings[0].maxBitrate = 8000000; // 8 Mbps
+                    params.encodings[0].maxBitrate = 6_000_000; // 6 Mbps for 1080p 60fps
+                    (params.encodings[0] as any).maxFramerate = 60;
                 } else {
-                    params.encodings[0].maxBitrate = 2500000; // 2.5 Mbps
+                    params.encodings[0].maxBitrate = 3_000_000; // 3 Mbps for 720p 30fps
+                    (params.encodings[0] as any).maxFramerate = 30;
                 }
 
                 // Bandwidth priority
                 params.encodings[0].priority = 'high';
                 params.encodings[0].networkPriority = 'high';
 
-                // Degradation preference: 'maintain-resolution' is best for screen sharing
-                // because text readability is usually more important than absolute framerate stability
-                // though with the bitrate cap, we aim to sustain both.
+                // 'maintain-framerate' keeps FPS smooth (critical for video watching)
+                // If bandwidth is tight, resolution drops slightly instead of FPS
                 await this.screenSender.setParameters({
                     ...params,
-                    degradationPreference: 'maintain-resolution'
+                    degradationPreference: 'maintain-framerate'
                 } as any);
 
-                console.log(`[WebRTCPeer] Screen share optimized: ${quality}, maxBitrate: ${params.encodings[0].maxBitrate}bps`);
+                console.log(`[WebRTCPeer] Screen share optimized: ${quality}, maxBitrate: ${params.encodings[0].maxBitrate}bps, hint: motion, degradation: maintain-framerate`);
             } catch (e) {
                 console.error('[WebRTCPeer] Error configuring screen share sender:', e);
             }

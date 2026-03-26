@@ -541,23 +541,34 @@ export class WebRTCManager {
                 console.log('[WebRTCManager] Adding screen share video track');
                 const newSender = this.peerConnection.addTrack(videoTrack, screenStream);
 
-                // Configure sender parameters for smooth 1080p 60fps
+                // Configure sender parameters for smooth video streaming
                 try {
-                    // Set content hint for better compression of screen content
+                    // 'motion' optimizes for video/animation fluidity (vs 'detail' for text)
                     if (videoTrack.contentHint !== undefined) {
-                        videoTrack.contentHint = quality === 'fullhd' ? 'detail' : 'motion';
+                        videoTrack.contentHint = 'motion';
                     }
 
-                    // Let WebRTC handle bitrate automatically for optimal quality
-                    // We only set priority hints to ensure screen share gets bandwidth priority
                     const params = newSender.getParameters();
                     if (!params.encodings) params.encodings = [{}];
+
+                    // Bitrate limits to prevent network saturation
+                    if (quality === 'fullhd') {
+                        params.encodings[0].maxBitrate = 6_000_000; // 6 Mbps for 1080p 60fps
+                        (params.encodings[0] as any).maxFramerate = 60;
+                    } else {
+                        params.encodings[0].maxBitrate = 3_000_000; // 3 Mbps for 720p 30fps
+                        (params.encodings[0] as any).maxFramerate = 30;
+                    }
 
                     params.encodings[0].priority = 'high';
                     params.encodings[0].networkPriority = 'high';
 
-                    await newSender.setParameters(params);
-                    console.log(`[WebRTCManager] Screen share configured with default WebRTC bitrate, priority: high`);
+                    // 'maintain-framerate' keeps FPS smooth for video watching
+                    await newSender.setParameters({
+                        ...params,
+                        degradationPreference: 'maintain-framerate'
+                    } as any);
+                    console.log(`[WebRTCManager] Screen share optimized: ${quality}, maxBitrate: ${params.encodings[0].maxBitrate}bps, hint: motion`);
                 } catch (e) {
                     console.error('[WebRTCManager] Error configuring screen share sender:', e);
                 }

@@ -695,14 +695,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const handleWebScreenShareSelect = async (quality: 'standard' | 'fullhd') => {
         setIsQualityModalOpen(false);
         try {
-            // Type assertion needed because suppressLocalAudioPlayback is not in standard TS definitions yet
             const constraints = {
                 video: {
                     width: quality === 'fullhd' ? { ideal: 1920 } : { ideal: 1280 },
                     height: quality === 'fullhd' ? { ideal: 1080 } : { ideal: 720 },
-                    frameRate: quality === 'fullhd' ? { ideal: 60 } : { ideal: 30 }
+                    frameRate: quality === 'fullhd' ? { min: 30, ideal: 60 } : { ideal: 30 },
+                    cursor: 'always' as any,
                 },
-                audio: true, // Allow system audio sharing
+                audio: true,
                 selfBrowserSurface: 'exclude' as any,
                 surfaceSwitching: 'include' as any,
                 systemAudio: 'include' as any
