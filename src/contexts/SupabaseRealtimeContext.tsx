@@ -33,6 +33,8 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     const [isIdle, setIsIdle] = useState(false);
     const disconnectionTimerRef = useRef<NodeJS.Timeout | null>(null);
     const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const isIdleRef = useRef(false);
+    const presenceChannelRef = useRef<RealtimeChannel | null>(null);
 
     // Keep refs to current state to access in channel callback without re-subscribing
     const cleanupRefs = useRef({ activeCall, activeChannelId, endCall, leaveChannel });
@@ -40,14 +42,22 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         cleanupRefs.current = { activeCall, activeChannelId, endCall, leaveChannel };
     }, [activeCall, activeChannelId, endCall, leaveChannel]);
 
+    // Keep isIdleRef in sync
+    useEffect(() => {
+        isIdleRef.current = isIdle;
+    }, [isIdle]);
+
     useEffect(() => {
         if (!user) {
             // Cleanup when user logs out
-            if (presenceChannel) {
-                presenceChannel.unsubscribe();
+            if (presenceChannelRef.current) {
+                presenceChannelRef.current.untrack();
+                presenceChannelRef.current.unsubscribe();
+                presenceChannelRef.current = null;
                 setPresenceChannel(null);
             }
             setOnlineUsers(new Set());
+            setPresenceStatuses(new Map());
             return;
         }
 
@@ -169,6 +179,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             });
 
         setPresenceChannel(channel);
+        presenceChannelRef.current = channel;
 
         // Fetch initial statuses from DB as a baseline - ONLY FOR FRIENDS to save resources
         const fetchInitialStatuses = async () => {
@@ -306,7 +317,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                 channel.track({
                     user_id: user.id,
                     online_at: new Date().toISOString(),
-                    status: isIdle ? 'idle' : 'online',
+                    status: isIdleRef.current ? 'idle' : 'online',
                 });
             }
         }, 30000); // 30s re-track
@@ -329,6 +340,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                 channel.untrack();
                 channel.unsubscribe();
             }
+            presenceChannelRef.current = null;
 
             messagesChannel.unsubscribe();
             profilesChannel.unsubscribe();
@@ -338,7 +350,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             // Try to set offline on cleanup too
             goOffline();
         };
-    }, [user?.id, isIdle]); // Added isIdle back to ensure tracking updates correctly
+    }, [user?.id]); // ONLY depend on user.id - idle changes handled by separate effect
 
     // Handle status updates separately to avoid re-subscribing the entire channel
     useEffect(() => {
@@ -357,16 +369,17 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 console.log('[SupabaseRealtime] Tab became visible, checking connection...');
+                const ch = presenceChannelRef.current;
                 // @ts-ignore - RealtimeChannel state property exists but might not be in basic types
-                if (presenceChannel && (presenceChannel.state === 'closed' || presenceChannel.state === 'errored')) {
+                if (ch && (ch.state === 'closed' || ch.state === 'errored')) {
                     console.log('[SupabaseRealtime] Channel not active, re-subscribing');
-                    presenceChannel.subscribe();
-                } else if (presenceChannel && user?.id) {
+                    ch.subscribe();
+                } else if (ch && user?.id) {
                     console.log('[SupabaseRealtime] Tab active, re-tracking presence');
-                    presenceChannel.track({
+                    ch.track({
                         user_id: user.id,
                         online_at: new Date().toISOString(),
-                        status: isIdle ? 'idle' : 'online',
+                        status: isIdleRef.current ? 'idle' : 'online',
                     });
                 }
             }
@@ -374,16 +387,16 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [presenceChannel]);
+    }, [user?.id]);
 
-    // Idle detection logic
+    // Idle detection logic - uses refs to avoid re-subscribing
     useEffect(() => {
-        if (!user || !presenceChannel) return;
+        if (!user) return;
 
         const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
         const resetIdleTimer = () => {
-            if (isIdle) {
+            if (isIdleRef.current) {
                 console.log('[SupabaseRealtime] User active again');
                 setIsIdle(false);
             }
@@ -403,7 +416,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             events.forEach(event => window.removeEventListener(event, resetIdleTimer));
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
         };
-    }, [user, presenceChannel, isIdle]);
+    }, [user?.id]);
 
     const isUserOnline = useCallback((userId: string): boolean => {
         // PURE PRESENCE: Only online if currently in the WebSocket set

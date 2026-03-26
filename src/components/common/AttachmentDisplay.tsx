@@ -40,11 +40,11 @@ export function AttachmentDisplay({ fileUrl, fileName, fileType, fileSize, onLoa
                             onLoad={onLoad}
                         />
                     )}
-                    <div className="flex items-center justify-between mt-1 text-xs text-gray-400">
-                        <span className="truncate">{fileName}</span>
+                    <div className="flex items-center justify-end mt-1 text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                             onClick={handleDownload}
                             className="ml-2 hover:text-primary-500 transition-colors"
+                            title="İndir"
                         >
                             <Download className="w-3 h-3" />
                         </button>

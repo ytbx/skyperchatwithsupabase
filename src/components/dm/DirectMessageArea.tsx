@@ -892,15 +892,29 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
                                   }}
                                 />
                               )}
-                              {message.message && (
+                              {message.message && !(message.is_image && (message.message === 'GIF' || message.message === message.file_name)) && (
                                 <div className="text-gray-100 text-sm leading-relaxed break-words mt-1">
-                                  <MessageContent content={message.message} />
+                                  <MessageContent 
+                                    content={message.message} 
+                                    onLoad={() => {
+                                      if (isAtBottomRef.current) {
+                                        scrollToBottom();
+                                      }
+                                    }}
+                                  />
                                 </div>
                               )}
                             </div>
                           ) : (
                             <div className="text-gray-100 text-sm leading-relaxed break-words">
-                              <MessageContent content={message.message} />
+                              <MessageContent 
+                                content={message.message} 
+                                onLoad={() => {
+                                  if (isAtBottomRef.current) {
+                                    scrollToBottom();
+                                  }
+                                }}
+                              />
                             </div>
                           )}
 

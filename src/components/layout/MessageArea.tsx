@@ -667,7 +667,16 @@ export function MessageArea({ channelId }: MessageAreaProps) {
                     {group.messages.map((message, msgIndex) => (
                       <div key={message.id} className={`${msgIndex > 0 ? 'mt-0.5' : ''} group relative pr-8`}>
                         <div className="text-gray-100 text-sm leading-relaxed break-words">
-                          <MessageContent content={message.message} />
+                          {!(message.is_image && (message.message === 'GIF' || message.message === message.file_name)) && (
+                            <MessageContent 
+                              content={message.message} 
+                              onLoad={() => {
+                                if (isAtBottomRef.current) {
+                                  scrollToBottom();
+                                }
+                              }}
+                            />
+                          )}
                         </div>
                         {message.file_url && (
                           <AttachmentDisplay
