@@ -77,45 +77,83 @@ export const DirectMessageArea: React.FC<DirectMessageAreaProps> = ({
       loadMessages();
       markMessagesAsRead();
 
-      // Setup realtime subscription for both incoming and outgoing messages
-      const subscription = supabase
-        .channel(`dm_conversation_${contactId}`)
+      // Setup realtime subscriptions with filtered channels
+      // Channel 1: Messages FROM contact TO me
+      const incomingChannel = supabase
+        .channel(`dm_incoming_${user.id}_${contactId}`)
         .on(
           'postgres_changes',
           {
-            event: '*',
+            event: 'INSERT',
             schema: 'public',
-            table: 'chats'
+            table: 'chats',
+            filter: `sender_id=eq.${contactId}`
           },
           (payload) => {
-            if (payload.eventType === 'DELETE') {
-              const deletedId = (payload.old as { id: string }).id;
-              setMessages(prev => prev.filter(m => m.id !== deletedId));
-              return;
-            }
-            const newMessage = payload.new as DirectMessage;
-            // Only add messages related to this conversation
-            if (
-              (newMessage.sender_id === user.id && newMessage.receiver_id === contactId) ||
-              (newMessage.sender_id === contactId && newMessage.receiver_id === user.id)
-            ) {
+            const newMsg = payload.new as DirectMessage;
+            if (newMsg.receiver_id === user.id) {
               setMessages(prev => {
-                // Avoid duplicates
-                if (prev.some(m => m.id === newMessage.id)) {
-                  return prev;
-                }
-                return [...prev, newMessage];
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
               });
-              if (newMessage.sender_id === contactId) {
-                markMessagesAsRead();
-              }
+              markMessagesAsRead();
             }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'chats',
+            filter: `sender_id=eq.${contactId}`
+          },
+          (payload) => {
+            const deletedId = (payload.old as { id: string }).id;
+            setMessages(prev => prev.filter(m => m.id !== deletedId));
+          }
+        )
+        .subscribe();
+
+      // Channel 2: Messages FROM me TO contact (see own sent messages)
+      const outgoingChannel = supabase
+        .channel(`dm_outgoing_${user.id}_${contactId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'chats',
+            filter: `sender_id=eq.${user.id}`
+          },
+          (payload) => {
+            const newMsg = payload.new as DirectMessage;
+            if (newMsg.receiver_id === contactId) {
+              setMessages(prev => {
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
+              });
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'chats',
+            filter: `sender_id=eq.${user.id}`
+          },
+          (payload) => {
+            const deletedId = (payload.old as { id: string }).id;
+            setMessages(prev => prev.filter(m => m.id !== deletedId));
           }
         )
         .subscribe();
 
       return () => {
-        subscription.unsubscribe();
+        incomingChannel.unsubscribe();
+        outgoingChannel.unsubscribe();
       };
     }
   }, [contactId, user?.id]);

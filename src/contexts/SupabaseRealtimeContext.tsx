@@ -11,13 +11,16 @@ interface PresenceUser {
     status?: 'online' | 'idle';
 }
 
-type UserStatus = 'online' | 'idle' | 'offline';
+export type UserStatus = 'online' | 'idle' | 'offline' | 'away' | 'busy';
 
 interface SupabaseRealtimeContextType {
     isIdle: boolean;
     onlineUsers: Set<string>;
     isUserOnline: (userId: string) => boolean;
     getUserStatus: (userId: string) => UserStatus;
+    getStatusColor: (status: string) => string;
+    getStatusTextColor: (status: string) => string;
+    getStatusText: (status: string) => string;
 }
 
 const SupabaseRealtimeContext = createContext<SupabaseRealtimeContextType | undefined>(undefined);
@@ -28,13 +31,16 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     const { activeChannelId, leaveChannel } = useVoiceChannel();
     const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
     const [presenceStatuses, setPresenceStatuses] = useState<Map<string, UserStatus>>(new Map());
-    const [dbStatuses, setDbStatuses] = useState<Map<string, UserStatus>>(new Map());
-    const [presenceChannel, setPresenceChannel] = useState<RealtimeChannel | null>(null);
     const [isIdle, setIsIdle] = useState(false);
     const disconnectionTimerRef = useRef<NodeJS.Timeout | null>(null);
     const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
     const isIdleRef = useRef(false);
     const presenceChannelRef = useRef<RealtimeChannel | null>(null);
+    const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const trackingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const cleanupIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const fallbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const isSubscribedRef = useRef(false);
 
     // Keep refs to current state to access in channel callback without re-subscribing
     const cleanupRefs = useRef({ activeCall, activeChannelId, endCall, leaveChannel });
@@ -47,6 +53,102 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         isIdleRef.current = isIdle;
     }, [isIdle]);
 
+    /**
+     * Rebuild the full presence state from the channel's presenceState()
+     * This is the SINGLE SOURCE OF TRUTH for who is online.
+     */
+    const rebuildPresenceState = useCallback((channel: RealtimeChannel) => {
+        const state: RealtimePresenceState<PresenceUser> = channel.presenceState();
+        const online = new Set<string>();
+        const statuses = new Map<string, UserStatus>();
+
+        Object.values(state).forEach((presences) => {
+            presences.forEach((presence) => {
+                if (presence.user_id) {
+                    online.add(presence.user_id);
+                    // Highest status wins (online > idle)
+                    const current = statuses.get(presence.user_id);
+                    if (presence.status === 'online' || !current) {
+                        statuses.set(presence.user_id, presence.status || 'online');
+                    }
+                }
+            });
+        });
+
+        console.log('[SupabaseRealtime] Presence rebuilt - Online users:', online.size, 
+            'Users:', Array.from(online).join(', '));
+        setOnlineUsers(online);
+        setPresenceStatuses(statuses);
+    }, []);
+
+    /**
+     * Track this user's presence on the channel with retry logic
+     */
+    const trackPresence = useCallback(async (channel: RealtimeChannel, userId: string, retries = 3) => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const result = await channel.track({
+                    user_id: userId,
+                    online_at: new Date().toISOString(),
+                    status: isIdleRef.current ? 'idle' : 'online',
+                });
+
+                if (result === 'ok') {
+                    console.log(`[SupabaseRealtime] ✓ Presence tracked (attempt ${attempt})`);
+                    return true;
+                } else {
+                    console.warn(`[SupabaseRealtime] Track returned: ${result} (attempt ${attempt})`);
+                }
+            } catch (err) {
+                console.error(`[SupabaseRealtime] Track failed (attempt ${attempt}):`, err);
+            }
+
+            // Wait before retry
+            if (attempt < retries) {
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+        }
+        console.error('[SupabaseRealtime] ✗ All track attempts failed');
+        return false;
+    }, []);
+
+    /**
+     * Send heartbeat to keep DB-side status in sync
+     */
+    const sendHeartbeat = useCallback(async (userId: string) => {
+        try {
+            await supabase.rpc('update_user_heartbeat', { uid: userId });
+        } catch (error) {
+            console.error('[SupabaseRealtime] Heartbeat error:', error);
+        }
+    }, []);
+
+    /**
+     * Run periodic cleanup of stale data (called less frequently)
+     */
+    const runPeriodicCleanup = useCallback(async () => {
+        try {
+            await supabase.rpc('periodic_cleanup');
+            console.log('[SupabaseRealtime] Periodic cleanup executed');
+        } catch (error) {
+            // periodic_cleanup may not exist on older deployments, that's ok
+            console.warn('[SupabaseRealtime] Periodic cleanup error (non-critical):', error);
+        }
+    }, []);
+
+    /**
+     * Set user offline in DB
+     */
+    const goOffline = useCallback(async (userId: string) => {
+        try {
+            console.log('[SupabaseRealtime] Setting user offline');
+            await supabase.rpc('set_user_offline', { uid: userId });
+        } catch (error) {
+            console.error('[SupabaseRealtime] Error setting offline:', error);
+        }
+    }, []);
+
+    // Main presence effect
     useEffect(() => {
         if (!user) {
             // Cleanup when user logs out
@@ -54,50 +156,33 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                 presenceChannelRef.current.untrack();
                 presenceChannelRef.current.unsubscribe();
                 presenceChannelRef.current = null;
-                setPresenceChannel(null);
             }
+            isSubscribedRef.current = false;
             setOnlineUsers(new Set());
             setPresenceStatuses(new Map());
             return;
         }
 
-        console.log('[SupabaseRealtime] Initializing realtime subscriptions for user:', user.id);
+        const userId = user.id;
+        console.log('[SupabaseRealtime] Initializing realtime subscriptions for user:', userId);
 
         // Create a global presence channel for all users
         const channel = supabase.channel('online-users', {
             config: {
                 presence: {
-                    key: user.id,
+                    key: userId,
                 },
             },
         });
 
-        // Track presence state changes
+        // Track presence state changes - SYNC is the authoritative event
         channel
             .on('presence', { event: 'sync' }, () => {
-                const state: RealtimePresenceState<PresenceUser> = channel.presenceState();
-                const online = new Set<string>();
-                const statuses = new Map<string, UserStatus>();
-
-                Object.values(state).forEach((presences) => {
-                    presences.forEach((presence) => {
-                        if (presence.user_id) {
-                            online.add(presence.user_id);
-                            // Highest status wins (online > idle)
-                            const current = statuses.get(presence.user_id);
-                            if (presence.status === 'online' || !current) {
-                                statuses.set(presence.user_id, presence.status || 'online');
-                            }
-                        }
-                    });
-                });
-
-                console.log('[SupabaseRealtime] Presence sync - Online users:', online.size);
-                setOnlineUsers(online);
-                setPresenceStatuses(statuses);
+                rebuildPresenceState(channel);
             })
             .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-                console.log('[SupabaseRealtime] User joined:', key, newPresences);
+                console.log('[SupabaseRealtime] User joined:', key);
+                // Immediately add to online set for responsiveness
                 setOnlineUsers((prev) => {
                     const updated = new Set(prev);
                     newPresences.forEach((presence) => {
@@ -108,60 +193,76 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     });
                     return updated;
                 });
-            })
-            .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-                console.log('[SupabaseRealtime] User left:', key, leftPresences);
-                setOnlineUsers((prev) => {
-                    const updated = new Set(prev);
-                    leftPresences.forEach((presence) => {
+                setPresenceStatuses((prev) => {
+                    const updated = new Map(prev);
+                    newPresences.forEach((presence) => {
                         const presenceData = presence as unknown as PresenceUser;
                         if (presenceData.user_id) {
-                            updated.delete(presenceData.user_id);
+                            updated.set(presenceData.user_id, presenceData.status || 'online');
                         }
                     });
                     return updated;
                 });
-                setPresenceStatuses((prev) => {
-                    const updated = new Map(prev);
-                    leftPresences.forEach((presence) => {
-                        const presenceData = presence as unknown as PresenceUser;
-                        if (presenceData.user_id) {
-                            updated.delete(presenceData.user_id);
+            })
+            .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+                console.log('[SupabaseRealtime] User left:', key);
+                // Check if user has any remaining presences before removing
+                // The sync event will correct this, but we do immediate update for responsiveness
+                const state: RealtimePresenceState<PresenceUser> = channel.presenceState();
+                
+                leftPresences.forEach((presence) => {
+                    const presenceData = presence as unknown as PresenceUser;
+                    if (presenceData.user_id) {
+                        // Check if the user still has other presence entries
+                        const remainingPresences = Object.values(state).flat().filter(
+                            (p) => (p as unknown as PresenceUser).user_id === presenceData.user_id
+                        );
+                        
+                        if (remainingPresences.length === 0) {
+                            // Actually gone - remove from sets
+                            setOnlineUsers((prev) => {
+                                const updated = new Set(prev);
+                                updated.delete(presenceData.user_id);
+                                return updated;
+                            });
+                            setPresenceStatuses((prev) => {
+                                const updated = new Map(prev);
+                                updated.delete(presenceData.user_id);
+                                return updated;
+                            });
                         }
-                    });
-                    return updated;
+                    }
                 });
             })
             .subscribe(async (status) => {
-                console.log('[SupabaseRealtime] Subscription status change:', status);
+                console.log('[SupabaseRealtime] Subscription status:', status);
 
                 if (status === 'SUBSCRIBED') {
-                    console.log('[SupabaseRealtime] Presence channel subscribed');
+                    console.log('[SupabaseRealtime] ✓ Presence channel subscribed');
+                    isSubscribedRef.current = true;
 
-                    // Clear any pending disconnection cleanup if we recover
+                    // Clear any pending disconnection cleanup
                     if (disconnectionTimerRef.current) {
                         console.log('[SupabaseRealtime] Connection recovered, cancelling cleanup');
                         clearTimeout(disconnectionTimerRef.current);
                         disconnectionTimerRef.current = null;
                     }
 
-                    // Track this user's presence
-                    await channel.track({
-                        user_id: user.id,
-                        online_at: new Date().toISOString(),
-                        status: 'online', // Initial status
-                    });
-
-                    console.log('[SupabaseRealtime] User presence tracked');
+                    // Track this user's presence with retry
+                    await trackPresence(channel, userId);
+                    
+                    // Send initial heartbeat
+                    await sendHeartbeat(userId);
                 }
 
                 // Handle disconnection with a grace period
                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-                    console.warn(`[SupabaseRealtime] Connection issue detected: ${status}. Waiting 15s before ending calls.`);
+                    console.warn(`[SupabaseRealtime] Connection issue: ${status}`);
+                    isSubscribedRef.current = false;
 
                     if (!disconnectionTimerRef.current) {
                         disconnectionTimerRef.current = setTimeout(() => {
-                            console.error(`[SupabaseRealtime] Connection recovery timed out (${status}) - Cleanly ending sessions`);
+                            console.error(`[SupabaseRealtime] Connection recovery timed out (${status})`);
                             const { activeCall, endCall, activeChannelId, leaveChannel } = cleanupRefs.current;
 
                             if (activeCall) {
@@ -175,221 +276,164 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                             disconnectionTimerRef.current = null;
                         }, 15000); // 15s grace period
                     }
+
+                    // Try to re-subscribe after a delay
+                    setTimeout(() => {
+                        if (!isSubscribedRef.current && presenceChannelRef.current) {
+                            console.log('[SupabaseRealtime] Attempting re-subscribe...');
+                            presenceChannelRef.current.subscribe();
+                        }
+                    }, 3000);
                 }
             });
 
-        setPresenceChannel(channel);
         presenceChannelRef.current = channel;
 
-        // Fetch initial statuses from DB as a baseline - ONLY FOR FRIENDS to save resources
-        const fetchInitialStatuses = async () => {
+        // ---- HYBRID FALLBACK: Fetch online users from database every 15 seconds ----
+        // This ensures the frontend stays correct even if Realtime WebSocket completely fails
+        const fetchDBPresence = async () => {
             try {
-                // Get friend IDs first
-                const { data: friendships } = await supabase
-                    .from('friends')
-                    .select('requester_id, requested_id')
-                    .eq('status', 'accepted')
-                    .or(`requester_id.eq.${user.id},requested_id.eq.${user.id}`);
-
-                const friendIds = new Set<string>();
-                friendIds.add(user.id); // Also fetch our own status
-
-                friendships?.forEach(f => {
-                    friendIds.add(f.requester_id === user.id ? f.requested_id : f.requester_id);
-                });
-
-                if (friendIds.size > 0) {
-                    const { data, error } = await supabase
-                        .from('profiles')
-                        .select('id, status')
-                        .in('id', Array.from(friendIds));
-
-                    if (data && !error) {
-                        const initialDbStatuses = new Map<string, UserStatus>();
-                        data.forEach(p => {
-                            if (p.status) initialDbStatuses.set(p.id, p.status as UserStatus);
+                const { data, error } = await supabase
+                    .from('user_activity')
+                    .select('user_id, status');
+                
+                if (error) throw error;
+                
+                if (data) {
+                    setOnlineUsers((prev) => {
+                        const updated = new Set(prev);
+                        let changed = false;
+                        data.forEach((u: any) => {
+                            // Consider 'idle' as online for connection tracking purposes
+                            if (u.status === 'online' || u.status === 'idle') {
+                                if (!updated.has(u.user_id)) {
+                                    updated.add(u.user_id);
+                                    changed = true;
+                                }
+                            } else {
+                                if (updated.has(u.user_id)) {
+                                    updated.delete(u.user_id);
+                                    changed = true;
+                                }
+                            }
                         });
-                        setDbStatuses(initialDbStatuses);
-                        console.log(`[SupabaseRealtime] Initial statuses fetched for ${friendIds.size} relevant users`);
-                    }
+                        return changed ? updated : prev;
+                    });
+
+                    setPresenceStatuses((prev) => {
+                        const updated = new Map(prev);
+                        let changed = false;
+                        data.forEach((u: any) => {
+                            if (u.status === 'online' || u.status === 'idle') {
+                                if (updated.get(u.user_id) !== u.status) {
+                                    updated.set(u.user_id, u.status);
+                                    changed = true;
+                                }
+                            } else {
+                                if (updated.has(u.user_id)) {
+                                    updated.delete(u.user_id);
+                                    changed = true;
+                                }
+                            }
+                        });
+                        return changed ? updated : prev;
+                    });
                 }
             } catch (err) {
-                console.error('[SupabaseRealtime] Error fetching initial statuses:', err);
-            }
-        };
-        fetchInitialStatuses();
-
-        // Subscribe to messages in channels the user is a member of
-        const messagesChannel = supabase
-            .channel('messages-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'messages'
-                },
-                (payload) => {
-                    console.log('[SupabaseRealtime] Message change:', payload);
-                }
-            )
-            .subscribe();
-
-        // Subscribe to profiles for database-backed status fallback
-        const profilesChannel = supabase
-            .channel('profiles-status-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'profiles'
-                },
-                (payload) => {
-                    const newProfile = payload.new as any;
-                    if (newProfile.id && newProfile.status) {
-                        console.log(`[SupabaseRealtime] DB Status update for ${newProfile.id}: ${newProfile.status}`);
-                        setDbStatuses(prev => {
-                            const updated = new Map(prev);
-                            updated.set(newProfile.id, newProfile.status as UserStatus);
-                            return updated;
-                        });
-                    }
-                }
-            )
-            .subscribe();
-
-        // Subscribe to friend requests
-        const friendRequestsChannel = supabase
-            .channel('friend-requests-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'friend_requests',
-                    filter: `to_user_id=eq.${user.id}`
-                },
-                (payload) => {
-                    console.log('[SupabaseRealtime] Friend request change:', payload);
-                }
-            )
-            .subscribe();
-
-        // Heartbeat logic to keep user online and cleanup stale sessions
-        const sendHeartbeat = async () => {
-            if (user?.id) {
-                try {
-                    await supabase.rpc('update_user_heartbeat', { uid: user.id });
-                    console.log('[SupabaseRealtime] Heartbeat sent');
-                } catch (error) {
-                    console.error('[SupabaseRealtime] Error sending heartbeat:', error);
-                }
+                // Ignore silent errors for fallback
             }
         };
 
-        const goOffline = async () => {
-            if (user?.id) {
-                try {
-                    console.log('[SupabaseRealtime] Setting user offline');
-                    // Use a synchronous-ish way if possible for beforeunload, 
-                    // but for regular cleanup this is fine.
-                    await supabase.rpc('set_user_offline', { uid: user.id });
-                } catch (error) {
-                    console.error('[SupabaseRealtime] Error setting offline:', error);
-                }
+        // Fetch immediately and then poll
+        fetchDBPresence();
+        fallbackIntervalRef.current = setInterval(fetchDBPresence, 15000);
+
+        // ---- HEARTBEAT: Send every 30 seconds ----
+        heartbeatIntervalRef.current = setInterval(() => sendHeartbeat(userId), 30000);
+
+        // ---- RE-TRACK: Re-announce presence every 25 seconds ----
+        // This ensures we stay visible even if Supabase drops our presence silently
+        trackingIntervalRef.current = setInterval(() => {
+            if (isSubscribedRef.current && presenceChannelRef.current) {
+                trackPresence(presenceChannelRef.current, userId, 1); // Single attempt for periodic
             }
-        };
+        }, 25000);
 
-        // Send initial heartbeat
-        sendHeartbeat();
+        // ---- PERIODIC CLEANUP: Run every 2 minutes ----
+        cleanupIntervalRef.current = setInterval(runPeriodicCleanup, 120000);
+        // Run first cleanup after 30 seconds
+        setTimeout(runPeriodicCleanup, 30000);
 
-        // Set up heartbeat interval (every 45 seconds for better presence accuracy)
-        const heartbeatInterval = setInterval(sendHeartbeat, 45000);
+        // ---- BEFOREUNLOAD: Set offline when leaving ----
+        const handleBeforeUnload = () => goOffline(userId);
+        window.addEventListener('beforeunload', handleBeforeUnload);
 
-        // Explicitly set offline when leaving
-        window.addEventListener('beforeunload', goOffline);
-
-        // Re-track presence periodically to ensure we don't drop out of the sync state
-        const trackingInterval = setInterval(() => {
-            if (channel && user?.id) {
-                console.log('[SupabaseRealtime] Periodic re-track');
-                channel.track({
-                    user_id: user.id,
-                    online_at: new Date().toISOString(),
-                    status: isIdleRef.current ? 'idle' : 'online',
-                });
-            }
-        }, 30000); // 30s re-track
-
+        // Cleanup
         return () => {
             console.log('[SupabaseRealtime] Cleaning up subscriptions');
 
-            // Clear timers
-            clearInterval(heartbeatInterval);
-            clearInterval(trackingInterval);
-            if (disconnectionTimerRef.current) {
-                clearTimeout(disconnectionTimerRef.current);
-            }
-            if (idleTimerRef.current) {
-                clearTimeout(idleTimerRef.current);
-            }
+            // Clear all timers
+            if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+            if (trackingIntervalRef.current) clearInterval(trackingIntervalRef.current);
+            if (cleanupIntervalRef.current) clearInterval(cleanupIntervalRef.current);
+            if (fallbackIntervalRef.current) clearInterval(fallbackIntervalRef.current);
+            if (disconnectionTimerRef.current) clearTimeout(disconnectionTimerRef.current);
+            if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
-            // Untrack presence
+            heartbeatIntervalRef.current = null;
+            trackingIntervalRef.current = null;
+            cleanupIntervalRef.current = null;
+            fallbackIntervalRef.current = null;
+            disconnectionTimerRef.current = null;
+
+            // Untrack and unsubscribe presence
             if (channel) {
                 channel.untrack();
                 channel.unsubscribe();
             }
             presenceChannelRef.current = null;
+            isSubscribedRef.current = false;
 
-            messagesChannel.unsubscribe();
-            profilesChannel.unsubscribe();
-            friendRequestsChannel.unsubscribe();
-            window.removeEventListener('beforeunload', goOffline);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
 
-            // Try to set offline on cleanup too
-            goOffline();
+            // Set offline on cleanup
+            goOffline(userId);
         };
-    }, [user?.id]); // ONLY depend on user.id - idle changes handled by separate effect
+    }, [user?.id]); // ONLY depend on user.id
 
-    // Handle status updates separately to avoid re-subscribing the entire channel
+    // Handle idle status updates separately to avoid full re-subscribe
     useEffect(() => {
-        if (!presenceChannel || !user) return;
+        if (!presenceChannelRef.current || !user || !isSubscribedRef.current) return;
 
-        console.log('[SupabaseRealtime] Status changed, updating presence tracking:', isIdle ? 'idle' : 'online');
-        presenceChannel.track({
+        console.log('[SupabaseRealtime] Status changed:', isIdle ? 'idle' : 'online');
+        presenceChannelRef.current.track({
             user_id: user.id,
             online_at: new Date().toISOString(),
             status: isIdle ? 'idle' : 'online',
         });
-    }, [isIdle, presenceChannel, user]);
+    }, [isIdle, user]);
 
-    // Strengthen connection: Refresh on visibility change (recovers from tab backgrounding/sleep)
+    // Recover on tab visibility change
     useEffect(() => {
         const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                console.log('[SupabaseRealtime] Tab became visible, checking connection...');
+            if (document.visibilityState === 'visible' && user?.id) {
+                console.log('[SupabaseRealtime] Tab visible, checking connection...');
                 const ch = presenceChannelRef.current;
-                // @ts-ignore - RealtimeChannel state property exists but might not be in basic types
-                if (ch && (ch.state === 'closed' || ch.state === 'errored')) {
-                    console.log('[SupabaseRealtime] Channel not active, re-subscribing');
-                    ch.subscribe();
-                } else if (ch && user?.id) {
-                    console.log('[SupabaseRealtime] Tab active, re-tracking presence');
-                    ch.track({
-                        user_id: user.id,
-                        online_at: new Date().toISOString(),
-                        status: isIdleRef.current ? 'idle' : 'online',
-                    });
-                }
+
+                if (!ch) return;
+
+                // Re-track presence immediately
+                trackPresence(ch, user.id, 2);
+                // Re-send heartbeat
+                sendHeartbeat(user.id);
             }
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [user?.id]);
+    }, [user?.id, trackPresence, sendHeartbeat]);
 
-    // Idle detection logic - uses refs to avoid re-subscribing
+    // Idle detection
     useEffect(() => {
         if (!user) return;
 
@@ -419,24 +463,53 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
     }, [user?.id]);
 
     const isUserOnline = useCallback((userId: string): boolean => {
-        // PURE PRESENCE: Only online if currently in the WebSocket set
         return onlineUsers.has(userId);
     }, [onlineUsers]);
 
     const getUserStatus = useCallback((userId: string): UserStatus => {
-        // PURE PRESENCE: Only return status if in Presence sync state
-        // This ensures the UI (dots and text) updates instantly when someone leaves
         const presenceStatus = presenceStatuses.get(userId);
         if (presenceStatus) return presenceStatus;
-
         return 'offline';
     }, [presenceStatuses]);
+
+    const getStatusColor = useCallback((status: string): string => {
+        switch (status) {
+            case 'online': return 'bg-green-500';
+            case 'idle': return 'bg-blue-500';
+            case 'away': return 'bg-yellow-500';
+            case 'busy': return 'bg-red-500';
+            default: return 'bg-gray-500';
+        }
+    }, []);
+
+    const getStatusTextColor = useCallback((status: string): string => {
+        switch (status) {
+            case 'online': return 'text-green-400';
+            case 'idle': return 'text-blue-400';
+            case 'away': return 'text-yellow-400';
+            case 'busy': return 'text-red-400';
+            default: return 'text-gray-400';
+        }
+    }, []);
+
+    const getStatusText = useCallback((status: string): string => {
+        switch (status) {
+            case 'online': return 'Çevrimiçi';
+            case 'idle': return 'Boşta';
+            case 'away': return 'Uzakta';
+            case 'busy': return 'Meşgul';
+            default: return 'Çevrimdışı';
+        }
+    }, []);
 
     const value: SupabaseRealtimeContextType = {
         isIdle,
         onlineUsers,
         isUserOnline,
         getUserStatus,
+        getStatusColor,
+        getStatusTextColor,
+        getStatusText,
     };
 
     return (
@@ -453,4 +526,3 @@ export function useSupabaseRealtime() {
     }
     return context;
 }
-

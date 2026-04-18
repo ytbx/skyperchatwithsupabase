@@ -35,7 +35,7 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
   selectedContactId
 }) => {
   const { user } = useAuth();
-  const { isUserOnline, getUserStatus } = useSupabaseRealtime();
+  const { isUserOnline, getUserStatus, getStatusColor } = useSupabaseRealtime();
   const [conversations, setConversations] = useState<DMConversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -248,10 +248,8 @@ export const DirectMessagesList: React.FC<DirectMessagesListProps> = ({
                         {conversation.contactName.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    {/* Online/Idle indicator */}
-                    {isUserOnline(conversation.contactId) && (
-                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getUserStatus(conversation.contactId) === 'idle' ? 'bg-blue-500' : 'bg-green-500'} border-2 border-gray-900 rounded-full`}></div>
-                    )}
+                    {/* Status indicator */}
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getStatusColor(getUserStatus(conversation.contactId))} border-2 border-gray-900 rounded-full`}></div>
                   </div>
 
                   {/* Content */}

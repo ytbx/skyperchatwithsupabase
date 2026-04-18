@@ -22,7 +22,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
   /* eslint-disable @typescript-eslint/no-unused-vars */
   /* eslint-disable react-hooks/exhaustive-deps */
   const { user } = useAuth();
-  const { isUserOnline, getUserStatus } = useSupabaseRealtime();
+  const { isUserOnline, getUserStatus, getStatusColor, getStatusText, getStatusTextColor } = useSupabaseRealtime();
   const { friends, friendRequests, sentRequests, loading, acceptFriendRequest, declineFriendRequest, removeFriend, sendFriendRequest, cancelFriendRequest } = useFriend();
 
   const [activeTab, setActiveTab] = useState<'friends' | 'pending' | 'add'>('friends');
@@ -159,26 +159,6 @@ export const FriendsList: React.FC<FriendsListProps> = ({
     friend.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'bg-green-500';
-      case 'idle': return 'bg-blue-500';
-      case 'away': return 'bg-yellow-500';
-      case 'busy': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'online': return 'Çevrimiçi';
-      case 'idle': return 'Boşta';
-      case 'away': return 'Uzakta';
-      case 'busy': return 'Meşgul';
-      default: return 'Çevrimdışı';
-    }
-  };
-
   return (
     <>
       <div className="w-72 h-full bg-gray-900 border-r border-gray-800 flex flex-col min-h-0">
@@ -295,8 +275,7 @@ export const FriendsList: React.FC<FriendsListProps> = ({
                             <h3 className="text-white font-medium text-sm truncate">
                               {friend.username}
                             </h3>
-                            <p className={`text-xs truncate ${isUserOnline(friend.id) ? (getUserStatus(friend.id) === 'idle' ? 'text-blue-400' : 'text-green-400') : 'text-gray-400'
-                              }`}>
+                            <p className={`text-xs truncate ${getStatusTextColor(getUserStatus(friend.id))}`}>
                               {getStatusText(getUserStatus(friend.id))}
                             </p>
                           </div>
