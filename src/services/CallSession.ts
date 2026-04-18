@@ -673,7 +673,8 @@ export class CallSession {
                     await this.signaling.sendCallEnded();
                 }
                 // Wait for signal to be delivered before cleaning up
-                await new Promise(r => setTimeout(r, 500));
+                // We Increased this to 1s to be safer
+                await new Promise(r => setTimeout(r, 1000));
             } catch (e) {
                 console.error('[CallSession] Error sending end signal:', e);
             }

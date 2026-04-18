@@ -729,7 +729,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
                         chromeMediaSourceId: sourceId,
                         maxWidth: quality === 'fullhd' ? 1920 : 1280,
                         maxHeight: quality === 'fullhd' ? 1080 : 720,
-                        maxFrameRate: quality === 'standard' ? 30 : 60
+                        minFrameRate: quality === 'fullhd' ? 30 : 15,
+                        maxFrameRate: quality === 'fullhd' ? 60 : 30
                     }
                 }
             });

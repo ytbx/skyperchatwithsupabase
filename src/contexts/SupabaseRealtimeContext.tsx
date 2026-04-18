@@ -117,7 +117,11 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
      */
     const sendHeartbeat = useCallback(async (userId: string) => {
         try {
-            await supabase.rpc('update_user_heartbeat', { uid: userId });
+            const currentStatus = isIdleRef.current ? 'idle' : 'online';
+            await supabase.rpc('update_user_heartbeat', { 
+                uid: userId,
+                p_status: currentStatus
+            });
         } catch (error) {
             console.error('[SupabaseRealtime] Heartbeat error:', error);
         }
@@ -274,7 +278,7 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                                 leaveChannel();
                             }
                             disconnectionTimerRef.current = null;
-                        }, 15000); // 15s grace period
+                        }, 45000); // 45s grace period (increased from 15s)
                     }
 
                     // Try to re-subscribe after a delay
@@ -290,7 +294,8 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
         presenceChannelRef.current = channel;
 
         // ---- HYBRID FALLBACK: Fetch online users from database every 15 seconds ----
-        // This ensures the frontend stays correct even if Realtime WebSocket completely fails
+        // This ensures the frontend stays correct even if Realtime WebSocket completely fails.
+        // INTEGRITY FIX: Realtime Presence 'sync' entries take precedence over DB data.
         const fetchDBPresence = async () => {
             try {
                 const { data, error } = await supabase
@@ -303,14 +308,27 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
                     setOnlineUsers((prev) => {
                         const updated = new Set(prev);
                         let changed = false;
+                        
+                        // Get current users from Realtime (authoritative)
+                        const realtimeUsers = new Set<string>();
+                        if (presenceChannelRef.current) {
+                            const state = presenceChannelRef.current.presenceState();
+                            Object.values(state).flat().forEach((u: any) => {
+                                if (u.user_id) realtimeUsers.add(u.user_id);
+                            });
+                        }
+
                         data.forEach((u: any) => {
-                            // Consider 'idle' as online for connection tracking purposes
-                            if (u.status === 'online' || u.status === 'idle') {
+                            const isOnlineInDB = u.status === 'online' || u.status === 'idle';
+                            const isOnlineInRealtime = realtimeUsers.has(u.user_id);
+
+                            if (isOnlineInDB || isOnlineInRealtime) {
                                 if (!updated.has(u.user_id)) {
                                     updated.add(u.user_id);
                                     changed = true;
                                 }
                             } else {
+                                // Only remove if BOTH DB says offline AND Realtime doesn't see them
                                 if (updated.has(u.user_id)) {
                                     updated.delete(u.user_id);
                                     changed = true;
@@ -395,23 +413,35 @@ export function SupabaseRealtimeProvider({ children }: { children: ReactNode }) 
             isSubscribedRef.current = false;
 
             window.removeEventListener('beforeunload', handleBeforeUnload);
-
-            // Set offline on cleanup
-            goOffline(userId);
+            
+            // Set offline ONLY on actual tab close or logout
+            // Removing from effect cleanup to prevent flickering on re-renders
+            // goOffline(userId); 
         };
     }, [user?.id]); // ONLY depend on user.id
 
     // Handle idle status updates separately to avoid full re-subscribe
+    // Added a small status tracker to prevent redundant RPC spam
+    const lastTrackedStatusRef = useRef<string | null>(null);
     useEffect(() => {
         if (!presenceChannelRef.current || !user || !isSubscribedRef.current) return;
 
-        console.log('[SupabaseRealtime] Status changed:', isIdle ? 'idle' : 'online');
+        const currentStatus = isIdle ? 'idle' : 'online';
+        if (lastTrackedStatusRef.current === currentStatus) return;
+        
+        console.log('[SupabaseRealtime] Status changed:', currentStatus);
+        lastTrackedStatusRef.current = currentStatus;
+        
+        // Update Realtime Presence
         presenceChannelRef.current.track({
             user_id: user.id,
             online_at: new Date().toISOString(),
-            status: isIdle ? 'idle' : 'online',
-        });
-    }, [isIdle, user]);
+            status: currentStatus,
+        }).catch(err => console.error('[SupabaseRealtime] Track error on status change:', err));
+
+        // Update Database immediately
+        sendHeartbeat(user.id);
+    }, [isIdle, user, sendHeartbeat]);
 
     // Recover on tab visibility change
     useEffect(() => {

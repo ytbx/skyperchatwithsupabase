@@ -134,7 +134,7 @@ export function ScreenSharePickerModal({ isOpen, onClose, onSelect }: ScreenShar
                                     : 'text-gray-400 hover:text-gray-200'
                                     }`}
                             >
-                                Full HD (1080p)
+                                Full HD (1080p 60fps - Yüksek Kalite)
                             </button>
                         </div>
 

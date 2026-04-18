@@ -47,7 +47,7 @@ export function ScreenShareQualityModal({ isOpen, onClose, onSelect }: ScreenSha
                         </div>
                         <div className="flex-1">
                             <h3 className="font-semibold text-white group-hover:text-green-400 transition-colors">Full HD Kalite</h3>
-                            <p className="text-sm text-gray-400">1080p • 60 FPS • En iyi görüntü</p>
+                            <p className="text-sm text-gray-400">1080p • 60 FPS • Yüksek Bitrate & Akıcılık</p>
                         </div>
                     </button>
                 </div>

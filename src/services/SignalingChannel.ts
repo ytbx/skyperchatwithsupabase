@@ -253,6 +253,13 @@ export class SignalingChannel {
     async close(deleteFromDb: boolean = true): Promise<void> {
         console.log('[SignalingChannel] Closing channel, deleteFromDb:', deleteFromDb);
 
+        // If we are deleting from DB, we should wait a small amount of time
+        // to ENSURE that the 'call-ended' or final signals were broadcasted by Supabase
+        // before we wipe them out.
+        if (deleteFromDb) {
+            await new Promise(r => setTimeout(r, 800));
+        }
+
         this.isSubscribed = false;
         this.processedIds.clear();
         this.handler = null;

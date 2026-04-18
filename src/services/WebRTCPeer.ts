@@ -569,10 +569,10 @@ export class WebRTCPeer {
                 // Bitrate limits to prevent network congestion while keeping quality high
                 // These match standard WebRTC recommendations for screen sharing
                 if (quality === 'fullhd') {
-                    params.encodings[0].maxBitrate = 6_000_000; // 6 Mbps for 1080p 60fps
+                    params.encodings[0].maxBitrate = 15_000_000; // 15 Mbps for 1080p 60fps (High Quality)
                     (params.encodings[0] as any).maxFramerate = 60;
                 } else {
-                    params.encodings[0].maxBitrate = 3_000_000; // 3 Mbps for 720p 30fps
+                    params.encodings[0].maxBitrate = 5_000_000; // 5 Mbps for 720p 30fps
                     (params.encodings[0] as any).maxFramerate = 30;
                 }
 
